@@ -1,0 +1,374 @@
+import { format } from "date-fns";
+import { CompactDateCell } from "@/components/ui/compact-date-cell";
+import { useEffect, useRef, useState } from "react";
+import type { LineItemWithOrder } from "./gantt-calendar";
+import type { Profile } from "@/lib/types/database";
+
+export type LineSortKey =
+  | "order_number"
+  | "client_name"
+  | "description"
+  | "quantity"
+  | "delivery_deadline"
+  | "production_start"
+  | "production_end";
+
+export function sortLineItemsByKeys(
+  items: LineItemWithOrder[],
+  sortKeys: LineSortKey[]
+): LineItemWithOrder[] {
+  const copy = [...items];
+  copy.sort((a, b) => {
+    for (const key of sortKeys) {
+      let av: any;
+      let bv: any;
+      switch (key) {
+        case "order_number":
+          av = a.order.order_number;
+          bv = b.order.order_number;
+          break;
+        case "client_name":
+          av = a.order.client_name;
+          bv = b.order.client_name;
+          break;
+        case "description":
+          av = a.description;
+          bv = b.description;
+          break;
+        case "quantity":
+          av = a.quantity;
+          bv = b.quantity;
+          break;
+        case "delivery_deadline":
+          av = a.order.delivery_deadline || "";
+          bv = b.order.delivery_deadline || "";
+          break;
+        case "production_start":
+          av = a.production_start || "";
+          bv = b.production_start || "";
+          break;
+        case "production_end":
+          av = a.production_end || "";
+          bv = b.production_end || "";
+          break;
+        default:
+          av = "";
+          bv = "";
+      }
+      if (av === bv) continue;
+      if (av === null || av === undefined || av === "") return 1;
+      if (bv === null || bv === undefined || bv === "") return -1;
+      if (typeof av === "number" && typeof bv === "number") {
+        return av - bv;
+      }
+      const as = String(av);
+      const bs = String(bv);
+      if (as < bs) return -1;
+      if (as > bs) return 1;
+    }
+    return 0;
+  });
+  return copy;
+}
+
+export function getNextSortKeys(
+  current: LineSortKey[],
+  key: LineSortKey
+): LineSortKey[] {
+  const existingIndex = current.indexOf(key);
+  if (existingIndex === 0) {
+    return current;
+  }
+  if (existingIndex > 0) {
+    const copy = [...current];
+    copy.splice(existingIndex, 1);
+    copy.unshift(key);
+    return copy;
+  }
+  return [key, ...current].slice(0, 3);
+}
+
+interface LineTableProps {
+  items: LineItemWithOrder[];
+  profile: Profile;
+  sortKeys: LineSortKey[];
+  onChangeSort: (keys: LineSortKey[]) => void;
+  onChangeDate: (
+    itemId: string,
+    field: "production_start" | "production_end",
+    value: string | null
+  ) => void;
+  onChangeNotes: (itemId: string, value: string) => void;
+  onComplete: (itemId: string) => void;
+}
+
+export function LineTable({
+  items,
+  profile,
+  sortKeys,
+  onChangeSort,
+  onChangeDate,
+  onChangeNotes,
+  onComplete,
+}: LineTableProps) {
+  const [columnWidths, setColumnWidths] = useState<number[]>([
+    60, 140, 200, 55, 70, 90, 90, 60, 120,
+  ]);
+  const resizingIndexRef = useRef<number | null>(null);
+  const startXRef = useRef(0);
+  const startWidthsRef = useRef<number[]>([]);
+
+  const gridTemplate = columnWidths.map((w) => `${w}px`).join(" ");
+
+  function handleResizeStart(index: number, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    resizingIndexRef.current = index;
+    startXRef.current = e.clientX;
+    startWidthsRef.current = [...columnWidths];
+  }
+
+  useEffect(() => {
+    function onMouseMove(e: MouseEvent) {
+      if (resizingIndexRef.current === null) return;
+      const idx = resizingIndexRef.current;
+      const delta = e.clientX - startXRef.current;
+      const base = startWidthsRef.current[idx];
+      const next = Math.max(40, base + delta);
+      setColumnWidths((prev) => {
+        const copy = [...prev];
+        copy[idx] = next;
+        return copy;
+      });
+    }
+
+    function onMouseUp() {
+      resizingIndexRef.current = null;
+    }
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [columnWidths]);
+  function toggleSort(key: LineSortKey) {
+    onChangeSort(getNextSortKeys(sortKeys, key));
+  }
+
+  function getSortIndex(key: LineSortKey): number | null {
+    const idx = sortKeys.indexOf(key);
+    return idx >= 0 && idx < 3 ? idx + 1 : null;
+  }
+
+  function handleComplete(itemId: string) {
+    if (!window.confirm("Marcar item como concluído?")) return;
+    onComplete(itemId);
+  }
+
+  return (
+    <div className="min-w-[640px]">
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
+        <div
+          className="grid text-[10px] font-semibold text-slate-600 min-h-[28px] items-center"
+          style={{ gridTemplateColumns: gridTemplate }}
+        >
+          <HeaderCell
+            onClick={() => toggleSort("order_number")}
+            sortIndex={getSortIndex("order_number")}
+            onResizeStart={(e) => handleResizeStart(0, e)}
+          >
+            Pedido
+          </HeaderCell>
+          <HeaderCell
+            onClick={() => toggleSort("client_name")}
+            sortIndex={getSortIndex("client_name")}
+            onResizeStart={(e) => handleResizeStart(1, e)}
+          >
+            Cliente
+          </HeaderCell>
+          <HeaderCell
+            onClick={() => toggleSort("description")}
+            sortIndex={getSortIndex("description")}
+            onResizeStart={(e) => handleResizeStart(2, e)}
+          >
+            Descrição
+          </HeaderCell>
+          <HeaderCell
+            className="text-center"
+            onClick={() => toggleSort("quantity")}
+            sortIndex={getSortIndex("quantity")}
+            onResizeStart={(e) => handleResizeStart(3, e)}
+          >
+            Qtd
+          </HeaderCell>
+          <HeaderCell
+            className="text-center"
+            onClick={() => toggleSort("delivery_deadline")}
+            sortIndex={getSortIndex("delivery_deadline")}
+            onResizeStart={(e) => handleResizeStart(4, e)}
+          >
+            Prazo Vendas
+          </HeaderCell>
+          <HeaderCell
+            className="text-center"
+            onClick={() => toggleSort("production_start")}
+            sortIndex={getSortIndex("production_start")}
+            onResizeStart={(e) => handleResizeStart(5, e)}
+          >
+            Início Prod.
+          </HeaderCell>
+          <HeaderCell
+            className="text-center"
+            onClick={() => toggleSort("production_end")}
+            sortIndex={getSortIndex("production_end")}
+            onResizeStart={(e) => handleResizeStart(6, e)}
+          >
+            Fim Prod.
+          </HeaderCell>
+          <HeaderCell
+            className="text-center"
+            onResizeStart={(e) => handleResizeStart(7, e)}
+          >
+            ✓
+          </HeaderCell>
+          <HeaderCell onResizeStart={(e) => handleResizeStart(8, e)}>
+            Obs.
+          </HeaderCell>
+        </div>
+      </div>
+
+      <div>
+        {items.map((item, idx) => {
+          const delivery =
+            item.order.delivery_deadline &&
+            format(new Date(item.order.delivery_deadline), "d/M/yy");
+
+          return (
+            <div
+              key={item.id}
+              className={`grid text-[11px] items-center border-b border-slate-200 h-7 ${
+                idx % 2 === 0 ? "bg-white" : "bg-slate-50"
+              }`}
+              style={{ gridTemplateColumns: gridTemplate }}
+            >
+              <Cell className="font-medium text-slate-800">
+                {item.order.order_number}
+              </Cell>
+              <Cell title={item.order.client_name}>
+                <span className="truncate block">
+                  {item.order.client_name}
+                </span>
+              </Cell>
+              <Cell title={item.description}>
+                <span className="truncate block">{item.description}</span>
+              </Cell>
+              <Cell className="text-center flex justify-center items-center">
+                {item.quantity}
+              </Cell>
+              <Cell className="text-center flex justify-center items-center">
+                {delivery ?? "--"}
+              </Cell>
+              <Cell className="flex items-stretch p-0">
+                <CompactDateCell
+                  value={item.production_start}
+                  onChange={(val) =>
+                    onChangeDate(item.id, "production_start", val)
+                  }
+                />
+              </Cell>
+              <Cell className="flex items-stretch p-0">
+                <CompactDateCell
+                  value={item.production_end}
+                  onChange={(val) =>
+                    onChangeDate(item.id, "production_end", val)
+                  }
+                />
+              </Cell>
+              <Cell className="text-center">
+                <button
+                  onClick={() => handleComplete(item.id)}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded border border-emerald-300 text-xs text-emerald-700 hover:bg-emerald-50"
+                  title="Marcar como concluído"
+                >
+                  ✓
+                </button>
+              </Cell>
+              <Cell>
+                <input
+                  type="text"
+                  className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px]"
+                  value={item.notes ?? ""}
+                  onChange={(e) => onChangeNotes(item.id, e.target.value)}
+                  placeholder="Observações..."
+                />
+              </Cell>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function HeaderCell({
+  children,
+  className = "",
+  sortIndex,
+  onClick,
+  onResizeStart,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  sortIndex?: number | null;
+  onClick?: () => void;
+  onResizeStart?: (e: React.MouseEvent) => void;
+}) {
+  const isCentered = className.includes("text-center");
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`relative px-2 py-1.5 border-r border-slate-200 bg-white flex items-center gap-1 ${
+        onClick ? "cursor-pointer hover:bg-slate-50" : ""
+      } ${className}`}
+    >
+      <span
+        className={`flex-1 flex items-center gap-1 ${
+          isCentered ? "justify-center" : ""
+        }`}
+      >
+        <span>{children}</span>
+        {sortIndex && (
+          <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] text-slate-700">
+            {sortIndex}
+          </span>
+        )}
+      </span>
+      {onResizeStart && (
+        <span
+          onMouseDown={onResizeStart}
+          className="h-full w-1.5 shrink-0 cursor-col-resize hover:bg-slate-300"
+        />
+      )}
+    </button>
+  );
+}
+
+function Cell({
+  children,
+  className = "",
+  ...rest
+}: React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={`px-2 py-0.5 border-r border-slate-200 overflow-hidden ${className}`}
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+}
+
+

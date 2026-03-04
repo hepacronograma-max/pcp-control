@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --pcp-primary: #1B4F72;
+  --pcp-secondary: #2E86C1;
+  --pcp-accent: #27AE60;
+  --pcp-warning: #F39C12;
+  --pcp-danger: #E74C3C;
+  --pcp-background: #F8F9FA;
+}
+
+body {
+  background-color: var(--pcp-background);
+}
+
