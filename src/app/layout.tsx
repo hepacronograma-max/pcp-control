@@ -21,7 +21,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <meta name="apple-mobile-web-app-title" content="PCP Control" />
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
-      <body>
+      <body className="min-h-screen bg-slate-50">
         <Toaster position="top-right" richColors />
         {children}
       </body>

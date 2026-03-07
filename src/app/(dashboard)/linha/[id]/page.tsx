@@ -41,6 +41,16 @@ export default function LinePage() {
     "order_number",
   ]);
 
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    function onFocus() {
+      setRefreshKey((k) => k + 1);
+    }
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
   const fixedRef = useRef<HTMLDivElement | null>(null);
   const ganttRef = useRef<HTMLDivElement | null>(null);
 
@@ -104,17 +114,29 @@ export default function LinePage() {
           }
 
           let filtered = itemsForLine;
-          if (tab === "in_progress") {
-            filtered = itemsForLine.filter(
-              (it) =>
-                it.status !== "completed" && it.status !== "waiting"
-            );
-          } else if (tab === "finished") {
-            filtered = itemsForLine.filter((it) => it.status === "completed");
+          if (isAlmoxarifado) {
+            if (tab === "finished") {
+              filtered = itemsForLine.filter((it) => !!it.supplied_at);
+            } else if (tab === "in_progress") {
+              filtered = itemsForLine.filter(
+                (it) => !it.supplied_at && it.status !== "waiting"
+              );
+            } else {
+              filtered = itemsForLine.filter((it) => !it.supplied_at);
+            }
           } else {
-            filtered = itemsForLine.filter(
-              (it) => it.status !== "completed"
-            );
+            if (tab === "in_progress") {
+              filtered = itemsForLine.filter(
+                (it) =>
+                  it.status !== "completed" && it.status !== "waiting"
+              );
+            } else if (tab === "finished") {
+              filtered = itemsForLine.filter((it) => it.status === "completed");
+            } else {
+              filtered = itemsForLine.filter(
+                (it) => it.status !== "completed"
+              );
+            }
           }
 
           setItems(filtered);
@@ -179,7 +201,7 @@ export default function LinePage() {
     }
 
     checkAccessAndLoad();
-  }, [profile, lineId, tab, supabase, router, isLocal]);
+  }, [profile, lineId, tab, supabase, router, isLocal, refreshKey]);
 
   function syncScroll(source: "fixed" | "gantt") {
     if (source === "fixed" && fixedRef.current && ganttRef.current) {
@@ -379,11 +401,11 @@ export default function LinePage() {
 
     if (isLocal) {
       setItems((prev) =>
-        prev.map((item) =>
-          item.id === itemId
-            ? { ...item, supplied_at: nowIso }
-            : item
-        )
+        tab === "finished"
+          ? prev.map((item) =>
+              item.id === itemId ? { ...item, supplied_at: nowIso } : item
+            )
+          : prev.filter((item) => item.id !== itemId)
       );
       try {
         const raw = window.localStorage.getItem("pcp-local-orders");
@@ -411,9 +433,11 @@ export default function LinePage() {
       .update({ supplied_at: nowIso })
       .eq("id", itemId);
     setItems((prev) =>
-      prev.map((item) =>
-        item.id === itemId ? { ...item, supplied_at: nowIso } : item
-      )
+      tab === "finished"
+        ? prev.map((item) =>
+            item.id === itemId ? { ...item, supplied_at: nowIso } : item
+          )
+        : prev.filter((item) => item.id !== itemId)
     );
   }
 

@@ -40,8 +40,8 @@ export function sortLineItemsByKeys(
           bv = b.quantity;
           break;
         case "delivery_deadline":
-          av = a.order.delivery_deadline || "";
-          bv = b.order.delivery_deadline || "";
+          av = a.pcp_deadline || a.order.pcp_deadline || a.order.delivery_deadline || "";
+          bv = b.pcp_deadline || b.order.pcp_deadline || b.order.delivery_deadline || "";
           break;
         case "production_start":
           av = a.production_start || "";
@@ -366,7 +366,7 @@ export function LineTable({
 
       <div>
         {items.map((item, idx) => {
-          const pcpDeadline = item.order.pcp_deadline ?? item.order.delivery_deadline;
+          const pcpDeadline = item.pcp_deadline ?? item.order.pcp_deadline ?? item.order.delivery_deadline;
           const pcpDisplay =
             pcpDeadline && format(new Date(pcpDeadline), "d/M/yy");
 
