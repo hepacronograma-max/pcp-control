@@ -1,153 +1,81 @@
-'use client';
+import type { Metadata } from "next";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { findLocalUserByEmail } from "@/lib/local-users";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
+export const metadata: Metadata = {
+  title: "Login - PCP Control",
+};
 
-export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  const supabase = createClient();
-
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-
-    // Modo local/demo: sem Supabase, usa usuários do localStorage.
-    if (!supabase) {
-      if (email === "admin@local" && password === "123456") {
-        const demoProfile = {
-          id: "local-admin",
-          company_id: "local-company",
-          full_name: "Administrador Local",
-          email,
-          role: "manager",
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        window.localStorage.setItem(
-          "pcp-local-profile",
-          JSON.stringify(demoProfile)
-        );
-        router.push("/dashboard");
-        router.refresh();
-        return;
-      }
-      const localProfile = findLocalUserByEmail(email, password);
-      if (localProfile) {
-        window.localStorage.setItem(
-          "pcp-local-profile",
-          JSON.stringify(localProfile)
-        );
-        if (localProfile.role === "operator") {
-          const usersRaw = window.localStorage.getItem("pcp-local-users");
-          const users = usersRaw ? JSON.parse(usersRaw) : [];
-          const u = users.find((x: { id: string }) => x.id === localProfile.id);
-          const firstLineId = u?.line_ids?.[0];
-          router.push(firstLineId ? `/linha/${firstLineId}` : "/dashboard");
-        } else {
-          router.push("/dashboard");
-        }
-        router.refresh();
-        return;
-      }
-      setError("Email ou senha incorretos");
-      setLoading(false);
-      return;
-    }
-
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error || !data.user) {
-      setError("Email ou senha incorretos");
-      setLoading(false);
-      return;
-    }
-
-    const userId = data.user.id;
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", userId)
-      .single();
-
-    if (profile?.role === "operator") {
-      const { data: opLines } = await supabase
-        .from("operator_lines")
-        .select("line_id")
-        .eq("user_id", userId)
-        .limit(1);
-      const firstLineId = opLines?.[0]?.line_id;
-      router.push(firstLineId ? `/linha/${firstLineId}` : "/dashboard");
-    } else {
-      router.push("/dashboard");
-    }
-
-    router.refresh();
-  }
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const params = await searchParams;
+  const errorMsg =
+    params?.error === "credenciais" ? "Email ou senha incorretos." : "";
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold text-[#1B4F72]">
-            PCP Control
-          </CardTitle>
-          <CardDescription>
+      <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="text-center mb-6">
+          <h1 className="text-2xl font-bold text-[#1B4F72]">PCP Control</h1>
+          <p className="text-sm text-slate-500 mt-1">
             Sistema de Planejamento e Controle de Produção
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu@email.com"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-              />
-            </div>
-            {error && <p className="text-sm text-red-500">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Entrando..." : "Entrar"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+          </p>
+        </div>
+
+        {/* Formulário HTML puro - sem JavaScript, funciona sempre */}
+        <form
+          action="/api/auth/local-login"
+          method="POST"
+          className="space-y-4"
+        >
+          <div>
+            <label
+              htmlFor="email"
+              className="block text-sm font-medium text-slate-700 mb-1"
+            >
+              Email
+            </label>
+            <input
+              id="email"
+              name="email"
+              type="text"
+              defaultValue="admin@local"
+              required
+              className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm"
+            />
+          </div>
+          <div>
+            <label
+              htmlFor="password"
+              className="block text-sm font-medium text-slate-700 mb-1"
+            >
+              Senha
+            </label>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              defaultValue="123456"
+              required
+              className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm"
+            />
+          </div>
+          {errorMsg && (
+            <p className="text-sm text-red-500">{errorMsg}</p>
+          )}
+          <button
+            type="submit"
+            className="w-full h-9 rounded-md bg-[#1B4F72] text-white text-sm font-medium hover:bg-[#2E86C1]"
+          >
+            Entrar
+          </button>
+        </form>
+
+        <p className="mt-3 text-xs text-slate-500 text-center">
+          Local: admin@local / 123456
+        </p>
+      </div>
     </div>
   );
 }
-

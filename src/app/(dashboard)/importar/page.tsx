@@ -148,8 +148,21 @@ export default function ImportPage() {
     const formData = new FormData();
     formData.append("file", file);
 
+    // Envia pasta matriz para a API salvar o PDF (quando configurada)
+    try {
+      const raw = window.localStorage.getItem("pcp-local-company");
+      if (raw) {
+        const company = JSON.parse(raw) as { orders_path?: string };
+        if (company?.orders_path?.trim()) {
+          formData.append("orders_path", company.orders_path.trim());
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     const useSupabaseApi = createClient() !== null;
-    const url = useSupabaseApi ? "/api/import-pdf" : "http://localhost:3201/pdf/import";
+    const url = "/api/import-pdf";
 
     const res = await fetch(url, {
       method: "POST",
@@ -184,7 +197,7 @@ export default function ImportPage() {
       };
     }
 
-    if (useSupabaseApi && data.savedToSupabase) {
+    if (data.savedToSupabase) {
       return {
         fileName: file.name,
         success: true,
@@ -194,22 +207,13 @@ export default function ImportPage() {
       };
     }
 
-    if (!useSupabaseApi) {
-      return importOnePdfLocal(file, {
-        orderNumber: data.orderNumber,
-        clientName: data.clientName,
-        deliveryDate: data.deliveryDate ?? null,
-        items: data.items ?? [],
-      });
-    }
-
-    return {
-      fileName: file.name,
-      success: true,
+    // Modo local (cookie) ou API sem Supabase: salva no localStorage
+    return importOnePdfLocal(file, {
       orderNumber: data.orderNumber,
       clientName: data.clientName,
-      itemCount: data.items?.length ?? 0,
-    };
+      deliveryDate: data.deliveryDate ?? null,
+      items: data.items ?? [],
+    });
   }
 
   async function handleImport() {

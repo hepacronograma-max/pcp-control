@@ -33,18 +33,23 @@ export default function LinesSettingsPage() {
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const isLocal =
+    !supabase ||
+    profile?.company_id === "local-company" ||
+    profile?.id === "local-admin";
+
   useEffect(() => {
     if (!profile?.company_id) return;
     const companyId = profile.company_id;
-    if (!supabase) {
+    if (isLocal) {
       const all = loadLocalLines();
-      const companyLines = all
-        .filter((l) => l.company_id === companyId)
-        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-      setLines(companyLines);
+      const sorted = [...all].sort(
+        (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      );
+      setLines(sorted);
       return;
     }
-    const client = supabase;
+    const client = supabase!;
     async function loadLines() {
       const { data } = await client
         .from("production_lines")
@@ -54,17 +59,17 @@ export default function LinesSettingsPage() {
       setLines(data ?? []);
     }
     loadLines();
-  }, [profile, supabase]);
+  }, [profile, supabase, isLocal]);
 
   function refresh() {
     if (!profile?.company_id) return;
     const companyId = profile.company_id;
-    if (!supabase) {
+    if (isLocal) {
       const all = loadLocalLines();
-      const companyLines = all
-        .filter((l) => l.company_id === companyId)
-        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-      setLines(companyLines);
+      const sorted = [...all].sort(
+        (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      );
+      setLines(sorted);
       return;
     }
     supabase
@@ -79,11 +84,12 @@ export default function LinesSettingsPage() {
     if (!profile?.company_id || !newName.trim()) return;
     setSaving(true);
     try {
-      if (!supabase) {
+      if (isLocal) {
         const all = loadLocalLines();
-        const maxOrder = all
-          .filter((l) => l.company_id === profile.company_id)
-          .reduce((max, l) => Math.max(max, l.sort_order ?? 0), 0);
+        const maxOrder = all.reduce(
+          (max, l) => Math.max(max, l.sort_order ?? 0),
+          0
+        );
         const newLine: ProductionLine = {
           id: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `line-${Date.now()}`,
           company_id: profile.company_id,
@@ -125,7 +131,7 @@ export default function LinesSettingsPage() {
   }
 
   async function handleRename(id: string, name: string) {
-    if (!supabase) {
+    if (isLocal) {
       const all = loadLocalLines();
       const next = all.map((l) => (l.id === id ? { ...l, name, updated_at: new Date().toISOString() } : l));
       saveLocalLines(next);
@@ -148,7 +154,7 @@ export default function LinesSettingsPage() {
   }
 
   async function handleToggleActive(id: string, active: boolean) {
-    if (!supabase) {
+    if (isLocal) {
       const all = loadLocalLines();
       const next = all.map((l) => (l.id === id ? { ...l, is_active: active, updated_at: new Date().toISOString() } : l));
       saveLocalLines(next);
@@ -179,7 +185,7 @@ export default function LinesSettingsPage() {
     const current = lines[index];
     const target = lines[targetIndex];
 
-    if (!supabase) {
+    if (isLocal) {
       const all = loadLocalLines();
       const swap = (arr: ProductionLine[]) => {
         const out = [...arr];
@@ -193,7 +199,7 @@ export default function LinesSettingsPage() {
       };
       const next = swap(all);
       saveLocalLines(next);
-      setLines(next.filter((l) => l.company_id === profile?.company_id).sort((a, b) => a.sort_order - b.sort_order));
+      setLines([...next].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)));
       return;
     }
 

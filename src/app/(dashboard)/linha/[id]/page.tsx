@@ -43,13 +43,18 @@ export default function LinePage() {
   const fixedRef = useRef<HTMLDivElement | null>(null);
   const ganttRef = useRef<HTMLDivElement | null>(null);
 
+  const isLocal =
+    !supabase ||
+    profile?.company_id === "local-company" ||
+    profile?.id === "local-admin" ||
+    profile?.id?.startsWith("local-");
+
   useEffect(() => {
     if (!profile || !profile.company_id || !lineId) return;
     const currentProfile = profile;
 
     async function checkAccessAndLoad() {
-      // Modo local: sem Supabase, usamos dados do localStorage
-      if (!supabase) {
+      if (isLocal) {
         setLoadingData(true);
         try {
           // Carrega definição da linha
@@ -175,7 +180,7 @@ export default function LinePage() {
     }
 
     checkAccessAndLoad();
-  }, [profile, lineId, tab, supabase, router]);
+  }, [profile, lineId, tab, supabase, router, isLocal]);
 
   function syncScroll(source: "fixed" | "gantt") {
     if (source === "fixed" && fixedRef.current && ganttRef.current) {
@@ -204,8 +209,7 @@ export default function LinePage() {
       return;
     }
 
-    // Modo local: atualiza item em memória e no localStorage
-    if (!supabase) {
+    if (isLocal) {
       setItems((prev) =>
         prev.map((item) =>
           item.id === itemId
@@ -268,7 +272,7 @@ export default function LinePage() {
   }
 
   async function handleChangeNotes(itemId: string, value: string) {
-    if (!supabase) {
+    if (isLocal) {
       setItems((prev) =>
         prev.map((item) =>
           item.id === itemId ? { ...item, notes: value } : item
@@ -308,7 +312,7 @@ export default function LinePage() {
     if (!profile) return;
 
     const nowIso = new Date().toISOString();
-    if (!supabase) {
+    if (isLocal) {
       // Atualiza em memória
       setItems((prev) =>
         tab === "finished"

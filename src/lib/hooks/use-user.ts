@@ -11,6 +11,43 @@ export function useUser() {
 
   useEffect(() => {
     async function getProfile() {
+      // Em localhost: verifica admin@local (perfil no localStorage)
+      if (typeof window !== "undefined") {
+        const isLocalhost =
+          window.location.hostname === "localhost" ||
+          window.location.hostname === "127.0.0.1";
+        const hasLocalAuth = document.cookie
+          .split("; ")
+          .some((c) => c.startsWith("pcp-local-auth=1"));
+        if (isLocalhost && hasLocalAuth) {
+          try {
+            let raw = window.localStorage.getItem("pcp-local-profile");
+            if (!raw) {
+              const defaultProfile: Profile = {
+                id: "local-admin",
+                company_id: "local-company",
+                full_name: "Administrador Local",
+                email: "admin@local",
+                role: "manager",
+                is_active: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              };
+              window.localStorage.setItem(
+                "pcp-local-profile",
+                JSON.stringify(defaultProfile)
+              );
+              raw = JSON.stringify(defaultProfile);
+            }
+            if (raw) setProfile(JSON.parse(raw) as Profile);
+          } catch {
+            // ignore
+          }
+          setLoading(false);
+          return;
+        }
+      }
+
       // Modo local/demo: sem Supabase, usa perfil salvo em localStorage.
       if (!supabase) {
         try {

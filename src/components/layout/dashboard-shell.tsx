@@ -19,11 +19,30 @@ interface OperatorLine {
   line_id: string;
 }
 
+/** Conta itens não programados (status waiting ou sem production_start) por linha */
+function countUnprogrammedByLine(
+  orders: { items: { line_id: string | null; status: string; production_start: string | null }[] }[]
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const order of orders) {
+    for (const item of order.items) {
+      if (!item.line_id) continue;
+      const needsProgram =
+        item.status === "waiting" || item.production_start == null;
+      if (needsProgram) {
+        counts[item.line_id] = (counts[item.line_id] ?? 0) + 1;
+      }
+    }
+  }
+  return counts;
+}
+
 export function DashboardShell({ children }: { children: ReactNode }) {
   const { profile, loading } = useUser();
   const [company, setCompany] = useState<CompanyInfo | null>(null);
   const [lines, setLines] = useState<ProductionLine[]>([]);
   const [operatorLines, setOperatorLines] = useState<OperatorLine[]>([]);
+  const [unprogrammedByLine, setUnprogrammedByLine] = useState<Record<string, number>>({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
@@ -32,13 +51,29 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!profile) return;
 
-    // Modo local: carrega empresa, linhas e linhas do operador do localStorage
-    if (!supabase && profile.company_id) {
-      setCompany({
-        id: profile.company_id,
-        name: "Empresa Local",
-        logo_url: null,
-      });
+    const isLocal =
+      !supabase ||
+      profile.company_id === "local-company" ||
+      profile.id === "local-admin" ||
+      profile.id?.startsWith("local-");
+    if (isLocal && profile.company_id) {
+      try {
+        const raw =
+          typeof window !== "undefined" &&
+          window.localStorage.getItem("pcp-local-company");
+        const parsed = raw ? JSON.parse(raw) : null;
+        setCompany({
+          id: profile.company_id,
+          name: parsed?.name ?? "Empresa Local",
+          logo_url: parsed?.logo_url ?? null,
+        });
+      } catch {
+        setCompany({
+          id: profile.company_id,
+          name: "Empresa Local",
+          logo_url: null,
+        });
+      }
       try {
         const raw = typeof window !== "undefined" && window.localStorage.getItem("pcp-local-lines");
         const parsed = raw ? (JSON.parse(raw) as ProductionLine[]) : [];
@@ -52,6 +87,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       if (profile.role === "operator") {
         const lineIds = getOperatorLineIdsForLocalUser(profile.id);
         setOperatorLines(lineIds.map((line_id) => ({ line_id })));
+      }
+      try {
+        const rawOrders = typeof window !== "undefined" && window.localStorage.getItem("pcp-local-orders");
+        const orders = rawOrders ? (JSON.parse(rawOrders) as { items: { line_id: string | null; status: string; production_start: string | null }[] }[]) : [];
+        setUnprogrammedByLine(countUnprogrammedByLine(orders));
+      } catch {
+        setUnprogrammedByLine({});
       }
       return;
     }
@@ -81,10 +123,53 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           .eq("user_id", p.id);
         setOperatorLines(opLines ?? []);
       }
+
+      if (p.company_id) {
+        try {
+          const { data: itemsData } = await client
+            .from("order_items")
+            .select("line_id, status, production_start")
+            .not("line_id", "is", null);
+          const counts: Record<string, number> = {};
+          for (const it of itemsData ?? []) {
+            if (it.line_id && (it.status === "waiting" || !it.production_start)) {
+              counts[it.line_id] = (counts[it.line_id] ?? 0) + 1;
+            }
+          }
+          setUnprogrammedByLine(counts);
+        } catch {
+          setUnprogrammedByLine({});
+        }
+      }
     }
 
     loadData(profile);
   }, [profile, supabase, pathname]);
+
+  // Atualiza contagem de itens não programados (modo local) ao trocar de aba ou periodicamente
+  useEffect(() => {
+    const isLocal2 =
+      !supabase ||
+      profile?.company_id === "local-company" ||
+      profile?.id === "local-admin" ||
+      profile?.id?.startsWith("local-");
+    if (!isLocal2 || !profile?.company_id) return;
+    function refreshCounts() {
+      try {
+        const raw = typeof window !== "undefined" && window.localStorage.getItem("pcp-local-orders");
+        const orders = raw ? (JSON.parse(raw) as { items: { line_id: string | null; status: string; production_start: string | null }[] }[]) : [];
+        setUnprogrammedByLine(countUnprogrammedByLine(orders));
+      } catch {
+        // ignore
+      }
+    }
+    const interval = setInterval(refreshCounts, 5000);
+    window.addEventListener("focus", refreshCounts);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", refreshCounts);
+    };
+  }, [profile, supabase]);
 
   const pageTitle = useMemo(() => {
     if (pathname === "/dashboard" || pathname === "/") return "Dashboard";
@@ -105,10 +190,15 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }, [profile, lines, operatorLines]);
 
   function handleLogout() {
-    if (!supabase) {
-      // Modo local: remove perfil do localStorage
+    const isLocalUser =
+      !supabase ||
+      profile?.company_id === "local-company" ||
+      profile?.id === "local-admin" ||
+      profile?.id?.startsWith("local-");
+    if (isLocalUser) {
       window.localStorage.removeItem("pcp-local-profile");
-      router.push("/login");
+      document.cookie = "pcp-local-auth=; path=/; max-age=0";
+      router.push("/login.html");
       router.refresh();
       return;
     }
@@ -128,10 +218,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       : "Operador"
     : "";
 
+  // Quando profile é null (ex: perfil não existe no Supabase), mostramos menu completo
+  // para o usuário poder navegar e configurar. Evita sidebar vazio no ambiente local.
   const canViewDashboard =
-    profile && hasPermission(profile.role, "viewDashboard");
-  const canViewOrders = profile && hasPermission(profile.role, "viewOrders");
-  const canViewSettings = profile && hasPermission(profile.role, "viewSettings");
+    !profile || hasPermission(profile.role, "viewDashboard");
+  const canViewOrders =
+    !profile || hasPermission(profile.role, "viewOrders");
+  const canViewSettings =
+    !profile || hasPermission(profile.role, "viewSettings");
 
   return (
     <div className="min-h-screen flex">
@@ -179,6 +273,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               label={line.name}
               href={`/linha/${line.id}`}
               active={pathname?.startsWith(`/linha/${line.id}`)}
+              hasUnprogrammed={(unprogrammedByLine[line.id] ?? 0) > 0}
             />
           ))}
           {canViewSettings && (
@@ -297,6 +392,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   label={line.name}
                   href={`/linha/${line.id}`}
                   active={pathname?.startsWith(`/linha/${line.id}`)}
+                  hasUnprogrammed={(unprogrammedByLine[line.id] ?? 0) > 0}
                   onClick={() => setSidebarOpen(false)}
                 />
               ))}
@@ -331,10 +427,11 @@ interface SidebarItemProps {
   label: string;
   href: string;
   active?: boolean;
+  hasUnprogrammed?: boolean;
   onClick?: () => void;
 }
 
-function SidebarItem({ label, href, active, onClick }: SidebarItemProps) {
+function SidebarItem({ label, href, active, hasUnprogrammed, onClick }: SidebarItemProps) {
   const router = useRouter();
 
   function handleClick() {
@@ -346,13 +443,19 @@ function SidebarItem({ label, href, active, onClick }: SidebarItemProps) {
   return (
     <button
       onClick={handleClick}
-      className={`w-full flex items-center justify-between rounded-md px-3 py-2 text-left text-xs font-medium transition-colors ${
+      className={`w-full flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-xs font-medium transition-colors ${
         active
           ? "bg-[#1B4F72] text-white"
           : "text-slate-700 hover:bg-slate-100"
       }`}
     >
-      <span>{label}</span>
+      {hasUnprogrammed && (
+        <span
+          className="h-2 w-2 shrink-0 rounded-full bg-red-500 animate-pulse"
+          title="Itens aguardando programação"
+        />
+      )}
+      <span className="flex-1 truncate">{label}</span>
     </button>
   );
 }

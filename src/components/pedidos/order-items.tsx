@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type {
   OrderItemWithLine,
   ProductionLine,
@@ -18,6 +19,17 @@ export function OrderItems({
   onChangeLine,
   onChangeQuantity,
 }: OrderItemsProps) {
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => {
+    setExpandedItems((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="bg-slate-50 border-t border-slate-200">
       <div className="grid grid-cols-[40px_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1.2fr)] gap-2 px-4 py-1.5 text-[11px] font-semibold text-slate-500 border-b border-slate-200">
@@ -28,13 +40,21 @@ export function OrderItems({
         <span>Prazo PCP</span>
         <span>Prazo Prod.</span>
       </div>
-      {items.map((item) => (
+      {items.map((item) => {
+        const isExpanded = expandedItems.has(item.id);
+        return (
         <div
           key={item.id}
           className="grid grid-cols-[40px_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.5fr)_minmax(0,1.2fr)] gap-2 px-4 py-2 text-xs items-center"
         >
           <div className="text-slate-400">{item.item_number}</div>
-          <div className="truncate">{item.description}</div>
+          <div
+            className={isExpanded ? "cursor-pointer whitespace-normal break-words" : "truncate cursor-pointer hover:text-[#1B4F72]"}
+            title={item.description}
+            onClick={() => toggleExpand(item.id)}
+          >
+            {item.description}
+          </div>
           <div>
             <input
               type="number"
@@ -83,7 +103,8 @@ export function OrderItems({
             />
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

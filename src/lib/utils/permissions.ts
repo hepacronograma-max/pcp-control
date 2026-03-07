@@ -1,7 +1,7 @@
 import type { UserRole } from "@/lib/types/database";
 
 export const PERMISSIONS = {
-  viewDashboard: ["super_admin", "manager", "pcp"] as UserRole[],
+  viewDashboard: ["super_admin", "manager", "pcp", "operator"] as UserRole[],
   viewOrders: ["super_admin", "manager", "pcp"] as UserRole[],
   viewAllLines: ["super_admin", "manager", "pcp"] as UserRole[],
   viewSettings: ["super_admin", "manager"] as UserRole[],

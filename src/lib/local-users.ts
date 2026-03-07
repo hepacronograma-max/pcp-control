@@ -82,6 +82,37 @@ export function toggleLocalUserActive(userId: string, active: boolean): boolean 
   return true;
 }
 
+export function updateLocalUser(
+  userId: string,
+  data: {
+    fullName?: string;
+    email?: string;
+    password?: string;
+    role?: "pcp" | "operator";
+    lineIds?: string[];
+  }
+): boolean {
+  const users = getLocalUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx < 0) return false;
+  if (data.fullName !== undefined) users[idx].full_name = data.fullName.trim();
+  if (data.email !== undefined) users[idx].email = data.email.trim();
+  if (data.password !== undefined && data.password.length > 0) users[idx].password = data.password;
+  if (data.role !== undefined) users[idx].role = data.role;
+  if (data.lineIds !== undefined) users[idx].line_ids = data.lineIds;
+  users[idx].updated_at = new Date().toISOString();
+  setLocalUsers(users);
+  return true;
+}
+
+export function deleteLocalUser(userId: string): boolean {
+  const users = getLocalUsers();
+  const filtered = users.filter((u) => u.id !== userId);
+  if (filtered.length === users.length) return false;
+  setLocalUsers(filtered);
+  return true;
+}
+
 export function getOperatorLineIdsForLocalUser(userId: string): string[] {
   const users = getLocalUsers();
   const user = users.find((u) => u.id === userId);

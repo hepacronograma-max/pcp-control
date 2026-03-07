@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/hooks/use-user";
+import { getOperatorLineIdsForLocalUser } from "@/lib/local-users";
 import type {
   OrderWithItems,
   ProductionLine,
@@ -17,17 +19,35 @@ type TabKey = "open" | "finished";
 export default function PedidosPage() {
   const supabase = createClient();
   const { profile, loading } = useUser();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!loading && profile && profile.role === "operator") {
+      const lineIds = getOperatorLineIdsForLocalUser(profile.id);
+      if (lineIds.length > 0) {
+        router.replace(`/linha/${lineIds[0]}`);
+      } else {
+        router.replace("/");
+      }
+    }
+  }, [loading, profile, router]);
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [lines, setLines] = useState<ProductionLine[]>([]);
   const [tab, setTab] = useState<TabKey>("open");
   const [loadingData, setLoadingData] = useState(false);
+
+  const isLocal =
+    !supabase ||
+    profile?.company_id === "local-company" ||
+    profile?.id === "local-admin" ||
+    (profile?.id?.startsWith("local-") ?? false);
 
   function updateOrdersState(
     updater: (prev: OrderWithItems[]) => OrderWithItems[]
   ) {
     setOrders((prev) => {
       const next = updater(prev);
-      if (!supabase) {
+      if (isLocal) {
         try {
           window.localStorage.setItem(
             "pcp-local-orders",
@@ -48,8 +68,8 @@ export default function PedidosPage() {
     async function loadData() {
       setLoadingData(true);
 
-      // Modo local: se não houver Supabase, carrega pedidos e linhas do localStorage.
-      if (!supabase) {
+      // Modo local: carrega pedidos e linhas do localStorage
+      if (isLocal) {
         try {
           const raw = window.localStorage.getItem("pcp-local-orders");
           if (raw) {
@@ -71,9 +91,9 @@ export default function PedidosPage() {
           }
           const linesRaw = window.localStorage.getItem("pcp-local-lines");
           const localLines = linesRaw
-            ? (JSON.parse(linesRaw) as ProductionLine[]).filter(
-                (l) => l.company_id === companyId && l.is_active !== false
-              ).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+            ? (JSON.parse(linesRaw) as ProductionLine[])
+                .filter((l) => l.is_active !== false)
+                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
             : [];
           setLines(localLines);
         } catch {
@@ -113,7 +133,7 @@ export default function PedidosPage() {
     }
 
     loadData();
-  }, [profile, supabase]);
+  }, [profile, supabase, isLocal]);
 
   const userRole: UserRole | null = profile ? profile.role : null;
   const canImport =
@@ -129,7 +149,7 @@ export default function PedidosPage() {
   );
 
   async function handleUpdateOrderPcpDate(orderId: string, date: string | null) {
-    if (!supabase) {
+    if (isLocal) {
       // No modo local, o prazo PCP do pedido deve ser propagado
       // para todos os itens do pedido (não editável por item).
       updateOrdersState((prev) =>
@@ -176,7 +196,7 @@ export default function PedidosPage() {
   }
 
   async function handleUpdateItemLine(itemId: string, lineId: string | null) {
-    if (!supabase) {
+    if (isLocal) {
       updateOrdersState((prev) =>
         prev.map((order) => {
           const nextOrder = {
@@ -208,7 +228,7 @@ export default function PedidosPage() {
   // Prazo PCP por item deixou de ser editável; os itens herdam o prazo do pedido.
 
   async function handleUpdateItemQuantity(itemId: string, quantity: number) {
-    if (!supabase) {
+    if (isLocal) {
       updateOrdersState((prev) =>
         prev.map((order) => {
           const nextItems = order.items.map((item) =>
@@ -240,7 +260,7 @@ export default function PedidosPage() {
       delivery_deadline?: string | null;
     }
   ) {
-    if (!supabase) {
+    if (isLocal) {
       updateOrdersState((prev) =>
         prev.map((o) =>
           o.id === orderId
@@ -273,7 +293,7 @@ export default function PedidosPage() {
     ) {
       return;
     }
-    if (!supabase) {
+    if (isLocal) {
       updateOrdersState((prev) => prev.filter((o) => o.id !== orderId));
       return;
     }
@@ -301,7 +321,7 @@ export default function PedidosPage() {
     }
 
     const nowIso = new Date().toISOString();
-    if (!supabase) {
+    if (isLocal) {
       updateOrdersState((prev) =>
         prev.map((o) =>
           o.id === orderId
@@ -364,7 +384,7 @@ export default function PedidosPage() {
     if (!profile || !profile.company_id) return;
     if (!newOrderNumber || !newClientName || newItems.length === 0) return;
 
-    if (!supabase) {
+    if (isLocal) {
       const genId = () =>
         typeof crypto !== "undefined" && "randomUUID" in crypto
           ? crypto.randomUUID()

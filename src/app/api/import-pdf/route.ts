@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PDFParse } from "pdf-parse";
+import { writeFile, mkdir } from "fs/promises";
+import { existsSync } from "fs";
+import path from "path";
+import { getDocument } from "pdfjs-serverless";
 import { parseTotvsOrcamento } from "@/lib/pdf/parse-totvs";
 import {
   parseOmiePedido,
@@ -8,6 +11,31 @@ import {
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB (Vercel limite ~4.5 MB)
+
+/** Salva o PDF na pasta matriz (só funciona fora do Vercel, ex: local ou self-hosted) */
+async function savePdfToFolder(
+  buffer: Buffer,
+  fileName: string,
+  orderNumber: string,
+  ordersPath: string
+): Promise<string | null> {
+  if (process.env.VERCEL) return null;
+  const trimmed = (ordersPath || "").trim();
+  if (!trimmed) return null;
+  try {
+    const safeOrder = orderNumber.replace(/[<>:"/\\|?*]/g, "_");
+    const folderPath = path.join(trimmed, safeOrder);
+    if (!existsSync(folderPath)) {
+      await mkdir(folderPath, { recursive: true });
+    }
+    const filePath = path.join(folderPath, fileName);
+    await writeFile(filePath, buffer);
+    return filePath;
+  } catch (err) {
+    console.error("Erro ao salvar PDF na pasta:", err);
+    return null;
+  }
+}
 
 interface ExtractedData {
   orderNumber: string;
@@ -19,21 +47,80 @@ interface ExtractedData {
 async function extractFromPdf(
   buffer: Buffer,
   fileName: string
-): Promise<ExtractedData> {
-  const parser = new PDFParse({ data: buffer });
-  const result = await parser.getText();
-  await parser.destroy();
+): Promise<ExtractedData & { _rawText?: string }> {
+  const document = await getDocument({
+    data: new Uint8Array(buffer),
+    useSystemFonts: true,
+  }).promise;
 
-  const text = (result?.text ?? "") || "";
+  const parts: string[] = [];
+  for (let i = 1; i <= document.numPages; i++) {
+    const page = await document.getPage(i);
+    const textContent = await page.getTextContent();
+    const items = textContent.items as Array<{
+      str?: string;
+      hasEOL?: boolean;
+      transform?: number[];
+    }>;
+
+    let pageText = "";
+    let lastY: number | null = null;
+
+    for (const item of items) {
+      const str = item.str ?? "";
+      const y = item.transform ? item.transform[5] : null;
+
+      if (lastY !== null && y !== null && Math.abs(y - lastY) > 2) {
+        pageText += "\n";
+      } else if (item.hasEOL) {
+        pageText += "\n";
+      } else if (pageText.length > 0 && !pageText.endsWith("\n") && str.length > 0) {
+        pageText += " ";
+      }
+
+      pageText += str;
+      if (y !== null) lastY = y;
+    }
+    parts.push(pageText);
+  }
+  const text = parts.join("\n");
   if (!text || text.length < 20) {
     throw new Error("Não foi possível extrair texto do PDF.");
   }
 
-  const pareceOmie = isOmiePdf(text);
+  console.log("[import-pdf] Texto extraído de", fileName, ":\n", text.substring(0, 3000));
 
-  // 1) Se parece Omie, tentar parser Omie primeiro (otimizado para pedidos Omie)
+  const textLower = text.toLowerCase();
+  const pareceTotvs =
+    textLower.includes("orçamento nº") ||
+    textLower.includes("orcamento nº") ||
+    textLower.includes("orçamento n") ||
+    textLower.includes("itens do orçamento") ||
+    textLower.includes("itens do orcamento") ||
+    textLower.includes("previsão de faturamento") ||
+    textLower.includes("previsao de faturamento");
+  const pareceOmie = !pareceTotvs && isOmiePdf(text);
+
+  // 1) Se parece TOTVS, tentar parser TOTVS primeiro
+  if (pareceTotvs) {
+    const totvs = parseTotvsOrcamento(text, fileName);
+    const isTotvsFallback =
+      totvs.items.length === 1 &&
+      totvs.items[0].description.startsWith("Item importado de ");
+    if (!isTotvsFallback && totvs.items.length > 0) {
+      return {
+        orderNumber: totvs.orderNumber,
+        clientName: totvs.clientName,
+        deliveryDate: totvs.deliveryDate ?? null,
+        items: totvs.items,
+        _rawText: text,
+      };
+    }
+  }
+
+  // 2) Se parece Omie, tentar parser Omie
   let omie: ReturnType<typeof parseOmiePedido> | null = null;
-  if (pareceOmie) {
+  if (pareceOmie || !pareceTotvs) {
     omie = parseOmiePedido(text, fileName);
     const isOmieFallback =
       omie.items.length === 1 &&
@@ -44,40 +131,40 @@ async function extractFromPdf(
         clientName: omie.clientName,
         deliveryDate: omie.deliveryDate ?? null,
         items: omie.items,
+        _rawText: text,
       };
     }
   }
 
-  // 2) Tentar parser TOTVS
-  const totvs = parseTotvsOrcamento(text, fileName);
-  const isTotvsFallback =
-    totvs.items.length === 1 &&
-    totvs.items[0].description.startsWith("Item importado de ");
-
-  if (!isTotvsFallback && totvs.items.length > 0) {
+  // 3) Fallback: retornar o que tiver
+  if (pareceTotvs) {
+    const totvs = parseTotvsOrcamento(text, fileName);
     return {
       orderNumber: totvs.orderNumber,
       clientName: totvs.clientName,
       deliveryDate: totvs.deliveryDate ?? null,
       items: totvs.items,
+      _rawText: text,
     };
   }
 
-  // 3) Se Omie detectado, preferir resultado Omie; senão TOTVS
   if (omie) {
     return {
       orderNumber: omie.orderNumber,
       clientName: omie.clientName,
       deliveryDate: omie.deliveryDate ?? null,
       items: omie.items,
+      _rawText: text,
     };
   }
 
+  const fallback = parseOmiePedido(text, fileName);
   return {
-    orderNumber: totvs.orderNumber,
-    clientName: totvs.clientName,
-    deliveryDate: totvs.deliveryDate ?? null,
-    items: totvs.items,
+    orderNumber: fallback.orderNumber,
+    clientName: fallback.clientName,
+    deliveryDate: fallback.deliveryDate ?? null,
+    items: fallback.items,
+    _rawText: text,
   };
 }
 
@@ -105,6 +192,40 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const extracted = await extractFromPdf(buffer, file.name);
+
+    // Pasta matriz: cliente pode enviar ou virá da empresa (Supabase)
+    let ordersPath =
+      (formData.get("orders_path") as string)?.trim() || "";
+
+    // Modo local: cookie pcp-local-auth em localhost → retorna dados para o cliente salvar no localStorage
+    const host = request.headers.get("host") || "";
+    const hostname = host.split(":")[0];
+    const isLocalhost =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1" ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("10.");
+    const hasLocalAuth =
+      request.cookies.get("pcp-local-auth")?.value === "1";
+    if (isLocalhost && hasLocalAuth) {
+      const savedPath = await savePdfToFolder(
+        buffer,
+        file.name,
+        extracted.orderNumber,
+        ordersPath
+      );
+      return NextResponse.json({
+        success: true,
+        orderNumber: extracted.orderNumber,
+        clientName: extracted.clientName,
+        deliveryDate: extracted.deliveryDate,
+        items: extracted.items,
+        savedToSupabase: false,
+        pdfSavedTo: savedPath ?? undefined,
+        _debug_text: extracted._rawText?.substring(0, 2000),
+      });
+    }
 
     // Tentar salvar no Supabase se usuário autenticado
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -138,6 +259,16 @@ export async function POST(request: NextRequest) {
             },
             { status: 400 }
           );
+        }
+
+        if (!ordersPath) {
+          const { data: company } = await supabase
+            .from("companies")
+            .select("orders_path, import_path")
+            .eq("id", profile.company_id)
+            .single();
+          ordersPath =
+            (company?.orders_path || company?.import_path || "").trim();
         }
 
         // Verificar duplicidade
@@ -204,6 +335,13 @@ export async function POST(request: NextRequest) {
           );
         }
 
+        const savedPath = await savePdfToFolder(
+          buffer,
+          file.name,
+          extracted.orderNumber,
+          ordersPath
+        );
+
         return NextResponse.json({
           success: true,
           orderNumber: extracted.orderNumber,
@@ -212,6 +350,7 @@ export async function POST(request: NextRequest) {
           itemCount: extracted.items.length,
           savedToSupabase: true,
           orderId: createdOrder.id,
+          pdfSavedTo: savedPath ?? undefined,
         });
       } catch (supabaseErr) {
         console.error("Erro Supabase na importação:", supabaseErr);
@@ -228,7 +367,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Sem Supabase: retornar apenas os dados extraídos (modo local usa localhost:3201)
+    // Sem Supabase: retornar dados extraídos; salvar PDF na pasta se orders_path enviado
+    const savedPath = await savePdfToFolder(
+      buffer,
+      file.name,
+      extracted.orderNumber,
+      ordersPath
+    );
+
     return NextResponse.json({
       success: true,
       orderNumber: extracted.orderNumber,
@@ -236,6 +382,7 @@ export async function POST(request: NextRequest) {
       deliveryDate: extracted.deliveryDate,
       items: extracted.items,
       savedToSupabase: false,
+      pdfSavedTo: savedPath ?? undefined,
     });
   } catch (err) {
     console.error("Erro na API import-pdf:", err);

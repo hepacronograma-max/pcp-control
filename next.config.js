@@ -9,6 +9,9 @@ const withPWA = require('next-pwa')({
 const nextConfig = {
   reactStrictMode: true,
   turbopack: {},
+  async redirects() {
+    return [{ source: '/login', destination: '/login.html', permanent: false }];
+  },
 };
 
 module.exports = withPWA(nextConfig);
