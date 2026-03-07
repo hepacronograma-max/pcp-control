@@ -19,7 +19,7 @@ interface OperatorLine {
   line_id: string;
 }
 
-/** Conta itens não programados (status waiting ou sem production_start) por linha */
+/** Conta itens não programados (status waiting ou sem production_start, excluindo finalizados) por linha */
 function countUnprogrammedByLine(
   orders: { items: { line_id: string | null; status: string; production_start: string | null }[] }[]
 ): Record<string, number> {
@@ -27,6 +27,7 @@ function countUnprogrammedByLine(
   for (const order of orders) {
     for (const item of order.items) {
       if (!item.line_id) continue;
+      if (item.status === "completed") continue;
       const needsProgram =
         item.status === "waiting" || item.production_start == null;
       if (needsProgram) {

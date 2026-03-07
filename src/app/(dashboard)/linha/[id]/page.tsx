@@ -335,8 +335,13 @@ export default function LinePage() {
     if (!profile) return;
 
     const nowIso = new Date().toISOString();
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const targetItem = items.find((i) => i.id === itemId);
+
+    const fillStart = !targetItem?.production_start ? todayStr : undefined;
+    const fillEnd = !targetItem?.production_end ? todayStr : undefined;
+
     if (isLocal) {
-      // Atualiza em memória
       setItems((prev) =>
         tab === "finished"
           ? prev.map((item) =>
@@ -346,6 +351,8 @@ export default function LinePage() {
                     status: "completed",
                     completed_at: nowIso,
                     completed_by: profile.id,
+                    ...(fillStart ? { production_start: fillStart } : {}),
+                    ...(fillEnd ? { production_end: fillEnd } : {}),
                   }
                 : item
             )
@@ -362,9 +369,11 @@ export default function LinePage() {
               it.id === itemId
                 ? {
                     ...it,
-                    status: "completed",
+                    status: "completed" as const,
                     completed_at: nowIso,
                     completed_by: profile.id,
+                    production_start: it.production_start || todayStr,
+                    production_end: it.production_end || todayStr,
                   }
                 : it
             ),
@@ -381,16 +390,19 @@ export default function LinePage() {
     }
 
     if (!supabase) return;
+    const updateData: Record<string, unknown> = {
+      status: "completed",
+      completed_at: nowIso,
+      completed_by: profile.id,
+    };
+    if (fillStart) updateData.production_start = todayStr;
+    if (fillEnd) updateData.production_end = todayStr;
+
     await supabase
       .from("order_items")
-      .update({
-        status: "completed",
-        completed_at: nowIso,
-        completed_by: profile.id,
-      })
+      .update(updateData)
       .eq("id", itemId);
 
-    // Remove da aba Em Produção; na aba Finalizados será carregado via query
     setItems((prev) => prev.filter((item) => item.id !== itemId));
   }
 

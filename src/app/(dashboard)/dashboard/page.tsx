@@ -24,33 +24,53 @@ function computeOperatorStats(
   allLines: ProductionLine[]
 ) {
   const lineSet = new Set(lineIds);
+  const hasAlmoxarifado = allLines.some(
+    (l) => lineSet.has(l.id) && l.is_almoxarifado
+  );
+
   const items: (OrderItem & { orderNumber: string; clientName: string; deliveryDeadline: string | null })[] = [];
 
   for (const order of orders) {
     for (const item of order.items) {
-      if (item.line_id && lineSet.has(item.line_id)) {
-        items.push({
-          ...item,
-          orderNumber: order.order_number,
-          clientName: order.client_name,
-          deliveryDeadline: order.delivery_deadline,
-        });
+      if (!item.line_id) continue;
+      const belongsToLine = lineSet.has(item.line_id);
+      const belongsToAlmox = hasAlmoxarifado && !!item.line_id;
+      if (belongsToLine || belongsToAlmox) {
+        const already = items.find((x) => x.id === item.id);
+        if (!already) {
+          items.push({
+            ...item,
+            orderNumber: order.order_number,
+            clientName: order.client_name,
+            deliveryDeadline: order.delivery_deadline,
+          });
+        }
       }
     }
   }
 
-  const total = items.length;
-  const waiting = items.filter((i) => i.status === "waiting").length;
-  const scheduled = items.filter((i) => i.status === "scheduled").length;
-  const completed = items.filter((i) => i.status === "completed").length;
-
+  let total: number, waiting: number, scheduled: number, completed: number, overdue: number;
   const today = new Date().toISOString().slice(0, 10);
-  const overdue = items.filter(
-    (i) =>
-      i.status !== "completed" &&
-      i.deliveryDeadline &&
-      i.deliveryDeadline < today
-  ).length;
+
+  if (hasAlmoxarifado && lineIds.length === 1) {
+    const almoxItems = items;
+    total = almoxItems.length;
+    completed = almoxItems.filter((i) => !!i.supplied_at).length;
+    waiting = almoxItems.filter((i) => !i.supplied_at && i.status === "waiting").length;
+    scheduled = almoxItems.filter((i) => !i.supplied_at && i.status !== "waiting").length;
+    overdue = 0;
+  } else {
+    total = items.length;
+    waiting = items.filter((i) => i.status === "waiting").length;
+    scheduled = items.filter((i) => i.status === "scheduled").length;
+    completed = items.filter((i) => i.status === "completed").length;
+    overdue = items.filter(
+      (i) =>
+        i.status !== "completed" &&
+        i.deliveryDeadline &&
+        i.deliveryDeadline < today
+    ).length;
+  }
 
   const lineStatsMap = new Map<string, OperatorLineStats>();
   for (const lid of lineIds) {
@@ -64,9 +84,24 @@ function computeOperatorStats(
       completed: 0,
     });
   }
+
+  if (hasAlmoxarifado) {
+    const almoxLineId = allLines.find((l) => l.is_almoxarifado && lineSet.has(l.id))?.id;
+    if (almoxLineId) {
+      const stat = lineStatsMap.get(almoxLineId);
+      if (stat) {
+        stat.total = items.length;
+        stat.completed = items.filter((i) => !!i.supplied_at).length;
+        stat.waiting = items.filter((i) => !i.supplied_at && i.status === "waiting").length;
+        stat.scheduled = items.filter((i) => !i.supplied_at && i.status !== "waiting").length;
+      }
+    }
+  }
+
   for (const item of items) {
     const stat = lineStatsMap.get(item.line_id!);
     if (!stat) continue;
+    if (hasAlmoxarifado && allLines.find((l) => l.id === item.line_id)?.is_almoxarifado) continue;
     stat.total++;
     if (item.status === "waiting") stat.waiting++;
     else if (item.status === "scheduled") stat.scheduled++;
@@ -81,7 +116,7 @@ function computeOperatorStats(
     overdue,
     lineStats: Array.from(lineStatsMap.values()),
     recentItems: items
-      .filter((i) => i.status !== "completed")
+      .filter((i) => hasAlmoxarifado ? !i.supplied_at : i.status !== "completed")
       .sort((a, b) => {
         if (!a.deliveryDeadline) return 1;
         if (!b.deliveryDeadline) return -1;

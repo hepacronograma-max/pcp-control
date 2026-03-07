@@ -3,6 +3,11 @@ import { CompactDateCell } from "@/components/ui/compact-date-cell";
 import { useEffect, useRef, useState } from "react";
 import type { LineItemWithOrder } from "./gantt-calendar";
 import type { Profile, ProductionLine } from "@/lib/types/database";
+import { parseLocalDate } from "@/lib/utils/date";
+
+function safeParse(d: string): Date {
+  return d.includes("-") ? parseLocalDate(d) : new Date(d);
+}
 
 export type LineSortKey =
   | "order_number"
@@ -266,7 +271,7 @@ export function LineTable({
                 </Cell>
                 <Cell className="text-center flex justify-center items-center">
                   {item.production_start
-                    ? format(new Date(item.production_start), "d/M/yy")
+                    ? format(safeParse(item.production_start), "d/M/yy")
                     : "--"}
                 </Cell>
                 <Cell className="text-center flex justify-center items-center">
@@ -368,7 +373,7 @@ export function LineTable({
         {items.map((item, idx) => {
           const pcpDeadline = item.pcp_deadline ?? item.order.pcp_deadline ?? item.order.delivery_deadline;
           const pcpDisplay =
-            pcpDeadline && format(new Date(pcpDeadline), "d/M/yy");
+            pcpDeadline && format(safeParse(pcpDeadline), "d/M/yy");
 
           const willDelay =
             item.production_end &&
