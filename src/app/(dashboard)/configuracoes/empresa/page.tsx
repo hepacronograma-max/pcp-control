@@ -72,11 +72,12 @@ export default function CompanySettingsPage() {
     }
 
     if (!supabase) return;
+    const client = supabase;
     const companyId = profile.company_id;
 
     async function loadCompany() {
       try {
-        const { data } = await supabase
+        const { data } = await client
           .from("companies")
           .select("name, import_path, orders_path, logo_url")
           .eq("id", companyId)
@@ -109,10 +110,11 @@ export default function CompanySettingsPage() {
 
   async function handleLogoUpload(file: File) {
     if (!profile?.company_id || !supabase) return;
+    const client = supabase;
     const ext = file.name.split(".").pop();
     const filePath = `${profile.company_id}/logo.${ext}`;
 
-    const { error: uploadError } = await supabase.storage
+    const { error: uploadError } = await client.storage
       .from("company-logos")
       .upload(filePath, file, { upsert: true as any });
 
@@ -123,9 +125,9 @@ export default function CompanySettingsPage() {
 
     const {
       data: { publicUrl },
-    } = supabase.storage.from("company-logos").getPublicUrl(filePath);
+    } = client.storage.from("company-logos").getPublicUrl(filePath);
 
-    const { error } = await supabase
+    const { error } = await client
       .from("companies")
       .update({ logo_url: publicUrl })
       .eq("id", profile.company_id);
@@ -201,9 +203,10 @@ export default function CompanySettingsPage() {
     }
 
     if (!profile?.company_id || !supabase) return;
+    const client = supabase;
     setSaving(true);
     try {
-      const { error } = await supabase
+      const { error } = await client
         .from("companies")
         .update({
           name: form.name,

@@ -72,6 +72,7 @@ export default function LinesSettingsPage() {
       setLines(sorted);
       return;
     }
+    if (!supabase) return;
     supabase
       .from("production_lines")
       .select("*")
@@ -106,6 +107,7 @@ export default function LinesSettingsPage() {
         setSaving(false);
         return;
       }
+      if (!supabase) return;
       const { data: maxOrder } = await supabase
         .from("production_lines")
         .select("sort_order")
@@ -139,6 +141,7 @@ export default function LinesSettingsPage() {
       toast.success("Linha atualizada");
       return;
     }
+    if (!supabase) return;
     const { error } = await supabase
       .from("production_lines")
       .update({ name })
@@ -162,6 +165,7 @@ export default function LinesSettingsPage() {
       toast.success(active ? "Linha ativada" : "Linha desativada");
       return;
     }
+    if (!supabase) return;
     const { error } = await supabase
       .from("production_lines")
       .update({ is_active: active })
@@ -208,6 +212,7 @@ export default function LinesSettingsPage() {
       toast.success("Linha apagada");
       return;
     }
+    if (!supabase) return;
     try {
       await supabase.from("operator_lines").delete().eq("line_id", id);
       await supabase.from("order_items").update({ line_id: null }).eq("line_id", id);
@@ -247,6 +252,7 @@ export default function LinesSettingsPage() {
       return;
     }
 
+    if (!supabase) return;
     await supabase
       .from("production_lines")
       .update({ sort_order: target.sort_order })

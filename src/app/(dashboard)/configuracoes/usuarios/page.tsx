@@ -79,6 +79,7 @@ export default function UsersSettingsPage() {
       setUsers(localUsers);
       return;
     }
+    if (!supabase) return;
     const client = supabase;
     async function load() {
       const { data: profiles } = await client
@@ -256,6 +257,7 @@ export default function UsersSettingsPage() {
       }
       return;
     }
+    if (!supabase) return;
     const { error } = await supabase
       .from("profiles")
       .update({ is_active: active })

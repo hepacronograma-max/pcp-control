@@ -143,6 +143,7 @@ export default function DashboardPage() {
         return;
       }
 
+      if (!supabase) return;
       const { data } = await supabase
         .from("orders")
         .select("id, order_number, client_name, delivery_deadline, pcp_deadline, production_deadline, status, created_at, finished_at")

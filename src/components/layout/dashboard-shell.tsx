@@ -202,7 +202,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       router.refresh();
       return;
     }
-    supabase.auth.signOut().finally(() => {
+    supabase!.auth.signOut().finally(() => {
       router.push("/login");
       router.refresh();
     });

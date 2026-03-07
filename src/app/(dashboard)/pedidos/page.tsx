@@ -104,6 +104,7 @@ export default function PedidosPage() {
         return;
       }
 
+      if (!supabase) return;
       const { data: ordersData } = await supabase
         .from("orders")
         .select(
@@ -169,11 +170,11 @@ export default function PedidosPage() {
       return;
     }
 
+    if (!supabase) return;
     await supabase
       .from("orders")
       .update({ pcp_deadline: date })
       .eq("id", orderId);
-    // Também atualiza todos os itens desse pedido no banco
     await supabase
       .from("order_items")
       .update({ pcp_deadline: date })
@@ -211,6 +212,7 @@ export default function PedidosPage() {
       );
       return;
     }
+    if (!supabase) return;
     await supabase
       .from("order_items")
       .update({ line_id: lineId })
@@ -241,6 +243,7 @@ export default function PedidosPage() {
       );
       return;
     }
+    if (!supabase) return;
     await supabase.from("order_items").update({ quantity }).eq("id", itemId);
     updateOrdersState((prev) =>
       prev.map((order) => ({
@@ -277,6 +280,7 @@ export default function PedidosPage() {
       );
       return;
     }
+    if (!supabase) return;
     await supabase.from("orders").update(data).eq("id", orderId);
     updateOrdersState((prev) =>
       prev.map((o) =>
@@ -297,6 +301,7 @@ export default function PedidosPage() {
       updateOrdersState((prev) => prev.filter((o) => o.id !== orderId));
       return;
     }
+    if (!supabase) return;
     await supabase.from("order_items").delete().eq("order_id", orderId);
     await supabase.from("orders").delete().eq("id", orderId);
     updateOrdersState((prev) => prev.filter((o) => o.id !== orderId));
@@ -332,6 +337,7 @@ export default function PedidosPage() {
       return;
     }
 
+    if (!supabase) return;
     await supabase
       .from("orders")
       .update({ status: "finished", finished_at: nowIso })
@@ -427,7 +433,7 @@ export default function PedidosPage() {
       };
 
       updateOrdersState((prev) => [fullOrder, ...prev]);
-    } else {
+    } else if (supabase) {
       const { data: createdOrders } = await supabase
         .from("orders")
         .insert({

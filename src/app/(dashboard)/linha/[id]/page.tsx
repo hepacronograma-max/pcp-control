@@ -126,7 +126,7 @@ export default function LinePage() {
         return;
       }
 
-      // Verificação de acesso para operador
+      if (!supabase) return;
       if (currentProfile.role === "operator") {
         const { data: access } = await supabase
           .from("operator_lines")
@@ -256,6 +256,7 @@ export default function LinePage() {
       return;
     }
 
+    if (!supabase) return;
     await supabase
       .from("order_items")
       .update({
@@ -299,6 +300,7 @@ export default function LinePage() {
       return;
     }
 
+    if (!supabase) return;
     await supabase
       .from("order_items")
       .update({ notes: value })
@@ -357,6 +359,7 @@ export default function LinePage() {
       return;
     }
 
+    if (!supabase) return;
     await supabase
       .from("order_items")
       .update({
