@@ -176,6 +176,50 @@ export default function LinesSettingsPage() {
     }
   }
 
+  async function handleDelete(id: string) {
+    const line = lines.find((l) => l.id === id);
+    if (!line) return;
+    if (
+      !window.confirm(
+        `Apagar a linha "${line.name}"? Itens alocados nesta linha ficarão sem linha atribuída.`
+      )
+    )
+      return;
+
+    if (isLocal) {
+      const all = loadLocalLines().filter((l) => l.id !== id);
+      saveLocalLines(all);
+      setLines((prev) => prev.filter((l) => l.id !== id));
+      try {
+        const rawOrders = window.localStorage.getItem("pcp-local-orders");
+        if (rawOrders) {
+          const orders = JSON.parse(rawOrders);
+          const updated = orders.map((o: any) => ({
+            ...o,
+            items: o.items.map((it: any) =>
+              it.line_id === id ? { ...it, line_id: null } : it
+            ),
+          }));
+          window.localStorage.setItem("pcp-local-orders", JSON.stringify(updated));
+        }
+      } catch {
+        // ignore
+      }
+      toast.success("Linha apagada");
+      return;
+    }
+    try {
+      await supabase.from("operator_lines").delete().eq("line_id", id);
+      await supabase.from("order_items").update({ line_id: null }).eq("line_id", id);
+      const { error } = await supabase.from("production_lines").delete().eq("id", id);
+      if (error) throw error;
+      setLines((prev) => prev.filter((l) => l.id !== id));
+      toast.success("Linha apagada");
+    } catch {
+      toast.error("Erro ao apagar linha");
+    }
+  }
+
   async function handleReorder(id: string, direction: "up" | "down") {
     const index = lines.findIndex((l) => l.id === id);
     if (index === -1) return;
@@ -305,6 +349,13 @@ export default function LinesSettingsPage() {
                       title={line.is_active ? "Desativar" : "Ativar"}
                     >
                       {line.is_active ? "⛔" : "✅"}
+                    </button>
+                    <button
+                      className="px-1 text-xs text-red-500 hover:text-red-700"
+                      onClick={() => handleDelete(line.id)}
+                      title="Apagar linha"
+                    >
+                      🗑️
                     </button>
                   </div>
                 </td>
