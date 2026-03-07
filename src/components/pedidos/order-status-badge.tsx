@@ -10,12 +10,13 @@ const ORDER_STATUS_COLORS: Record<OrderStatus, string> = {
   delayed: "bg-red-100 text-red-700",
 };
 
-const ITEM_STATUS_COLORS: Record<ItemStatus | "scheduled_future", string> = {
+const ITEM_STATUS_COLORS: Record<ItemStatus | "scheduled_future" | "will_delay", string> = {
   waiting: "bg-gray-100 text-gray-700",
   scheduled: "bg-blue-100 text-blue-700",
   completed: "bg-emerald-100 text-emerald-700",
   delayed: "bg-red-100 text-red-700",
   scheduled_future: "bg-blue-50 text-blue-700",
+  will_delay: "bg-red-100 text-red-700",
 };
 
 export function OrderStatusBadge({ status }: { status: OrderStatus }) {
@@ -37,20 +38,21 @@ interface ItemStatusBadgeProps {
   status: ItemStatus;
   productionStart?: string | null;
   productionEnd?: string | null;
+  pcpDeadline?: string | null;
 }
 
 export function ItemStatusBadge({
   status,
   productionStart,
   productionEnd,
+  pcpDeadline,
 }: ItemStatusBadgeProps) {
   let label = "";
-  let colorKey: ItemStatus | "scheduled_future" = status;
+  let colorKey: ItemStatus | "scheduled_future" | "will_delay" = status;
 
   if (status === "completed") {
     label = "Finalizado";
   } else if (status === "delayed") {
-    // Só atrasado se passou do prazo (amanhã em diante). Hoje ainda é "Produzindo"
     let end: Date | null = null;
     if (productionEnd) {
       end = productionEnd.includes("-")
@@ -69,7 +71,6 @@ export function ItemStatusBadge({
       colorKey = "delayed";
     }
   } else {
-    // waiting ou scheduled: decidir entre aguardando, programado ou produzindo
     if (!productionStart) {
       label = "Aguardando produção";
       colorKey = "waiting";
@@ -95,11 +96,20 @@ export function ItemStatusBadge({
         label = "Produzindo";
         colorKey = "scheduled";
       } else {
-        // passou do fim (amanhã em diante) e não está concluído → atrasado
         label = "Atrasado";
         colorKey = "delayed";
       }
     }
+  }
+
+  if (
+    status !== "completed" &&
+    productionEnd &&
+    pcpDeadline &&
+    productionEnd > pcpDeadline
+  ) {
+    label = "Vai atrasar";
+    colorKey = "will_delay";
   }
 
   return (

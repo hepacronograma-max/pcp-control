@@ -2,7 +2,7 @@ import { format } from "date-fns";
 import { CompactDateCell } from "@/components/ui/compact-date-cell";
 import { useEffect, useRef, useState } from "react";
 import type { LineItemWithOrder } from "./gantt-calendar";
-import type { Profile } from "@/lib/types/database";
+import type { Profile, ProductionLine } from "@/lib/types/database";
 
 export type LineSortKey =
   | "order_number"
@@ -100,6 +100,9 @@ interface LineTableProps {
   ) => void;
   onChangeNotes: (itemId: string, value: string) => void;
   onComplete: (itemId: string) => void;
+  isAlmoxarifado?: boolean;
+  allLines?: ProductionLine[];
+  onSupply?: (itemId: string) => void;
 }
 
 export function LineTable({
@@ -110,10 +113,15 @@ export function LineTable({
   onChangeDate,
   onChangeNotes,
   onComplete,
+  isAlmoxarifado,
+  allLines,
+  onSupply,
 }: LineTableProps) {
-  const [columnWidths, setColumnWidths] = useState<number[]>([
-    60, 140, 200, 55, 70, 90, 90, 60, 120,
-  ]);
+  const defaultWidths = isAlmoxarifado
+    ? [60, 140, 200, 55, 110, 90, 80]
+    : [60, 140, 200, 55, 70, 90, 90, 60, 120];
+
+  const [columnWidths, setColumnWidths] = useState<number[]>(defaultWidths);
   const resizingIndexRef = useRef<number | null>(null);
   const startXRef = useRef(0);
   const startWidthsRef = useRef<number[]>([]);
@@ -167,6 +175,123 @@ export function LineTable({
     onComplete(itemId);
   }
 
+  const linesMap = new Map((allLines ?? []).map((l) => [l.id, l.name]));
+
+  if (isAlmoxarifado) {
+    return (
+      <div className="min-w-[640px]">
+        <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
+          <div
+            className="grid text-[10px] font-semibold text-slate-600 min-h-[28px] items-center"
+            style={{ gridTemplateColumns: gridTemplate }}
+          >
+            <HeaderCell
+              onClick={() => toggleSort("order_number")}
+              sortIndex={getSortIndex("order_number")}
+              onResizeStart={(e) => handleResizeStart(0, e)}
+            >
+              Pedido
+            </HeaderCell>
+            <HeaderCell
+              onClick={() => toggleSort("client_name")}
+              sortIndex={getSortIndex("client_name")}
+              onResizeStart={(e) => handleResizeStart(1, e)}
+            >
+              Cliente
+            </HeaderCell>
+            <HeaderCell
+              onClick={() => toggleSort("description")}
+              sortIndex={getSortIndex("description")}
+              onResizeStart={(e) => handleResizeStart(2, e)}
+            >
+              Descrição
+            </HeaderCell>
+            <HeaderCell
+              className="text-center"
+              onClick={() => toggleSort("quantity")}
+              sortIndex={getSortIndex("quantity")}
+              onResizeStart={(e) => handleResizeStart(3, e)}
+            >
+              Qtd
+            </HeaderCell>
+            <HeaderCell
+              onResizeStart={(e) => handleResizeStart(4, e)}
+            >
+              Linha
+            </HeaderCell>
+            <HeaderCell
+              className="text-center"
+              onClick={() => toggleSort("production_start")}
+              sortIndex={getSortIndex("production_start")}
+              onResizeStart={(e) => handleResizeStart(5, e)}
+            >
+              Início Prod.
+            </HeaderCell>
+            <HeaderCell
+              className="text-center"
+              onResizeStart={(e) => handleResizeStart(6, e)}
+            >
+              Abastecido
+            </HeaderCell>
+          </div>
+        </div>
+
+        <div>
+          {items.map((item, idx) => {
+            const lineName = item.line_id ? linesMap.get(item.line_id) ?? "--" : "--";
+            const isSupplied = !!item.supplied_at;
+
+            return (
+              <div
+                key={item.id}
+                className={`grid text-[11px] items-center border-b border-slate-200 h-7 ${
+                  idx % 2 === 0 ? "bg-white" : "bg-slate-50"
+                }`}
+                style={{ gridTemplateColumns: gridTemplate }}
+              >
+                <Cell className="font-medium text-slate-800">
+                  {item.order.order_number}
+                </Cell>
+                <Cell title={item.order.client_name}>
+                  <span className="truncate block">{item.order.client_name}</span>
+                </Cell>
+                <Cell title={item.description}>
+                  <span className="truncate block">{item.description}</span>
+                </Cell>
+                <Cell className="text-center flex justify-center items-center">
+                  {item.quantity}
+                </Cell>
+                <Cell title={lineName}>
+                  <span className="truncate block text-slate-600">{lineName}</span>
+                </Cell>
+                <Cell className="text-center flex justify-center items-center">
+                  {item.production_start
+                    ? format(new Date(item.production_start), "d/M/yy")
+                    : "--"}
+                </Cell>
+                <Cell className="text-center flex justify-center items-center">
+                  {isSupplied ? (
+                    <span className="inline-flex items-center rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px] font-medium">
+                      OK
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => onSupply?.(item.id)}
+                      className="inline-flex h-6 px-2 items-center justify-center rounded border border-blue-300 text-[10px] font-medium text-blue-700 hover:bg-blue-50"
+                      title="Marcar como abastecido"
+                    >
+                      Abastecer
+                    </button>
+                  )}
+                </Cell>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-[640px]">
       <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
@@ -209,7 +334,7 @@ export function LineTable({
             sortIndex={getSortIndex("delivery_deadline")}
             onResizeStart={(e) => handleResizeStart(4, e)}
           >
-            Prazo Vendas
+            Prazo PCP
           </HeaderCell>
           <HeaderCell
             className="text-center"
@@ -241,16 +366,26 @@ export function LineTable({
 
       <div>
         {items.map((item, idx) => {
-          const delivery =
-            item.order.delivery_deadline &&
-            format(new Date(item.order.delivery_deadline), "d/M/yy");
+          const pcpDeadline = item.order.pcp_deadline ?? item.order.delivery_deadline;
+          const pcpDisplay =
+            pcpDeadline && format(new Date(pcpDeadline), "d/M/yy");
+
+          const willDelay =
+            item.production_end &&
+            pcpDeadline &&
+            item.production_end > pcpDeadline &&
+            item.status !== "completed";
+
+          const rowBg = willDelay
+            ? "bg-red-50"
+            : idx % 2 === 0
+            ? "bg-white"
+            : "bg-slate-50";
 
           return (
             <div
               key={item.id}
-              className={`grid text-[11px] items-center border-b border-slate-200 h-7 ${
-                idx % 2 === 0 ? "bg-white" : "bg-slate-50"
-              }`}
+              className={`grid text-[11px] items-center border-b border-slate-200 h-7 ${rowBg}`}
               style={{ gridTemplateColumns: gridTemplate }}
             >
               <Cell className="font-medium text-slate-800">
@@ -267,8 +402,8 @@ export function LineTable({
               <Cell className="text-center flex justify-center items-center">
                 {item.quantity}
               </Cell>
-              <Cell className="text-center flex justify-center items-center">
-                {delivery ?? "--"}
+              <Cell className={`text-center flex justify-center items-center ${willDelay ? "text-red-700 font-semibold" : ""}`}>
+                {pcpDisplay ?? "--"}
               </Cell>
               <Cell className="flex items-stretch p-0">
                 <CompactDateCell
@@ -278,7 +413,7 @@ export function LineTable({
                   }
                 />
               </Cell>
-              <Cell className="flex items-stretch p-0">
+              <Cell className={`flex items-stretch p-0 ${willDelay ? "[&_input]:text-red-700 [&_input]:font-semibold" : ""}`}>
                 <CompactDateCell
                   value={item.production_end}
                   onChange={(val) =>
@@ -289,8 +424,12 @@ export function LineTable({
               <Cell className="text-center">
                 <button
                   onClick={() => handleComplete(item.id)}
-                  className="inline-flex h-6 w-6 items-center justify-center rounded border border-emerald-300 text-xs text-emerald-700 hover:bg-emerald-50"
-                  title="Marcar como concluído"
+                  className={`inline-flex h-6 w-6 items-center justify-center rounded border text-xs ${
+                    willDelay
+                      ? "border-red-300 text-red-700 hover:bg-red-100"
+                      : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                  }`}
+                  title={willDelay ? "Vai atrasar - Marcar como concluído" : "Marcar como concluído"}
                 >
                   ✓
                 </button>

@@ -100,6 +100,7 @@ export function OrderItems({
               status={item.status}
               productionStart={item.production_start}
               productionEnd={item.production_end}
+              pcpDeadline={item.pcp_deadline}
             />
           </div>
         </div>

@@ -31,6 +31,7 @@ export default function LinePage() {
 
   const [line, setLine] = useState<ProductionLine | null>(null);
   const [items, setItems] = useState<LineItemWithOrder[]>([]);
+  const [allLines, setAllLines] = useState<ProductionLine[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [tab, setTab] = useState<TabKey>("all");
   const [loadingData, setLoadingData] = useState(false);
@@ -57,14 +58,15 @@ export default function LinePage() {
       if (isLocal) {
         setLoadingData(true);
         try {
-          // Carrega definição da linha
+          let foundLine: ProductionLine | null = null;
+          let localLines: ProductionLine[] = [];
           try {
             const rawLines = window.localStorage.getItem("pcp-local-lines");
             if (rawLines) {
-              const allLines = JSON.parse(rawLines) as ProductionLine[];
-              const found =
-                allLines.find((l) => l.id === lineId) ?? null;
-              setLine(found);
+              localLines = JSON.parse(rawLines) as ProductionLine[];
+              foundLine = localLines.find((l) => l.id === lineId) ?? null;
+              setLine(foundLine);
+              setAllLines(localLines);
             } else {
               setLine(null);
             }
@@ -72,18 +74,17 @@ export default function LinePage() {
             setLine(null);
           }
 
-          // Carrega pedidos e filtra itens desta linha
+          const isAlmoxarifado = foundLine?.is_almoxarifado === true;
+
           let itemsForLine: LineItemWithOrder[] = [];
           try {
-            const rawOrders = window.localStorage.getItem(
-              "pcp-local-orders"
-            );
+            const rawOrders = window.localStorage.getItem("pcp-local-orders");
             if (rawOrders) {
               const orders = JSON.parse(rawOrders) as OrderWithItems[];
               itemsForLine = [];
               for (const order of orders) {
                 for (const item of order.items) {
-                  if (item.line_id === lineId) {
+                  if (isAlmoxarifado ? item.line_id : item.line_id === lineId) {
                     itemsForLine.push({
                       ...item,
                       order: {
@@ -102,7 +103,6 @@ export default function LinePage() {
             itemsForLine = [];
           }
 
-          // Filtro por aba
           let filtered = itemsForLine;
           if (tab === "in_progress") {
             filtered = itemsForLine.filter(
@@ -112,7 +112,6 @@ export default function LinePage() {
           } else if (tab === "finished") {
             filtered = itemsForLine.filter((it) => it.status === "completed");
           } else {
-            // "Todos" = todos que ainda não foram concluídos
             filtered = itemsForLine.filter(
               (it) => it.status !== "completed"
             );
@@ -373,6 +372,51 @@ export default function LinePage() {
     setItems((prev) => prev.filter((item) => item.id !== itemId));
   }
 
+  const isAlmoxarifado = line?.is_almoxarifado === true;
+
+  async function handleSupply(itemId: string) {
+    const nowIso = new Date().toISOString();
+
+    if (isLocal) {
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === itemId
+            ? { ...item, supplied_at: nowIso }
+            : item
+        )
+      );
+      try {
+        const raw = window.localStorage.getItem("pcp-local-orders");
+        if (raw) {
+          const orders = JSON.parse(raw) as OrderWithItems[];
+          const updated = orders.map((order) => ({
+            ...order,
+            items: order.items.map((it) =>
+              it.id === itemId
+                ? { ...it, supplied_at: nowIso }
+                : it
+            ),
+          }));
+          window.localStorage.setItem("pcp-local-orders", JSON.stringify(updated));
+        }
+      } catch {
+        // ignore
+      }
+      return;
+    }
+
+    if (!supabase) return;
+    await supabase
+      .from("order_items")
+      .update({ supplied_at: nowIso })
+      .eq("id", itemId);
+    setItems((prev) =>
+      prev.map((item) =>
+        item.id === itemId ? { ...item, supplied_at: nowIso } : item
+      )
+    );
+  }
+
   const title = useMemo(
     () => (line ? `Linha de Produção - ${line.name}` : "Linha de Produção"),
     [line]
@@ -454,6 +498,9 @@ export default function LinePage() {
               onChangeDate={handleChangeDate}
               onChangeNotes={handleChangeNotes}
               onComplete={handleComplete}
+              isAlmoxarifado={isAlmoxarifado}
+              allLines={allLines}
+              onSupply={handleSupply}
             />
           </div>
 

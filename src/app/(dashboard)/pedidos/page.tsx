@@ -427,6 +427,7 @@ export default function PedidosPage() {
           completed_at: null,
           completed_by: null,
           notes: null,
+          supplied_at: null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })),

@@ -39,6 +39,7 @@ export interface ProductionLine {
   company_id: string;
   name: string;
   is_active: boolean;
+  is_almoxarifado?: boolean;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -76,6 +77,7 @@ export interface OrderItem {
   completed_at: string | null;
   completed_by: string | null;
   notes: string | null;
+  supplied_at: string | null;
   created_at: string;
   updated_at: string;
 }

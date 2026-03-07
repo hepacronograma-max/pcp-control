@@ -319,11 +319,15 @@ export default function LinesSettingsPage() {
                   {line.sort_order ?? idx + 1}
                 </td>
                 <td className="px-2 py-1 align-middle">
-                  <input
-                    className="w-full rounded-md border border-slate-200 px-2 py-1 text-xs bg-white"
-                    value={line.name}
-                    onChange={(e) => handleRename(line.id, e.target.value)}
-                  />
+                  {line.is_almoxarifado ? (
+                    <span className="text-xs text-slate-600 font-medium">{line.name} <span className="text-[10px] text-blue-600">(padrão)</span></span>
+                  ) : (
+                    <input
+                      className="w-full rounded-md border border-slate-200 px-2 py-1 text-xs bg-white"
+                      value={line.name}
+                      onChange={(e) => handleRename(line.id, e.target.value)}
+                    />
+                  )}
                 </td>
                 <td className="px-2 py-1 align-middle">
                   <span className="inline-flex items-center gap-1 text-xs">
@@ -356,13 +360,15 @@ export default function LinesSettingsPage() {
                     >
                       {line.is_active ? "⛔" : "✅"}
                     </button>
-                    <button
-                      className="px-1 text-xs text-red-500 hover:text-red-700"
-                      onClick={() => handleDelete(line.id)}
-                      title="Apagar linha"
-                    >
-                      🗑️
-                    </button>
+                    {!line.is_almoxarifado && (
+                      <button
+                        className="px-1 text-xs text-red-500 hover:text-red-700"
+                        onClick={() => handleDelete(line.id)}
+                        title="Apagar linha"
+                      >
+                        🗑️
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

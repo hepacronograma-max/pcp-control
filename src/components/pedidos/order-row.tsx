@@ -23,6 +23,7 @@ export interface OrderRowProps {
 
 type PrincipalStatus =
   | "atrasado"
+  | "vai_atrasar"
   | "falta_linha"
   | "aguardando_programacao"
   | "programado"
@@ -41,6 +42,16 @@ function getPrincipalStatus(order: OrderWithItems): PrincipalStatus {
       isPastDeadline(it.production_end)
   );
   if (hasDelayed) return "atrasado";
+
+  const pcpDeadline = order.pcp_deadline;
+  const hasWillDelay = items.some(
+    (it) =>
+      it.status !== "completed" &&
+      it.production_end &&
+      pcpDeadline &&
+      it.production_end > pcpDeadline
+  );
+  if (hasWillDelay) return "vai_atrasar";
 
   const hasWithoutLine = items.some((it) => !it.line_id);
   if (hasWithoutLine) return "falta_linha";
@@ -175,6 +186,11 @@ export function OrderRow({
           {principalStatus === "atrasado" && (
             <span className="inline-flex items-center shrink-0 rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap">
               Atrasado
+            </span>
+          )}
+          {principalStatus === "vai_atrasar" && (
+            <span className="inline-flex items-center shrink-0 rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap">
+              Vai atrasar
             </span>
           )}
           {principalStatus === "falta_linha" && (

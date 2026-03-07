@@ -76,8 +76,23 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       }
       try {
         const raw = typeof window !== "undefined" && window.localStorage.getItem("pcp-local-lines");
-        const parsed = raw ? (JSON.parse(raw) as ProductionLine[]) : [];
-        const active = (parsed as ProductionLine[])
+        let parsed = raw ? (JSON.parse(raw) as ProductionLine[]) : [];
+        const hasAlmox = parsed.some((l) => l.is_almoxarifado);
+        if (!hasAlmox) {
+          const almoxLine: ProductionLine = {
+            id: "almoxarifado-default",
+            company_id: profile.company_id!,
+            name: "Almoxarifado",
+            is_active: true,
+            is_almoxarifado: true,
+            sort_order: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          parsed = [almoxLine, ...parsed];
+          window.localStorage.setItem("pcp-local-lines", JSON.stringify(parsed));
+        }
+        const active = parsed
           .filter((l) => l.is_active !== false)
           .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
         setLines(active);
