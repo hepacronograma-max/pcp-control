@@ -5,8 +5,9 @@ import { NextRequest, NextResponse } from "next/server";
  * Funciona como Route Handler (pode setar cookies e redirecionar).
  */
 export async function GET(request: NextRequest) {
-  const port = request.nextUrl.port || "3100";
-  const dashboardUrl = `http://localhost:${port}/dashboard`;
+  const origin = request.nextUrl.origin;
+  const dashboardUrl = `${origin}/dashboard`;
+  const isSecure = origin.startsWith("https://");
   const response = NextResponse.redirect(dashboardUrl, 302);
 
   response.cookies.set("pcp-local-auth", "1", {
@@ -14,7 +15,7 @@ export async function GET(request: NextRequest) {
     maxAge: 60 * 60 * 24,
     httpOnly: false,
     sameSite: "lax",
-    secure: false,
+    secure: isSecure,
   });
 
   return response;
