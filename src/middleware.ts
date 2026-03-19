@@ -2,7 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  if (request.nextUrl.pathname === "/api/auth/local-login") {
+  if (
+    request.nextUrl.pathname === "/api/auth/local-login" ||
+    request.nextUrl.pathname === "/api/cleanup"
+  ) {
     return NextResponse.next({ request });
   }
 
@@ -75,6 +78,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icons|manifest.json|sw.js|api/auth/local-login).*)",
+    "/((?!_next/static|_next/image|favicon.ico|icons|manifest.json|sw.js|api/auth/local-login|api/cleanup).*)",
   ],
 };

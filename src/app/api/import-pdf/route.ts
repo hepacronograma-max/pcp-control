@@ -9,6 +9,8 @@ import {
   isOmiePdf,
 } from "@/lib/pdf/parse-omie";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 
 const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB (Vercel limite ~4.5 MB)
 
@@ -197,7 +199,11 @@ export async function POST(request: NextRequest) {
     let ordersPath =
       (formData.get("orders_path") as string)?.trim() || "";
 
-    // Modo local: cookie pcp-local-auth em localhost → retorna dados para o cliente salvar no localStorage
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+    const hasSupabase =
+      supabaseUrl?.startsWith("http://") || supabaseUrl?.startsWith("https://");
+
+    // Modo local: cookie pcp-local-auth em localhost. Se Supabase configurado + company_id, salva no banco.
     const host = request.headers.get("host") || "";
     const hostname = host.split(":")[0];
     const isLocalhost =
@@ -208,30 +214,109 @@ export async function POST(request: NextRequest) {
       hostname.startsWith("10.");
     const hasLocalAuth =
       request.cookies.get("pcp-local-auth")?.value === "1";
-    if (isLocalhost && hasLocalAuth) {
-      const savedPath = await savePdfToFolder(
-        buffer,
-        file.name,
-        extracted.orderNumber,
-        ordersPath
-      );
-      return NextResponse.json({
-        success: true,
-        orderNumber: extracted.orderNumber,
-        clientName: extracted.clientName,
-        deliveryDate: extracted.deliveryDate,
-        items: extracted.items,
-        savedToSupabase: false,
-        pdfSavedTo: savedPath ?? undefined,
-        _debug_text: extracted._rawText?.substring(0, 2000),
-      });
+    let companyIdFromForm = (formData.get("company_id") as string)?.trim();
+    if (companyIdFromForm === "local-company") companyIdFromForm = "";
+
+    if (isLocalhost && hasLocalAuth && hasSupabase) {
+      try {
+        const supabase = createSupabaseAdminClient();
+        let companyId = companyIdFromForm;
+        if (!companyId) {
+          const { data: firstCompany } = await supabase
+            .from("companies")
+            .select("id")
+            .limit(1)
+            .maybeSingle();
+          companyId = firstCompany?.id ?? "";
+        }
+        if (!companyId) {
+          return NextResponse.json({
+            success: false,
+            error: "Nenhuma empresa cadastrada no banco. Importe o backup ou crie uma empresa primeiro.",
+          }, { status: 400 });
+        }
+        const { data: existing } = await supabase
+          .from("orders")
+          .select("id")
+          .eq("company_id", companyId)
+          .eq("order_number", extracted.orderNumber)
+          .maybeSingle();
+
+        if (existing) {
+          return NextResponse.json({
+            success: false,
+            error: "Pedido já importado anteriormente. Revise na tela de Pedidos.",
+            orderNumber: extracted.orderNumber,
+            clientName: extracted.clientName,
+            itemCount: extracted.items.length,
+          });
+        }
+
+        const { data: createdOrders, error: orderError } = await supabase
+          .from("orders")
+          .insert({
+            company_id: companyId,
+            order_number: String(extracted.orderNumber).trim().slice(0, 50),
+            client_name: String(extracted.clientName).trim().slice(0, 255),
+            delivery_deadline: toDateOnly(extracted.deliveryDate),
+            status: "imported",
+            created_by: null,
+          })
+          .select();
+
+        if (orderError || !createdOrders?.[0]) {
+          console.error("Erro ao criar pedido (local auth):", orderError);
+          return NextResponse.json(
+            { success: false, error: orderError?.message ?? "Erro ao salvar pedido." },
+            { status: 500 }
+          );
+        }
+
+        const createdOrder = createdOrders[0];
+        const { error: itemsError } = await supabase.from("order_items").insert(
+          extracted.items.map((item, index) => ({
+            order_id: createdOrder.id,
+            item_number: index + 1,
+            description: String(item.description || "").trim().slice(0, 500),
+            quantity: toQuantity(item.quantity),
+          }))
+        );
+
+        if (itemsError) {
+          console.error("Erro ao criar itens (local auth):", itemsError);
+          return NextResponse.json(
+            { success: false, error: "Erro ao salvar itens do pedido." },
+            { status: 500 }
+          );
+        }
+
+        const savedPath = await savePdfToFolder(
+          buffer,
+          file.name,
+          extracted.orderNumber,
+          ordersPath
+        );
+
+        return NextResponse.json({
+          success: true,
+          orderNumber: extracted.orderNumber,
+          clientName: extracted.clientName,
+          deliveryDate: extracted.deliveryDate,
+          itemCount: extracted.items.length,
+          savedToSupabase: true,
+          orderId: createdOrder.id,
+          pdfSavedTo: savedPath ?? undefined,
+        });
+      } catch (err) {
+        console.error("Erro na importação (local auth):", err);
+        return NextResponse.json(
+          { success: false, error: "Erro ao conectar com o banco de dados." },
+          { status: 500 }
+        );
+      }
     }
 
-    // Tentar salvar no Supabase se usuário autenticado
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-    const hasSupabase =
-      supabaseUrl?.startsWith("http://") || supabaseUrl?.startsWith("https://");
-
+    // Tentar salvar no Supabase se usuário autenticado (Supabase Auth)
     if (hasSupabase) {
       try {
         const supabase = await createServerSupabaseClient();
@@ -294,9 +379,9 @@ export async function POST(request: NextRequest) {
           .from("orders")
           .insert({
             company_id: profile.company_id,
-            order_number: extracted.orderNumber,
-            client_name: extracted.clientName,
-            delivery_deadline: extracted.deliveryDate,
+            order_number: String(extracted.orderNumber).trim().slice(0, 50),
+            client_name: String(extracted.clientName).trim().slice(0, 255),
+            delivery_deadline: toDateOnly(extracted.deliveryDate),
             status: "imported",
             created_by: user.id,
           })
@@ -318,8 +403,8 @@ export async function POST(request: NextRequest) {
           extracted.items.map((item, index) => ({
             order_id: createdOrder.id,
             item_number: index + 1,
-            description: item.description,
-            quantity: item.quantity || 1,
+            description: String(item.description || "").trim().slice(0, 500),
+            quantity: toQuantity(item.quantity),
           }))
         );
 

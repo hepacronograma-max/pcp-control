@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/hooks/use-user";
+import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import type {
   Holiday,
   OrderItem,
   OrderWithItems,
   ProductionLine,
 } from "@/lib/types/database";
+import { toDateOnly } from "@/lib/utils/supabase-data";
 import {
   LineTable,
   sortLineItemsByKeys,
@@ -27,6 +29,7 @@ export default function LinePage() {
   const lineId = params.id;
   const supabase = createClient();
   const { profile, loading } = useUser();
+  const effectiveCompanyId = useEffectiveCompanyId(profile);
   const router = useRouter();
 
   const [line, setLine] = useState<ProductionLine | null>(null);
@@ -54,100 +57,22 @@ export default function LinePage() {
   const fixedRef = useRef<HTMLDivElement | null>(null);
   const ganttRef = useRef<HTMLDivElement | null>(null);
 
-  const isLocal =
-    !supabase ||
-    profile?.company_id === "local-company" ||
-    profile?.id === "local-admin" ||
-    profile?.id?.startsWith("local-");
-
   useEffect(() => {
-    if (!profile || !profile.company_id || !lineId) return;
+    if (!profile || !lineId) return;
     const currentProfile = profile;
+    const companyId = effectiveCompanyId ?? profile.company_id;
 
     async function checkAccessAndLoad() {
-      if (isLocal) {
-        setLoadingData(true);
-        try {
-          let foundLine: ProductionLine | null = null;
-          let localLines: ProductionLine[] = [];
-          try {
-            const rawLines = window.localStorage.getItem("pcp-local-lines");
-            if (rawLines) {
-              localLines = JSON.parse(rawLines) as ProductionLine[];
-              foundLine = localLines.find((l) => l.id === lineId) ?? null;
-              setLine(foundLine);
-              setAllLines(localLines);
-            } else {
-              setLine(null);
-            }
-          } catch {
-            setLine(null);
-          }
-
-          const isAlmoxarifado = foundLine?.is_almoxarifado === true;
-
-          let itemsForLine: LineItemWithOrder[] = [];
-          try {
-            const rawOrders = window.localStorage.getItem("pcp-local-orders");
-            if (rawOrders) {
-              const orders = JSON.parse(rawOrders) as OrderWithItems[];
-              itemsForLine = [];
-              for (const order of orders) {
-                for (const item of order.items) {
-                  if (isAlmoxarifado ? item.line_id : item.line_id === lineId) {
-                    itemsForLine.push({
-                      ...item,
-                      order: {
-                        id: order.id,
-                        order_number: order.order_number,
-                        client_name: order.client_name,
-                        delivery_deadline: order.delivery_deadline,
-                        pcp_deadline: order.pcp_deadline,
-                      },
-                    });
-                  }
-                }
-              }
-            }
-          } catch {
-            itemsForLine = [];
-          }
-
-          let filtered = itemsForLine;
-          if (isAlmoxarifado) {
-            if (tab === "finished") {
-              filtered = itemsForLine.filter((it) => !!it.supplied_at);
-            } else if (tab === "in_progress") {
-              filtered = itemsForLine.filter(
-                (it) => !it.supplied_at && it.status !== "waiting"
-              );
-            } else {
-              filtered = itemsForLine.filter((it) => !it.supplied_at);
-            }
-          } else {
-            if (tab === "in_progress") {
-              filtered = itemsForLine.filter(
-                (it) =>
-                  it.status !== "completed" && it.status !== "waiting"
-              );
-            } else if (tab === "finished") {
-              filtered = itemsForLine.filter((it) => it.status === "completed");
-            } else {
-              filtered = itemsForLine.filter(
-                (it) => it.status !== "completed"
-              );
-            }
-          }
-
-          setItems(filtered);
-          setHolidays([]);
-        } finally {
-          setLoadingData(false);
-        }
+      if (!supabase) {
+        setLine(null);
+        setItems([]);
+        setAllLines([]);
+        setHolidays([]);
+        setLoadingData(false);
         return;
       }
 
-      if (!supabase) return;
+      setLoadingData(true);
       if (currentProfile.role === "operator") {
         const { data: access } = await supabase
           .from("operator_lines")
@@ -194,14 +119,14 @@ export default function LinePage() {
       const { data: holidaysData } = await supabase
         .from("holidays")
         .select("id, company_id, date, description, is_recurring, created_at")
-        .eq("company_id", currentProfile.company_id);
+        .eq("company_id", companyId ?? currentProfile.company_id);
       setHolidays((holidaysData as Holiday[]) ?? []);
 
       setLoadingData(false);
     }
 
     checkAccessAndLoad();
-  }, [profile, lineId, tab, supabase, router, isLocal, refreshKey]);
+  }, [profile, effectiveCompanyId, lineId, tab, supabase, router, refreshKey]);
 
   function syncScroll(source: "fixed" | "gantt") {
     if (source === "fixed" && fixedRef.current && ganttRef.current) {
@@ -230,104 +155,33 @@ export default function LinePage() {
       return;
     }
 
-    if (isLocal) {
-      setItems((prev) =>
-        prev.map((item) =>
-          item.id === itemId
-            ? { ...item, [field]: value, status: "scheduled" }
-            : item
-        )
-      );
-
-      try {
-        const raw = window.localStorage.getItem("pcp-local-orders");
-        if (raw) {
-          const orders = JSON.parse(raw) as OrderWithItems[];
-          const updated = orders.map((order) => {
-            const nextItems = order.items.map((it) =>
-              it.id === itemId
-                ? {
-                    ...it,
-                    [field]: value,
-                    status: "scheduled" as OrderItem["status"],
-                  }
-                : it
-            );
-            const nextOrder: OrderWithItems = {
-              ...order,
-              items: nextItems,
-            };
-            const dates = nextItems
-              .map((i) => i.production_end)
-              .filter((d): d is string => !!d);
-            nextOrder.production_deadline =
-              dates.length > 0
-                ? dates.sort((a, b) => (a > b ? -1 : 1))[0] ?? null
-                : null;
-            return nextOrder;
-          });
-          window.localStorage.setItem(
-            "pcp-local-orders",
-            JSON.stringify(updated)
-          );
-        }
-      } catch {
-        // ignore
-      }
-      return;
-    }
-
     if (!supabase) return;
+    const dateVal = toDateOnly(value);
     await supabase
       .from("order_items")
       .update({
-        [field]: value,
+        [field]: dateVal,
         status: "scheduled" as OrderItem["status"],
       })
       .eq("id", itemId);
 
+    const finalVal = dateVal ?? value;
     setItems((prev) =>
       prev.map((item) =>
-        item.id === itemId ? { ...item, [field]: value, status: "scheduled" } : item
+        item.id === itemId ? { ...item, [field]: finalVal, status: "scheduled" } : item
       )
     );
   }
 
   async function handleChangeNotes(itemId: string, value: string) {
-    if (isLocal) {
-      setItems((prev) =>
-        prev.map((item) =>
-          item.id === itemId ? { ...item, notes: value } : item
-        )
-      );
-      try {
-        const raw = window.localStorage.getItem("pcp-local-orders");
-        if (raw) {
-          const orders = JSON.parse(raw) as OrderWithItems[];
-          const updated = orders.map((order) => ({
-            ...order,
-            items: order.items.map((it) =>
-              it.id === itemId ? { ...it, notes: value } : it
-            ),
-          }));
-          window.localStorage.setItem(
-            "pcp-local-orders",
-            JSON.stringify(updated)
-          );
-        }
-      } catch {
-        // ignore
-      }
-      return;
-    }
-
     if (!supabase) return;
+    const notesVal = value.trim().slice(0, 2000);
     await supabase
       .from("order_items")
-      .update({ notes: value })
+      .update({ notes: notesVal })
       .eq("id", itemId);
     setItems((prev) =>
-      prev.map((item) => (item.id === itemId ? { ...item, notes: value } : item))
+      prev.map((item) => (item.id === itemId ? { ...item, notes: notesVal } : item))
     );
   }
 
@@ -341,62 +195,14 @@ export default function LinePage() {
     const fillStart = !targetItem?.production_start ? todayStr : undefined;
     const fillEnd = !targetItem?.production_end ? todayStr : undefined;
 
-    if (isLocal) {
-      setItems((prev) =>
-        tab === "finished"
-          ? prev.map((item) =>
-              item.id === itemId
-                ? {
-                    ...item,
-                    status: "completed",
-                    completed_at: nowIso,
-                    completed_by: profile.id,
-                    ...(fillStart ? { production_start: fillStart } : {}),
-                    ...(fillEnd ? { production_end: fillEnd } : {}),
-                  }
-                : item
-            )
-          : prev.filter((item) => item.id !== itemId)
-      );
-
-      try {
-        const raw = window.localStorage.getItem("pcp-local-orders");
-        if (raw) {
-          const orders = JSON.parse(raw) as OrderWithItems[];
-          const updated = orders.map((order) => ({
-            ...order,
-            items: order.items.map((it) =>
-              it.id === itemId
-                ? {
-                    ...it,
-                    status: "completed" as const,
-                    completed_at: nowIso,
-                    completed_by: profile.id,
-                    production_start: it.production_start || todayStr,
-                    production_end: it.production_end || todayStr,
-                  }
-                : it
-            ),
-          }));
-          window.localStorage.setItem(
-            "pcp-local-orders",
-            JSON.stringify(updated)
-          );
-        }
-      } catch {
-        // ignore
-      }
-      return;
-    }
-
     if (!supabase) return;
     const updateData: Record<string, unknown> = {
       status: "completed",
       completed_at: nowIso,
       completed_by: profile.id,
     };
-    if (fillStart) updateData.production_start = todayStr;
-    if (fillEnd) updateData.production_end = todayStr;
+    if (fillStart) updateData.production_start = toDateOnly(todayStr) ?? todayStr;
+    if (fillEnd) updateData.production_end = toDateOnly(todayStr) ?? todayStr;
 
     await supabase
       .from("order_items")
@@ -410,35 +216,6 @@ export default function LinePage() {
 
   async function handleSupply(itemId: string) {
     const nowIso = new Date().toISOString();
-
-    if (isLocal) {
-      setItems((prev) =>
-        tab === "finished"
-          ? prev.map((item) =>
-              item.id === itemId ? { ...item, supplied_at: nowIso } : item
-            )
-          : prev.filter((item) => item.id !== itemId)
-      );
-      try {
-        const raw = window.localStorage.getItem("pcp-local-orders");
-        if (raw) {
-          const orders = JSON.parse(raw) as OrderWithItems[];
-          const updated = orders.map((order) => ({
-            ...order,
-            items: order.items.map((it) =>
-              it.id === itemId
-                ? { ...it, supplied_at: nowIso }
-                : it
-            ),
-          }));
-          window.localStorage.setItem("pcp-local-orders", JSON.stringify(updated));
-        }
-      } catch {
-        // ignore
-      }
-      return;
-    }
-
     if (!supabase) return;
     await supabase
       .from("order_items")
@@ -463,9 +240,22 @@ export default function LinePage() {
     [items, sortKeys]
   );
 
-  if (loading || !profile) {
+  const needsEffectiveCompany =
+    supabase && profile?.company_id === "local-company";
+  const effectiveReady = !needsEffectiveCompany || effectiveCompanyId !== null;
+
+  if (loading || !profile || !effectiveReady) {
     return (
       <div className="text-sm text-slate-500">Carregando linha de produção...</div>
+    );
+  }
+
+  if (!supabase) {
+    return (
+      <div className="text-sm text-amber-700">
+        Supabase não configurado. Configure NEXT_PUBLIC_SUPABASE_URL e
+        NEXT_PUBLIC_SUPABASE_ANON_KEY para usar o sistema.
+      </div>
     );
   }
 

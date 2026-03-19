@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/hooks/use-user";
+import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { getOperatorLineIdsForLocalUser } from "@/lib/local-users";
 import type { OrderItem, OrderWithItems, ProductionLine } from "@/lib/types/database";
 import { computeDashboardFromOrders } from "@/lib/utils/dashboard-local";
@@ -130,12 +131,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const supabase = createClient();
   const { profile, loading } = useUser();
-
-  const isLocal =
-    !supabase ||
-    profile?.company_id === "local-company" ||
-    profile?.id === "local-admin" ||
-    profile?.id?.startsWith("local-");
+  const effectiveCompanyId = useEffectiveCompanyId(profile);
 
   const isOperator = profile?.role === "operator";
 
@@ -149,52 +145,46 @@ export default function DashboardPage() {
   }, [isOperator, profile]);
 
   useEffect(() => {
-    if (!profile?.company_id) return;
-    const companyId = profile.company_id;
+    if (!profile || !effectiveCompanyId) return;
+    const companyId = effectiveCompanyId;
 
     async function loadData() {
       setLoadingData(true);
 
-      if (isLocal) {
-        try {
-          const raw = window.localStorage.getItem("pcp-local-orders");
-          if (raw) {
-            setOrders(JSON.parse(raw) as OrderWithItems[]);
-          } else {
-            setOrders([]);
-          }
-        } catch {
-          setOrders([]);
-        }
-        try {
-          const rawLines = window.localStorage.getItem("pcp-local-lines");
-          if (rawLines) {
-            setAllLines(JSON.parse(rawLines) as ProductionLine[]);
-          }
-        } catch {
-          setAllLines([]);
-        }
+      if (!supabase) {
+        setOrders([]);
+        setAllLines([]);
         setLoadingData(false);
         return;
       }
 
-      if (!supabase) return;
       const { data } = await supabase
         .from("orders")
-        .select("id, order_number, client_name, delivery_deadline, pcp_deadline, production_deadline, status, created_at, finished_at")
+        .select(
+          `
+          id, order_number, client_name, delivery_deadline, pcp_deadline, production_deadline, status, created_at, finished_at,
+          items:order_items(*)
+        `
+        )
         .eq("company_id", companyId)
         .order("delivery_deadline", { ascending: true });
 
-      const ordersWithItems = (data ?? []).map((o) => ({
-        ...o,
-        items: [],
-      })) as unknown as OrderWithItems[];
+      const ordersWithItems = (data ?? []) as unknown as OrderWithItems[];
       setOrders(ordersWithItems);
+
+      const { data: linesData } = await supabase
+        .from("production_lines")
+        .select("*")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+      setAllLines((linesData as ProductionLine[]) ?? []);
+
       setLoadingData(false);
     }
 
     loadData();
-  }, [profile, supabase, isLocal]);
+  }, [profile, supabase, effectiveCompanyId]);
 
   const dashboard = useMemo(
     () => computeDashboardFromOrders(orders),
@@ -215,7 +205,11 @@ export default function DashboardPage() {
     []
   );
 
-  if (loading || !profile) {
+  const needsEffectiveCompany =
+    supabase && profile?.company_id === "local-company";
+  const effectiveReady = !needsEffectiveCompany || effectiveCompanyId !== null;
+
+  if (loading || !profile || !effectiveReady) {
     return (
       <div className="text-sm text-slate-500">Carregando dashboard...</div>
     );

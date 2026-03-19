@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import { useUser } from "@/lib/hooks/use-user";
+import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 
 const links = [
   { href: "/configuracoes/linhas", label: "Linhas de Produção", description: "Criar, editar e desativar linhas de produção." },
@@ -13,15 +16,31 @@ const links = [
 export default function ConfiguracoesPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [cleared, setCleared] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const supabase = createClient();
+  const { profile } = useUser();
+  const effectiveCompanyId = useEffectiveCompanyId(profile);
 
-  function handleClearOrders() {
+  async function handleClearOrders() {
+    setClearing(true);
     try {
-      window.localStorage.removeItem("pcp-local-orders");
+      if (supabase && effectiveCompanyId) {
+        const { data: orders } = await supabase
+          .from("orders")
+          .select("id")
+          .eq("company_id", effectiveCompanyId);
+        for (const o of orders ?? []) {
+          await supabase.from("order_items").delete().eq("order_id", o.id);
+        }
+        await supabase.from("orders").delete().eq("company_id", effectiveCompanyId);
+      }
       setCleared(true);
       setShowConfirm(false);
       setTimeout(() => setCleared(false), 3000);
     } catch {
       // ignore
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -67,9 +86,10 @@ export default function ConfiguracoesPage() {
               <span className="text-xs text-red-700 font-medium">Tem certeza?</span>
               <button
                 onClick={handleClearOrders}
-                className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-medium hover:bg-red-700"
+                disabled={clearing}
+                className="px-3 py-1.5 rounded-md bg-red-600 text-white text-xs font-medium hover:bg-red-700 disabled:opacity-50"
               >
-                Sim, zerar
+                {clearing ? "Zerando..." : "Sim, zerar"}
               </button>
               <button
                 onClick={() => setShowConfirm(false)}

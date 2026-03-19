@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "@/lib/hooks/use-user";
+import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-
-const LOCAL_COMPANY_KEY = "pcp-local-company";
 
 const LOGO_WIDTH = 200;
 const LOGO_HEIGHT = 200;
@@ -20,67 +19,33 @@ interface CompanyForm {
   logo_url: string | null;
 }
 
-function loadLocalCompany(): CompanyForm {
-  if (typeof window === "undefined")
-    return { name: "", orders_path: "", logo_url: null };
-  try {
-    const raw = window.localStorage.getItem(LOCAL_COMPANY_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<CompanyForm>;
-      return {
-        name: parsed.name ?? "",
-        orders_path: parsed.orders_path ?? "",
-        logo_url: parsed.logo_url ?? null,
-      };
-    }
-  } catch {
-    // ignore
-  }
-  return { name: "Empresa Local", orders_path: "", logo_url: null };
-}
-
-function saveLocalCompany(data: CompanyForm) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(LOCAL_COMPANY_KEY, JSON.stringify(data));
-  } catch {
-    // ignore
-  }
-}
-
 export default function CompanySettingsPage() {
   const { profile, loading } = useUser();
+  const effectiveCompanyId = useEffectiveCompanyId(profile);
   const supabase = createClient();
   const [form, setForm] = useState<CompanyForm | null>(null);
   const [saving, setSaving] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
-  const isLocalMode =
-    !supabase ||
-    profile?.company_id === "local-company" ||
-    profile?.id === "local-admin";
+  const companyId = effectiveCompanyId ?? profile?.company_id;
 
   useEffect(() => {
-    if (!profile?.company_id) return;
+    if (!companyId) return;
 
-    if (isLocalMode) {
-      const data = loadLocalCompany();
-      setForm(data);
-      setLogoPreview(data.logo_url);
+    if (!supabase) {
+      setForm({ name: "Empresa Local", orders_path: "", logo_url: null });
       return;
     }
 
-    if (!supabase) return;
     const client = supabase;
-    const companyId = profile.company_id;
 
     async function loadCompany() {
       try {
         const { data } = await client
           .from("companies")
           .select("name, import_path, orders_path, logo_url")
-          .eq("id", companyId)
+          .eq("id", companyId!)
           .maybeSingle();
         if (data) {
           const f: CompanyForm = {
@@ -106,13 +71,13 @@ export default function CompanySettingsPage() {
       }
     }
     loadCompany();
-  }, [profile, supabase, isLocalMode]);
+  }, [profile, supabase, effectiveCompanyId]);
 
   async function handleLogoUpload(file: File) {
-    if (!profile?.company_id || !supabase) return;
+    if (!companyId || !supabase) return;
     const client = supabase;
     const ext = file.name.split(".").pop();
-    const filePath = `${profile.company_id}/logo.${ext}`;
+    const filePath = `${companyId}/logo.${ext}`;
 
     const { error: uploadError } = await client.storage
       .from("company-logos")
@@ -130,7 +95,7 @@ export default function CompanySettingsPage() {
     const { error } = await client
       .from("companies")
       .update({ logo_url: publicUrl })
-      .eq("id", profile.company_id);
+      .eq("id", companyId);
 
     if (error) {
       toast.error("Erro ao salvar URL do logo");
@@ -172,37 +137,7 @@ export default function CompanySettingsPage() {
   }
 
   async function handleSaveCompany() {
-    if (!form) return;
-
-    if (isLocalMode) {
-      setSaving(true);
-      try {
-        let logoToSave = logoPreview;
-        if (logoFile) {
-          const reader = new FileReader();
-          logoToSave = await new Promise<string>((resolve) => {
-            reader.onload = () => resolve(reader.result as string);
-            reader.readAsDataURL(logoFile);
-          });
-        }
-        const toSave: CompanyForm = {
-          ...form,
-          logo_url: logoToSave,
-        };
-        saveLocalCompany(toSave);
-        setForm(toSave);
-        setLogoPreview(logoToSave);
-        setLogoFile(null);
-        toast.success("Dados da empresa salvos com sucesso");
-      } catch {
-        toast.error("Erro ao salvar dados da empresa");
-      } finally {
-        setSaving(false);
-      }
-      return;
-    }
-
-    if (!profile?.company_id || !supabase) return;
+    if (!form || !companyId || !supabase) return;
     const client = supabase;
     setSaving(true);
     try {
@@ -213,7 +148,7 @@ export default function CompanySettingsPage() {
           orders_path: form.orders_path,
           import_path: form.orders_path,
         })
-        .eq("id", profile.company_id);
+        .eq("id", companyId);
       if (error) throw error;
       toast.success("Dados da empresa salvos com sucesso");
       if (logoFile) {

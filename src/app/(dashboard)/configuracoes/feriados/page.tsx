@@ -2,29 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "@/lib/hooks/use-user";
+import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { createClient } from "@/lib/supabase/client";
 import type { Holiday } from "@/lib/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-
-const LOCAL_HOLIDAYS_KEY = "pcp-local-holidays";
-
-function loadLocalHolidays(): Holiday[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(LOCAL_HOLIDAYS_KEY);
-    return raw ? (JSON.parse(raw) as Holiday[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveLocalHolidays(holidays: Holiday[]) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(LOCAL_HOLIDAYS_KEY, JSON.stringify(holidays));
-}
+import { toDateOnly, toBoolean } from "@/lib/utils/supabase-data";
 
 const FERIADOS_NACIONAIS = [
   { date: "01-01", description: "Confraternização Universal", is_recurring: true },
@@ -37,34 +22,22 @@ const FERIADOS_NACIONAIS = [
   { date: "12-25", description: "Natal", is_recurring: true },
 ];
 
-function genId() {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `holiday-${Date.now()}`;
-}
-
 export default function HolidaysSettingsPage() {
   const { profile, loading } = useUser();
+  const effectiveCompanyId = useEffectiveCompanyId(profile);
   const supabase = createClient();
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [newDate, setNewDate] = useState("");
   const [newDescription, setNewDescription] = useState("");
   const [newRecurring, setNewRecurring] = useState(true);
 
-  const isLocal =
-    !supabase ||
-    profile?.company_id === "local-company" ||
-    profile?.id === "local-admin";
+  const isLocal = !supabase;
 
   useEffect(() => {
-    if (!profile?.company_id) return;
+    const companyId = effectiveCompanyId ?? profile?.company_id;
+    if (!companyId) return;
     if (isLocal) {
-      const all = loadLocalHolidays();
-      setHolidays(
-        [...all].sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-        )
-      );
+      setHolidays([]);
       return;
     }
     const client = supabase!;
@@ -72,62 +45,33 @@ export default function HolidaysSettingsPage() {
       const { data } = await client
         .from("holidays")
         .select("*")
-        .eq("company_id", profile!.company_id!)
+        .eq("company_id", companyId)
         .order("date", { ascending: true });
       setHolidays(data ?? []);
     }
     load();
-  }, [profile, supabase, isLocal]);
+  }, [profile, supabase, effectiveCompanyId, isLocal]);
 
   async function refresh() {
-    if (!profile?.company_id) return;
-    if (isLocal) {
-      const all = loadLocalHolidays();
-      setHolidays(
-        [...all].sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-        )
-      );
-      return;
-    }
+    const companyId = effectiveCompanyId ?? profile?.company_id;
+    if (!companyId || isLocal) return;
     const { data } = await supabase!
       .from("holidays")
       .select("*")
-      .eq("company_id", profile.company_id)
+      .eq("company_id", companyId)
       .order("date", { ascending: true });
     setHolidays(data ?? []);
   }
 
   async function handleCreate() {
-    if (!profile?.company_id || !newDate || !newDescription.trim()) return;
-    if (isLocal) {
-      const now = new Date().toISOString();
-      const newHoliday: Holiday = {
-        id: genId(),
-        company_id: profile.company_id,
-        date: newDate,
-        description: newDescription.trim(),
-        is_recurring: newRecurring,
-        created_at: now,
-      };
-      const all = loadLocalHolidays();
-      saveLocalHolidays([...all, newHoliday]);
-      setHolidays((prev) =>
-        [...prev, newHoliday].sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-        )
-      );
-      setNewDate("");
-      setNewDescription("");
-      setNewRecurring(true);
-      toast.success("Feriado criado");
-      return;
-    }
+    const companyId = effectiveCompanyId ?? profile?.company_id;
+    if (!companyId || !newDate || !newDescription.trim()) return;
+    if (isLocal) return;
     const { error } = await supabase!.from("holidays").insert({
-      company_id: profile.company_id,
-      date: newDate,
-      description: newDescription.trim(),
-      is_recurring: newRecurring,
+      company_id: companyId,
+      date: toDateOnly(newDate) ?? newDate,
+      description: newDescription.trim().slice(0, 255),
+      is_recurring: toBoolean(newRecurring),
     });
     if (error) {
       toast.error("Erro ao criar feriado");
@@ -142,13 +86,7 @@ export default function HolidaysSettingsPage() {
 
   async function handleDelete(id: string) {
     if (!window.confirm("Deseja realmente excluir este feriado?")) return;
-    if (isLocal) {
-      const all = loadLocalHolidays().filter((h) => h.id !== id);
-      saveLocalHolidays(all);
-      setHolidays(all);
-      toast.success("Feriado excluído");
-      return;
-    }
+    if (isLocal) return;
     const { error } = await supabase!.from("holidays").delete().eq("id", id);
     if (error) {
       toast.error("Erro ao excluir feriado");
@@ -159,44 +97,30 @@ export default function HolidaysSettingsPage() {
   }
 
   async function handlePreload() {
-    if (!profile?.company_id) return;
+    const companyId = effectiveCompanyId ?? profile?.company_id;
+    if (!companyId) return;
+    if (isLocal) return;
     const year = new Date().getFullYear();
-    const now = new Date().toISOString();
-    if (isLocal) {
-      const all = loadLocalHolidays();
-      const existingDates = new Set(all.map((h) => h.date));
-      const toAdd = FERIADOS_NACIONAIS.filter((f) => {
-        const dateStr = `${year}-${f.date}`;
-        return !existingDates.has(dateStr);
-      }).map((f) => ({
-        id: genId(),
-        company_id: profile.company_id,
-        date: `${year}-${f.date}`,
-        description: f.description,
-        is_recurring: f.is_recurring,
-        created_at: now,
-      })) as Holiday[];
-      if (toAdd.length === 0) {
-        toast.info("Feriados nacionais já estão cadastrados");
-        return;
-      }
-      saveLocalHolidays([...all, ...toAdd]);
-      setHolidays((prev) =>
-        [...prev, ...toAdd].sort(
-          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-        )
-      );
-      toast.success(
-        `${toAdd.length} feriado(s) nacionais carregado(s)`
-      );
+    const existing = await supabase!
+      .from("holidays")
+      .select("date")
+      .eq("company_id", companyId)
+      .gte("date", `${year}-01-01`)
+      .lte("date", `${year}-12-31`);
+    const existingDates = new Set((existing.data ?? []).map((h) => h.date));
+    const rows = FERIADOS_NACIONAIS.filter((f) => {
+      const dateStr = `${year}-${f.date}`;
+      return !existingDates.has(dateStr);
+    }).map((f) => ({
+      company_id: companyId,
+      date: `${year}-${f.date}`,
+      description: String(f.description || "").slice(0, 255),
+      is_recurring: toBoolean(f.is_recurring),
+    }));
+    if (rows.length === 0) {
+      toast.info("Feriados nacionais já estão cadastrados para este ano.");
       return;
     }
-    const rows = FERIADOS_NACIONAIS.map((f) => ({
-      company_id: profile.company_id,
-      date: `${year}-${f.date}`,
-      description: f.description,
-      is_recurring: f.is_recurring,
-    }));
     const { error } = await supabase!.from("holidays").insert(rows);
     if (error) {
       toast.error("Erro ao carregar feriados nacionais");

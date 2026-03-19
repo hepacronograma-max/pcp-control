@@ -4,9 +4,8 @@ import { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/lib/hooks/use-user";
+import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { createClient } from "@/lib/supabase/client";
-import type { OrderWithItems } from "@/lib/types/database";
-
 interface ImportResult {
   fileName: string;
   success: boolean;
@@ -22,6 +21,7 @@ export default function ImportPage() {
   const [processing, setProcessing] = useState(false);
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
   const { profile } = useUser();
+  const effectiveCompanyId = useEffectiveCompanyId(profile);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const pdfs = acceptedFiles.filter(
@@ -36,133 +36,31 @@ export default function ImportPage() {
     multiple: true,
   });
 
-  function genId() {
-    return typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2);
-  }
-
-  function importOnePdfLocal(
-    file: File,
-    extracted: {
-      orderNumber: string;
-      clientName: string;
-      deliveryDate: string | null;
-      items: { description: string; quantity: number }[];
-    }
-  ): ImportResult {
-    if (!profile || !profile.company_id) {
-      return {
-        fileName: file.name,
-        success: false,
-        error: "Perfil local não configurado.",
-      };
-    }
-
-    let existing: OrderWithItems[] = [];
-    try {
-      const raw = window.localStorage.getItem("pcp-local-orders");
-      if (raw) existing = JSON.parse(raw) as OrderWithItems[];
-    } catch {
-      existing = [];
-    }
-
-    const { orderNumber, clientName, deliveryDate, items } = extracted;
-
-    // Se já existir pedido com o mesmo número para a mesma empresa,
-    // não cria um novo registro – evita duplicidade básica no modo local.
-    const already = existing.find(
-      (o) =>
-        o.company_id === profile.company_id && o.order_number === orderNumber
-    );
-    if (already) {
-      return {
-        fileName: file.name,
-        success: false,
-        orderNumber,
-        clientName: already.client_name,
-        itemCount: already.items?.length ?? 0,
-        error:
-          "Pedido já importado anteriormente. Revise na tela de Pedidos (nenhuma cópia nova foi criada).",
-      };
-    }
-
-    const now = new Date().toISOString();
-    const orderId = genId();
-
-    const newOrder: OrderWithItems = {
-      id: orderId,
-      company_id: profile.company_id,
-      order_number: orderNumber,
-      client_name: clientName,
-      delivery_deadline: deliveryDate,
-      pcp_deadline: null,
-      production_deadline: null,
-      status: "imported",
-      pdf_path: null,
-      folder_path: null,
-      notes: null,
-      created_at: now,
-      updated_at: now,
-      finished_at: null,
-      created_by: profile.id,
-      items: items.map((item, index) => ({
-        id: genId(),
-        order_id: orderId,
-        item_number: index + 1,
-        description: item.description,
-        quantity: item.quantity || 1,
-        line_id: null,
-        pcp_deadline: null,
-        production_start: null,
-        production_end: null,
-        status: "waiting",
-        completed_at: null,
-        completed_by: null,
-        notes: null,
-        supplied_at: null,
-        created_at: now,
-        updated_at: now,
-      })),
-    };
-
-    const updated = [newOrder, ...existing];
-    try {
-      window.localStorage.setItem(
-        "pcp-local-orders",
-        JSON.stringify(updated)
-      );
-    } catch {
-      // ignore
-    }
-
-    return {
-      fileName: file.name,
-      success: true,
-      orderNumber,
-      clientName,
-      itemCount: newOrder.items.length,
-    };
-  }
-
   async function processOnePdf(file: File): Promise<ImportResult> {
     const formData = new FormData();
     formData.append("file", file);
 
-    // Envia pasta matriz para a API salvar o PDF (quando configurada)
-    try {
-      const raw = window.localStorage.getItem("pcp-local-company");
-      if (raw) {
-        const company = JSON.parse(raw) as { orders_path?: string };
-        if (company?.orders_path?.trim()) {
-          formData.append("orders_path", company.orders_path.trim());
-        }
-      }
-    } catch {
-      // ignore
+    if (effectiveCompanyId) {
+      formData.append("company_id", effectiveCompanyId);
     }
 
-    const useSupabaseApi = createClient() !== null;
+    // Envia pasta matriz para a API salvar o PDF (quando configurada)
+    const supabase = createClient();
+    if (supabase && effectiveCompanyId) {
+      try {
+        const { data: company } = await supabase
+          .from("companies")
+          .select("orders_path, import_path")
+          .eq("id", effectiveCompanyId)
+          .maybeSingle();
+        const path = company?.orders_path || company?.import_path;
+        if (path?.trim()) formData.append("orders_path", path.trim());
+      } catch {
+        // ignore
+      }
+    }
+
+    const useSupabaseApi = supabase !== null;
     const url = "/api/import-pdf";
 
     const res = await fetch(url, {
@@ -208,13 +106,11 @@ export default function ImportPage() {
       };
     }
 
-    // Modo local (cookie) ou API sem Supabase: salva no localStorage
-    return importOnePdfLocal(file, {
-      orderNumber: data.orderNumber,
-      clientName: data.clientName,
-      deliveryDate: data.deliveryDate ?? null,
-      items: data.items ?? [],
-    });
+    return {
+      fileName: file.name,
+      success: false,
+      error: data?.error ?? "Configure a empresa e o Supabase para importar pedidos.",
+    };
   }
 
   async function handleImport() {

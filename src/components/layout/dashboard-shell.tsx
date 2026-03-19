@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/hooks/use-user";
+import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { getOperatorLineIdsForLocalUser } from "@/lib/local-users";
 import type { ProductionLine, Profile } from "@/lib/types/database";
 import { hasPermission } from "@/lib/utils/permissions";
@@ -40,6 +41,7 @@ function countUnprogrammedByLine(
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const { profile, loading } = useUser();
+  const effectiveCompanyId = useEffectiveCompanyId(profile);
   const [company, setCompany] = useState<CompanyInfo | null>(null);
   const [lines, setLines] = useState<ProductionLine[]>([]);
   const [operatorLines, setOperatorLines] = useState<OperatorLine[]>([]);
@@ -52,129 +54,91 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!profile) return;
 
-    const isLocal =
-      !supabase ||
-      profile.company_id === "local-company" ||
-      profile.id === "local-admin" ||
-      profile.id?.startsWith("local-");
-    if (isLocal && profile.company_id) {
-      try {
-        const raw =
-          typeof window !== "undefined" &&
-          window.localStorage.getItem("pcp-local-company");
-        const parsed = raw ? JSON.parse(raw) : null;
-        setCompany({
-          id: profile.company_id,
-          name: parsed?.name ?? "Empresa Local",
-          logo_url: parsed?.logo_url ?? null,
-        });
-      } catch {
-        setCompany({
-          id: profile.company_id,
-          name: "Empresa Local",
-          logo_url: null,
-        });
-      }
-      try {
-        const raw = typeof window !== "undefined" && window.localStorage.getItem("pcp-local-lines");
-        let parsed = raw ? (JSON.parse(raw) as ProductionLine[]) : [];
-        const hasAlmox = parsed.some((l) => l.is_almoxarifado);
-        if (!hasAlmox) {
-          const almoxLine: ProductionLine = {
-            id: "almoxarifado-default",
-            company_id: profile.company_id!,
-            name: "Almoxarifado",
-            is_active: true,
-            is_almoxarifado: true,
-            sort_order: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-          parsed = [almoxLine, ...parsed];
-          window.localStorage.setItem("pcp-local-lines", JSON.stringify(parsed));
-        }
-        const active = parsed
-          .filter((l) => l.is_active !== false)
-          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-        setLines(active);
-      } catch {
-        setLines([]);
-      }
+    const needsEffectiveCompany =
+      supabase && profile.company_id === "local-company";
+    if (needsEffectiveCompany && !effectiveCompanyId) return;
+
+    const companyId = effectiveCompanyId ?? profile.company_id;
+    if (!companyId) return;
+
+    if (!supabase) {
+      setCompany({ id: companyId, name: "Empresa Local", logo_url: null });
+      setLines([]);
+      setUnprogrammedByLine({});
       if (profile.role === "operator") {
         const lineIds = getOperatorLineIdsForLocalUser(profile.id);
         setOperatorLines(lineIds.map((line_id) => ({ line_id })));
       }
-      try {
-        const rawOrders = typeof window !== "undefined" && window.localStorage.getItem("pcp-local-orders");
-        const orders = rawOrders ? (JSON.parse(rawOrders) as { items: { line_id: string | null; status: string; production_start: string | null }[] }[]) : [];
-        setUnprogrammedByLine(countUnprogrammedByLine(orders));
-      } catch {
-        setUnprogrammedByLine({});
-      }
       return;
     }
-    const client = supabase!;
-    async function loadData(p: Profile) {
-      if (p.company_id) {
-        const { data: companyData } = await client
-          .from("companies")
-          .select("id, name, logo_url")
-          .eq("id", p.company_id)
-          .single();
-        setCompany(companyData ?? null);
 
-        const { data: linesData } = await client
-          .from("production_lines")
-          .select("*")
-          .eq("company_id", p.company_id)
-          .eq("is_active", true)
-          .order("sort_order", { ascending: true });
-        setLines(linesData ?? []);
-      }
+    const client = supabase;
+    async function loadData() {
+      const { data: companyData } = await client
+        .from("companies")
+        .select("id, name, logo_url")
+        .eq("id", companyId)
+        .single();
+      setCompany(companyData ?? null);
 
-      if (p.role === "operator") {
+      const { data: linesData } = await client
+        .from("production_lines")
+        .select("*")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true });
+      setLines(linesData ?? []);
+
+      if (profile?.role === "operator") {
         const { data: opLines } = await client
           .from("operator_lines")
           .select("line_id")
-          .eq("user_id", p.id);
-        setOperatorLines(opLines ?? []);
+          .eq("user_id", profile!.id);
+        if (opLines?.length) {
+          setOperatorLines(opLines);
+        } else {
+          const lineIds = getOperatorLineIdsForLocalUser(profile!.id);
+          setOperatorLines(lineIds.map((line_id) => ({ line_id })));
+        }
       }
 
-      if (p.company_id) {
-        try {
-          const { data: itemsData } = await client
-            .from("order_items")
-            .select("line_id, status, production_start")
-            .not("line_id", "is", null);
-          const counts: Record<string, number> = {};
-          for (const it of itemsData ?? []) {
-            if (it.line_id && (it.status === "waiting" || !it.production_start)) {
-              counts[it.line_id] = (counts[it.line_id] ?? 0) + 1;
-            }
+      try {
+        const { data: itemsData } = await client
+          .from("order_items")
+          .select("line_id, status, production_start")
+          .not("line_id", "is", null);
+        const counts: Record<string, number> = {};
+        for (const it of itemsData ?? []) {
+          if (it.line_id && (it.status === "waiting" || !it.production_start)) {
+            counts[it.line_id] = (counts[it.line_id] ?? 0) + 1;
           }
-          setUnprogrammedByLine(counts);
-        } catch {
-          setUnprogrammedByLine({});
         }
+        setUnprogrammedByLine(counts);
+      } catch {
+        setUnprogrammedByLine({});
       }
     }
 
-    loadData(profile);
-  }, [profile, supabase, pathname]);
+    loadData();
+  }, [profile, supabase, effectiveCompanyId, pathname]);
 
-  // Atualiza contagem de itens não programados (modo local) ao trocar de aba ou periodicamente
+  // Atualiza contagem de itens não programados ao trocar de aba ou periodicamente (apenas Supabase)
   useEffect(() => {
-    const isLocal2 =
-      !supabase ||
-      profile?.company_id === "local-company" ||
-      profile?.id === "local-admin" ||
-      profile?.id?.startsWith("local-");
-    if (!isLocal2 || !profile?.company_id) return;
-    function refreshCounts() {
+    if (!supabase || !effectiveCompanyId) return;
+    const client = supabase;
+    async function refreshCounts() {
       try {
-        const raw = typeof window !== "undefined" && window.localStorage.getItem("pcp-local-orders");
-        const orders = raw ? (JSON.parse(raw) as { items: { line_id: string | null; status: string; production_start: string | null }[] }[]) : [];
-        setUnprogrammedByLine(countUnprogrammedByLine(orders));
+        const { data } = await client
+          .from("order_items")
+          .select("line_id, status, production_start")
+          .not("line_id", "is", null);
+        const counts: Record<string, number> = {};
+        for (const it of data ?? []) {
+          if (it.line_id && (it.status === "waiting" || !it.production_start)) {
+            counts[it.line_id] = (counts[it.line_id] ?? 0) + 1;
+          }
+        }
+        setUnprogrammedByLine(counts);
       } catch {
         // ignore
       }
@@ -185,7 +149,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       clearInterval(interval);
       window.removeEventListener("focus", refreshCounts);
     };
-  }, [profile, supabase]);
+  }, [profile, supabase, effectiveCompanyId]);
 
   const pageTitle = useMemo(() => {
     if (pathname === "/dashboard" || pathname === "/") return "Dashboard";

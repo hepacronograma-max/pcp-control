@@ -16,6 +16,9 @@ out/
 # debug
 npm-debug.log*
 
+# backup (contém dados sensíveis)
+backup-pcp.json
+
 # misc
 *.tsbuildinfo
 next-env.d.ts

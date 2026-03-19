@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/hooks/use-user";
+import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { getOperatorLineIdsForLocalUser } from "@/lib/local-users";
 import type {
   OrderWithItems,
@@ -12,6 +13,7 @@ import type {
 } from "@/lib/types/database";
 import { OrdersTable } from "@/components/pedidos/orders-table";
 import { hasPermission } from "@/lib/utils/permissions";
+import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 import { Button } from "@/components/ui/button";
 
 type TabKey = "open" | "finished";
@@ -19,7 +21,11 @@ type TabKey = "open" | "finished";
 export default function PedidosPage() {
   const supabase = createClient();
   const { profile, loading } = useUser();
+  const effectiveCompanyId = useEffectiveCompanyId(profile);
   const router = useRouter();
+
+  /** Modo local APENAS quando Supabase não está configurado. Com Supabase, sempre usa banco. */
+  const isLocal = !supabase;
 
   useEffect(() => {
     if (!loading && profile && profile.role === "operator") {
@@ -36,75 +42,26 @@ export default function PedidosPage() {
   const [tab, setTab] = useState<TabKey>("open");
   const [loadingData, setLoadingData] = useState(false);
 
-  const isLocal =
-    !supabase ||
-    profile?.company_id === "local-company" ||
-    profile?.id === "local-admin" ||
-    (profile?.id?.startsWith("local-") ?? false);
-
   function updateOrdersState(
     updater: (prev: OrderWithItems[]) => OrderWithItems[]
   ) {
-    setOrders((prev) => {
-      const next = updater(prev);
-      if (isLocal) {
-        try {
-          window.localStorage.setItem(
-            "pcp-local-orders",
-            JSON.stringify(next)
-          );
-        } catch {
-          // ignore
-        }
-      }
-      return next;
-    });
+    setOrders((prev) => updater(prev));
   }
 
   useEffect(() => {
-    if (!profile || !profile.company_id) return;
-    const companyId = profile.company_id;
+    if (!profile || !effectiveCompanyId) return;
+    const companyId = effectiveCompanyId;
 
     async function loadData() {
       setLoadingData(true);
 
-      // Modo local: carrega pedidos e linhas do localStorage
-      if (isLocal) {
-        try {
-          const raw = window.localStorage.getItem("pcp-local-orders");
-          if (raw) {
-            const parsed = JSON.parse(raw) as OrderWithItems[];
-            const withDeadline = parsed.map((o) => ({
-              ...o,
-              production_deadline:
-                o.items?.length &&
-                o.items.some((i) => i.production_end)
-                  ? (o.items
-                      .map((i) => i.production_end)
-                      .filter(Boolean) as string[])
-                      .sort((a, b) => (a > b ? -1 : 1))[0] ?? null
-                  : o.production_deadline,
-            }));
-            setOrders(withDeadline);
-          } else {
-            setOrders([]);
-          }
-          const linesRaw = window.localStorage.getItem("pcp-local-lines");
-          const localLines = linesRaw
-            ? (JSON.parse(linesRaw) as ProductionLine[])
-                .filter((l) => l.is_active !== false)
-                .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-            : [];
-          setLines(localLines);
-        } catch {
-          setOrders([]);
-          setLines([]);
-        }
+      if (!supabase) {
+        setOrders([]);
+        setLines([]);
         setLoadingData(false);
         return;
       }
 
-      if (!supabase) return;
       const { data: ordersData } = await supabase
         .from("orders")
         .select(
@@ -134,7 +91,7 @@ export default function PedidosPage() {
     }
 
     loadData();
-  }, [profile, supabase, isLocal]);
+  }, [profile, supabase, effectiveCompanyId]);
 
   const userRole: UserRole | null = profile ? profile.role : null;
   const canImport =
@@ -150,34 +107,15 @@ export default function PedidosPage() {
   );
 
   async function handleUpdateOrderPcpDate(orderId: string, date: string | null) {
-    if (isLocal) {
-      // No modo local, o prazo PCP do pedido deve ser propagado
-      // para todos os itens do pedido (não editável por item).
-      updateOrdersState((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                pcp_deadline: date,
-                items: o.items.map((it) => ({
-                  ...it,
-                  pcp_deadline: date,
-                })),
-              }
-            : o
-        )
-      );
-      return;
-    }
-
     if (!supabase) return;
+    const dateVal = toDateOnly(date);
     await supabase
       .from("orders")
-      .update({ pcp_deadline: date })
+      .update({ pcp_deadline: dateVal })
       .eq("id", orderId);
     await supabase
       .from("order_items")
-      .update({ pcp_deadline: date })
+      .update({ pcp_deadline: dateVal })
       .eq("order_id", orderId);
 
     updateOrdersState((prev) =>
@@ -185,10 +123,10 @@ export default function PedidosPage() {
         o.id === orderId
           ? {
               ...o,
-              pcp_deadline: date,
+              pcp_deadline: dateVal,
               items: o.items.map((it) => ({
                 ...it,
-                pcp_deadline: date,
+                pcp_deadline: dateVal,
               })),
             }
           : o
@@ -197,21 +135,6 @@ export default function PedidosPage() {
   }
 
   async function handleUpdateItemLine(itemId: string, lineId: string | null) {
-    if (isLocal) {
-      updateOrdersState((prev) =>
-        prev.map((order) => {
-          const nextOrder = {
-            ...order,
-            items: order.items.map((item) =>
-              item.id === itemId ? { ...item, line_id: lineId } : item
-            ),
-          };
-          nextOrder.production_deadline = recalcOrderProductionDeadline(nextOrder);
-          return nextOrder;
-        })
-      );
-      return;
-    }
     if (!supabase) return;
     await supabase
       .from("order_items")
@@ -230,26 +153,14 @@ export default function PedidosPage() {
   // Prazo PCP por item deixou de ser editável; os itens herdam o prazo do pedido.
 
   async function handleUpdateItemQuantity(itemId: string, quantity: number) {
-    if (isLocal) {
-      updateOrdersState((prev) =>
-        prev.map((order) => {
-          const nextItems = order.items.map((item) =>
-            item.id === itemId ? { ...item, quantity } : item
-          );
-          const nextOrder = { ...order, items: nextItems };
-          nextOrder.production_deadline = recalcOrderProductionDeadline(nextOrder);
-          return nextOrder;
-        })
-      );
-      return;
-    }
     if (!supabase) return;
-    await supabase.from("order_items").update({ quantity }).eq("id", itemId);
+    await supabase.from("order_items").update({ quantity: toQuantity(quantity) }).eq("id", itemId);
+    const qty = toQuantity(quantity);
     updateOrdersState((prev) =>
       prev.map((order) => ({
         ...order,
         items: order.items.map((item) =>
-          item.id === itemId ? { ...item, quantity } : item
+          item.id === itemId ? { ...item, quantity: qty } : item
         ),
       }))
     );
@@ -263,28 +174,16 @@ export default function PedidosPage() {
       delivery_deadline?: string | null;
     }
   ) {
-    if (isLocal) {
-      updateOrdersState((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? {
-                ...o,
-                ...(data.order_number !== undefined && { order_number: data.order_number }),
-                ...(data.client_name !== undefined && { client_name: data.client_name }),
-                ...(data.delivery_deadline !== undefined && {
-                  delivery_deadline: data.delivery_deadline,
-                }),
-              }
-            : o
-        )
-      );
-      return;
-    }
     if (!supabase) return;
-    await supabase.from("orders").update(data).eq("id", orderId);
+    const update: Record<string, unknown> = {};
+    if (data.order_number !== undefined) update.order_number = String(data.order_number).trim().slice(0, 50);
+    if (data.client_name !== undefined) update.client_name = String(data.client_name).trim().slice(0, 255);
+    if (data.delivery_deadline !== undefined) update.delivery_deadline = toDateOnly(data.delivery_deadline);
+    if (Object.keys(update).length === 0) return;
+    await supabase.from("orders").update(update).eq("id", orderId);
     updateOrdersState((prev) =>
       prev.map((o) =>
-        o.id === orderId ? { ...o, ...data } : o
+        o.id === orderId ? { ...o, ...update } : o
       )
     );
   }
@@ -295,10 +194,6 @@ export default function PedidosPage() {
         "Excluir este pedido e todos os itens? Esta ação não pode ser desfeita."
       )
     ) {
-      return;
-    }
-    if (isLocal) {
-      updateOrdersState((prev) => prev.filter((o) => o.id !== orderId));
       return;
     }
     if (!supabase) return;
@@ -326,17 +221,6 @@ export default function PedidosPage() {
     }
 
     const nowIso = new Date().toISOString();
-    if (isLocal) {
-      updateOrdersState((prev) =>
-        prev.map((o) =>
-          o.id === orderId
-            ? { ...o, status: "finished", finished_at: nowIso }
-            : o
-        )
-      );
-      return;
-    }
-
     if (!supabase) return;
     await supabase
       .from("orders")
@@ -387,61 +271,28 @@ export default function PedidosPage() {
   }
 
   async function handleCreateOrder() {
-    if (!profile || !profile.company_id) return;
+    if (!profile || !effectiveCompanyId) return;
     if (!newOrderNumber || !newClientName || newItems.length === 0) return;
 
-    if (isLocal) {
-      const genId = () =>
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : Math.random().toString(36).slice(2);
+    if (supabase) {
+      const { data: existing } = await supabase
+        .from("orders")
+        .select("id")
+        .eq("company_id", effectiveCompanyId)
+        .eq("order_number", newOrderNumber.trim())
+        .maybeSingle();
+      if (existing) {
+        alert(`Pedido ${newOrderNumber} já existe para esta empresa.`);
+        return;
+      }
 
-      const orderId = genId();
-      const fullOrder: OrderWithItems = {
-        id: orderId,
-        company_id: profile.company_id,
-        order_number: newOrderNumber,
-        client_name: newClientName,
-        delivery_deadline: newDeliveryDeadline || null,
-        pcp_deadline: null,
-        production_deadline: null,
-        status: "imported",
-        pdf_path: null,
-        folder_path: null,
-        notes: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        finished_at: null,
-        created_by: profile.id,
-        items: newItems.map((item, index) => ({
-          id: genId(),
-          order_id: orderId,
-          item_number: index + 1,
-          description: item.description,
-          quantity: item.quantity || 1,
-          line_id: null,
-          pcp_deadline: null,
-          production_start: null,
-          production_end: null,
-          status: "waiting",
-          completed_at: null,
-          completed_by: null,
-          notes: null,
-          supplied_at: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })),
-      };
-
-      updateOrdersState((prev) => [fullOrder, ...prev]);
-    } else if (supabase) {
       const { data: createdOrders } = await supabase
         .from("orders")
         .insert({
-          company_id: profile.company_id,
-          order_number: newOrderNumber,
-          client_name: newClientName,
-          delivery_deadline: newDeliveryDeadline || null,
+          company_id: effectiveCompanyId,
+          order_number: newOrderNumber.trim(),
+          client_name: newClientName.trim(),
+          delivery_deadline: toDateOnly(newDeliveryDeadline),
           status: "imported",
           created_by: profile.id,
         })
@@ -456,8 +307,8 @@ export default function PedidosPage() {
           newItems.map((item, index) => ({
             order_id: createdOrder.id,
             item_number: index + 1,
-            description: item.description,
-            quantity: item.quantity || 1,
+            description: (item.description || "").trim().slice(0, 500),
+            quantity: toQuantity(item.quantity),
           }))
         )
         .select();
@@ -477,9 +328,22 @@ export default function PedidosPage() {
     setNewItems([]);
   }
 
-  if (loading || !profile) {
+  const needsEffectiveCompany =
+    supabase && profile?.company_id === "local-company";
+  const effectiveReady = !needsEffectiveCompany || effectiveCompanyId !== null;
+
+  if (loading || !profile || !effectiveReady) {
     return (
       <div className="text-sm text-slate-500">Carregando pedidos...</div>
+    );
+  }
+
+  if (!supabase) {
+    return (
+      <div className="text-sm text-amber-700">
+        Supabase não configurado. Configure NEXT_PUBLIC_SUPABASE_URL e
+        NEXT_PUBLIC_SUPABASE_ANON_KEY para usar o sistema.
+      </div>
     );
   }
 
