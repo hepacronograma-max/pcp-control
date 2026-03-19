@@ -24,7 +24,7 @@ const FERIADOS_NACIONAIS = [
 
 export default function HolidaysSettingsPage() {
   const { profile, loading } = useUser();
-  const effectiveCompanyId = useEffectiveCompanyId(profile);
+  const { companyId: effectiveCompanyId } = useEffectiveCompanyId(profile);
   const supabase = createClient();
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [newDate, setNewDate] = useState("");

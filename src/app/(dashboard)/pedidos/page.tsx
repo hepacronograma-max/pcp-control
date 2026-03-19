@@ -21,7 +21,8 @@ type TabKey = "open" | "finished";
 export default function PedidosPage() {
   const supabase = createClient();
   const { profile, loading } = useUser();
-  const effectiveCompanyId = useEffectiveCompanyId(profile);
+  const { companyId: effectiveCompanyId, loaded: effectiveLoaded } =
+    useEffectiveCompanyId(profile);
   const router = useRouter();
 
   /** Modo local APENAS quando Supabase não está configurado. Com Supabase, sempre usa banco. */
@@ -51,9 +52,24 @@ export default function PedidosPage() {
   useEffect(() => {
     if (!profile || !effectiveCompanyId) return;
     const companyId = effectiveCompanyId;
+    const useApi = profile.company_id === "local-company";
 
     async function loadData() {
       setLoadingData(true);
+
+      if (useApi) {
+        try {
+          const res = await fetch("/api/company-data");
+          const json = await res.json();
+          setOrders((json.orders ?? []) as OrderWithItems[]);
+          setLines((json.lines ?? []) as ProductionLine[]);
+        } catch {
+          setOrders([]);
+          setLines([]);
+        }
+        setLoadingData(false);
+        return;
+      }
 
       if (!supabase) {
         setOrders([]);
@@ -330,11 +346,19 @@ export default function PedidosPage() {
 
   const needsEffectiveCompany =
     supabase && profile?.company_id === "local-company";
-  const effectiveReady = !needsEffectiveCompany || effectiveCompanyId !== null;
+  const effectiveReady = !needsEffectiveCompany || effectiveLoaded;
 
   if (loading || !profile || !effectiveReady) {
     return (
       <div className="text-sm text-slate-500">Carregando pedidos...</div>
+    );
+  }
+
+  if (needsEffectiveCompany && !effectiveCompanyId) {
+    return (
+      <div className="text-sm text-amber-700">
+        Nenhuma empresa cadastrada. Configure em Configurações → Empresa.
+      </div>
     );
   }
 

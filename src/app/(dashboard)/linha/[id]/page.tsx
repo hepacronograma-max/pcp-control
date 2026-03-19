@@ -29,7 +29,8 @@ export default function LinePage() {
   const lineId = params.id;
   const supabase = createClient();
   const { profile, loading } = useUser();
-  const effectiveCompanyId = useEffectiveCompanyId(profile);
+  const { companyId: effectiveCompanyId, loaded: effectiveLoaded } =
+    useEffectiveCompanyId(profile);
   const router = useRouter();
 
   const [line, setLine] = useState<ProductionLine | null>(null);
@@ -242,11 +243,19 @@ export default function LinePage() {
 
   const needsEffectiveCompany =
     supabase && profile?.company_id === "local-company";
-  const effectiveReady = !needsEffectiveCompany || effectiveCompanyId !== null;
+  const effectiveReady = !needsEffectiveCompany || effectiveLoaded;
 
   if (loading || !profile || !effectiveReady) {
     return (
       <div className="text-sm text-slate-500">Carregando linha de produção...</div>
+    );
+  }
+
+  if (needsEffectiveCompany && !effectiveCompanyId) {
+    return (
+      <div className="text-sm text-amber-700">
+        Nenhuma empresa cadastrada. Configure em Configurações → Empresa.
+      </div>
     );
   }
 

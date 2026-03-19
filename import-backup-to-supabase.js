@@ -16,7 +16,9 @@ const path = require("path");
 const { createClient } = require("@supabase/supabase-js");
 
 const PROJECT_ROOT = process.cwd();
-const BACKUP_FILE = path.join(PROJECT_ROOT, "backup-pcp.json");
+const BACKUP_FILE = process.argv[2]
+  ? path.resolve(PROJECT_ROOT, process.argv[2])
+  : path.join(PROJECT_ROOT, "backup-pcp.json");
 
 function isConnectionError(err) {
   const msg = (err && err.message) || String(err);
@@ -222,16 +224,13 @@ async function run() {
 
   if (orders.length) {
     console.log("3. Pedidos");
-    const ordersToInsert = orders.map((o) => {
-      const { items, created_by, ...rest } = o;
-      return {
-        id: o.id,
-        company_id: resolveCompanyId(o.company_id),
-        order_number: o.order_number,
-        client_name: o.client_name,
-        status: o.status || "imported",
-      };
-    });
+    const ordersToInsert = orders.map((o) => ({
+      id: isValidUuid(o.id) ? o.id : genUuid(),
+      company_id: resolveCompanyId(o.company_id),
+      order_number: String(o.order_number || "").slice(0, 50),
+      client_name: String(o.client_name || "").slice(0, 255),
+      status: o.status || "imported",
+    }));
     const { error } = await supabase.from("orders").upsert(ordersToInsert, { onConflict: "id" });
     if (error) {
       console.error("   ❌ Erro:", isConnectionError(error) ? "Falha de conexão com Supabase – verifique URL ou internet." : error.message);
@@ -242,14 +241,24 @@ async function run() {
     }
     console.log("");
 
-    const allItems = orders.flatMap((o) => (o.items || []).map((it) => ({ ...it, order_id: o.id })));
+    const orderIdMap = {};
+    orders.forEach((o, i) => {
+      if (o.id !== ordersToInsert[i].id) orderIdMap[o.id] = ordersToInsert[i].id;
+    });
+    const allItems = orders.flatMap((o) =>
+      (o.items || []).map((it) => ({
+        ...it,
+        order_id: orderIdMap[o.id] || o.id,
+        line_id: it.line_id ? (resolveLineId(String(it.line_id)) ?? null) : null,
+      }))
+    );
     if (allItems.length) {
       console.log("4. Itens dos pedidos");
       const itemsToInsert = allItems.map((it) => ({
-        id: it.id,
+        id: isValidUuid(it.id) ? it.id : genUuid(),
         order_id: it.order_id,
-        description: it.description || "",
-        quantity: it.quantity ?? 1,
+        description: (it.description || "").slice(0, 500),
+        quantity: Math.max(1, Number(it.quantity) || 1),
       }));
       const { error } = await supabase.from("order_items").upsert(itemsToInsert, { onConflict: "id" });
       if (error) {

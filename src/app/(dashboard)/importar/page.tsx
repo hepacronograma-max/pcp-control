@@ -21,7 +21,7 @@ export default function ImportPage() {
   const [processing, setProcessing] = useState(false);
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
   const { profile } = useUser();
-  const effectiveCompanyId = useEffectiveCompanyId(profile);
+  const { companyId: effectiveCompanyId } = useEffectiveCompanyId(profile);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const pdfs = acceptedFiles.filter(

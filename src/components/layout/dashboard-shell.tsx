@@ -41,7 +41,8 @@ function countUnprogrammedByLine(
 
 export function DashboardShell({ children }: { children: ReactNode }) {
   const { profile, loading } = useUser();
-  const effectiveCompanyId = useEffectiveCompanyId(profile);
+  const { companyId: effectiveCompanyId, loaded: effectiveLoaded } =
+    useEffectiveCompanyId(profile);
   const [company, setCompany] = useState<CompanyInfo | null>(null);
   const [lines, setLines] = useState<ProductionLine[]>([]);
   const [operatorLines, setOperatorLines] = useState<OperatorLine[]>([]);
@@ -56,10 +57,32 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
     const needsEffectiveCompany =
       supabase && profile.company_id === "local-company";
-    if (needsEffectiveCompany && !effectiveCompanyId) return;
+    if (needsEffectiveCompany && !effectiveLoaded) return;
 
     const companyId = effectiveCompanyId ?? profile.company_id;
     if (!companyId) return;
+
+    const useApi = profile.company_id === "local-company";
+
+    if (useApi) {
+      fetch("/api/company-data")
+        .then((res) => res.json())
+        .then((json) => {
+          setCompany(json.company ?? null);
+          setLines(json.lines ?? []);
+          setUnprogrammedByLine(json.unprogrammedByLine ?? {});
+          if (profile?.role === "operator") {
+            const lineIds = getOperatorLineIdsForLocalUser(profile.id);
+            setOperatorLines(lineIds.map((line_id) => ({ line_id })));
+          }
+        })
+        .catch(() => {
+          setCompany(null);
+          setLines([]);
+          setUnprogrammedByLine({});
+        });
+      return;
+    }
 
     if (!supabase) {
       setCompany({ id: companyId, name: "Empresa Local", logo_url: null });
@@ -120,7 +143,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     }
 
     loadData();
-  }, [profile, supabase, effectiveCompanyId, pathname]);
+  }, [profile, supabase, effectiveCompanyId, effectiveLoaded, pathname]);
 
   // Atualiza contagem de itens não programados ao trocar de aba ou periodicamente (apenas Supabase)
   useEffect(() => {

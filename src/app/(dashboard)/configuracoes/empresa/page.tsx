@@ -21,7 +21,7 @@ interface CompanyForm {
 
 export default function CompanySettingsPage() {
   const { profile, loading } = useUser();
-  const effectiveCompanyId = useEffectiveCompanyId(profile);
+  const { companyId: effectiveCompanyId } = useEffectiveCompanyId(profile);
   const supabase = createClient();
   const [form, setForm] = useState<CompanyForm | null>(null);
   const [saving, setSaving] = useState(false);

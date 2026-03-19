@@ -1,50 +1,53 @@
 'use client';
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/lib/types/database";
+
+/** Resultado do hook: id efetivo e se já terminou de carregar (para perfil local). */
+export type EffectiveCompanyResult = {
+  companyId: string | null;
+  /** false = ainda buscando; true = já buscou (pode ser null se não houver empresa). */
+  loaded: boolean;
+};
 
 /**
  * Retorna o company_id efetivo para consultas ao Supabase.
  * Quando o perfil é "local" (company_id === "local-company") mas o Supabase está configurado,
- * busca a primeira empresa no banco para usar como contexto.
- * Isso permite que usuários com auth local (admin@local) usem os dados do Supabase.
+ * busca a primeira empresa via API (service role) para evitar problemas com anon key/RLS.
  */
-export function useEffectiveCompanyId(profile: Profile | null): string | null {
-  const supabase = createClient();
-  const [effectiveId, setEffectiveId] = useState<string | null>(
+export function useEffectiveCompanyId(profile: Profile | null): EffectiveCompanyResult {
+  const [companyId, setCompanyId] = useState<string | null>(
     profile?.company_id ?? null
   );
+  const [loaded, setLoaded] = useState(!profile || profile.company_id !== "local-company");
 
   useEffect(() => {
     if (!profile?.company_id) {
-      setEffectiveId(null);
+      setCompanyId(null);
+      setLoaded(true);
       return;
     }
 
-    // Se não for "local-company", usa o company_id do perfil normalmente
     if (profile.company_id !== "local-company") {
-      setEffectiveId(profile.company_id);
+      setCompanyId(profile.company_id);
+      setLoaded(true);
       return;
     }
 
-    // Perfil local sem Supabase: mantém company_id
-    if (!supabase) {
-      setEffectiveId(profile.company_id);
-      return;
-    }
-
-    // Perfil local COM Supabase: busca a primeira empresa
+    setLoaded(false);
     async function fetchFirstCompany() {
-      const { data } = await supabase!
-        .from("companies")
-        .select("id")
-        .limit(1)
-        .maybeSingle();
-      setEffectiveId(data?.id ?? null);
+      try {
+        const res = await fetch("/api/effective-company");
+        const json = await res.json();
+        setCompanyId(json.companyId ?? null);
+      } catch {
+        setCompanyId(null);
+      } finally {
+        setLoaded(true);
+      }
     }
     fetchFirstCompany();
-  }, [profile?.company_id, supabase]);
+  }, [profile?.company_id]);
 
-  return effectiveId;
+  return { companyId, loaded };
 }

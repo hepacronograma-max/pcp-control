@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/hooks/use-user";
@@ -17,9 +17,62 @@ export default function ConfiguracoesPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [cleared, setCleared] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<{ success: boolean; msg: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
   const { profile } = useUser();
-  const effectiveCompanyId = useEffectiveCompanyId(profile);
+  const { companyId: effectiveCompanyId } = useEffectiveCompanyId(profile);
+
+  async function handleRestoreFromFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setRestoring(true);
+    setRestoreResult(null);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      await doRestore(data);
+    } catch (err) {
+      setRestoreResult({ success: false, msg: err instanceof Error ? err.message : "Erro ao ler arquivo" });
+    } finally {
+      setRestoring(false);
+      e.target.value = "";
+    }
+  }
+
+  async function handleRestoreFromRepo() {
+    setRestoring(true);
+    setRestoreResult(null);
+    try {
+      const res = await fetch("/backup-inicial.json");
+      if (!res.ok) throw new Error("Backup não encontrado no repositório");
+      const data = await res.json();
+      await doRestore(data);
+    } catch (err) {
+      setRestoreResult({ success: false, msg: err instanceof Error ? err.message : "Erro ao buscar backup" });
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  async function doRestore(data: unknown) {
+    const res = await fetch("/api/import-backup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    const json = await res.json();
+    if (json.success) {
+      setRestoreResult({
+        success: true,
+        msg: `Restaurado: ${json.orders} pedidos, ${json.items} itens, ${json.lines} linhas, ${json.holidays} feriados. Recarregue a página.`,
+      });
+      setTimeout(() => window.location.reload(), 2000);
+    } else {
+      setRestoreResult({ success: false, msg: json.error || "Erro ao restaurar" });
+    }
+  }
 
   async function handleClearOrders() {
     setClearing(true);
@@ -70,6 +123,49 @@ export default function ConfiguracoesPage() {
 
       <div className="border-t border-slate-200 pt-6">
         <h2 className="text-sm font-semibold text-slate-800 mb-2">Manutenção</h2>
+
+        {supabase && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-lg border border-emerald-200 bg-emerald-50 mb-3">
+            <div>
+              <h3 className="text-sm font-medium text-emerald-800">Restaurar backup</h3>
+              <p className="text-xs text-emerald-600 mt-0.5">
+                Importa pedidos, linhas, empresa e feriados para o Supabase. Use o backup do repositório (recomendado) ou selecione um arquivo.
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex gap-2">
+                <button
+                  onClick={handleRestoreFromRepo}
+                  disabled={restoring}
+                  className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50"
+                >
+                  {restoring ? "Restaurando..." : "Restaurar do repositório"}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  className="hidden"
+                  onChange={handleRestoreFromFile}
+                  disabled={restoring}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={restoring}
+                  className="px-3 py-1.5 rounded-md border border-emerald-600 text-emerald-700 text-xs font-medium hover:bg-emerald-50 disabled:opacity-50"
+                >
+                  Selecionar arquivo
+                </button>
+              </div>
+              {restoreResult && (
+                <span className={`text-xs font-medium ${restoreResult.success ? "text-emerald-700" : "text-red-700"}`}>
+                  {restoreResult.msg}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-lg border border-red-200 bg-red-50">
           <div>
             <h3 className="text-sm font-medium text-red-800">Zerar base de pedidos</h3>

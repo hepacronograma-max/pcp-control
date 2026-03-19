@@ -11,15 +11,12 @@ export function useUser() {
 
   useEffect(() => {
     async function getProfile() {
-      // Em localhost: verifica admin@local (perfil no localStorage)
+      // Auth local (admin@local): perfil no localStorage, funciona em localhost e produção
       if (typeof window !== "undefined") {
-        const isLocalhost =
-          window.location.hostname === "localhost" ||
-          window.location.hostname === "127.0.0.1";
         const hasLocalAuth = document.cookie
           .split("; ")
           .some((c) => c.startsWith("pcp-local-auth=1"));
-        if (isLocalhost && hasLocalAuth) {
+        if (hasLocalAuth) {
           try {
             let raw = window.localStorage.getItem("pcp-local-profile");
             if (!raw) {

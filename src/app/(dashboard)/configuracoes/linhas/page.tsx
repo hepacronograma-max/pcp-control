@@ -13,7 +13,7 @@ import { toSortOrder } from "@/lib/utils/supabase-data";
 
 export default function LinesSettingsPage() {
   const { profile, loading } = useUser();
-  const effectiveCompanyId = useEffectiveCompanyId(profile);
+  const { companyId: effectiveCompanyId } = useEffectiveCompanyId(profile);
   const supabase = createClient();
   const [lines, setLines] = useState<ProductionLine[]>([]);
   const [newName, setNewName] = useState("");
