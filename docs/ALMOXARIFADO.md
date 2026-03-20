@@ -18,6 +18,10 @@ Quando alguém grava a programação na API (`POST /api/order-items/update`, aç
 
 Itens que já estão **na** linha almoxarifado não disparam espelho (evita loop).
 
+### Reconciliação ao abrir o Almoxarifado
+
+Ao entrar na página da linha **Almoxarifado** (com login local), o app chama `POST /api/order-items/reconcile-almox` e cria/atualiza espelhos para **todos** os itens já programados nas outras linhas — útil se a programação foi feita antes do sync existir ou se houve falha silenciosa.
+
 **Obs.:** Quem salvar programação **só pelo cliente Supabase no browser** (sem cookie local / sem API) não passa por essa lógica; o fluxo recomendado é login local em produção, que já usa a API.
 
 ## Banco

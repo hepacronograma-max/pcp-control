@@ -22,18 +22,20 @@ export function parseAlmoxSourceItemId(notes: string | null | undefined): string
   return uuidMatch ? uuidMatch[0] : null;
 }
 
-async function resolveAlmoxLineId(
+export async function resolveAlmoxLineId(
   supabase: SupabaseClient,
   companyId: string
 ): Promise<string | null> {
+  /** Não usar maybeSingle: 0 linhas OK; 2+ linhas com flag geram erro e quebram o fallback. */
   const byFlag = await supabase
     .from("production_lines")
     .select("id")
     .eq("company_id", companyId)
     .eq("is_almoxarifado", true)
-    .limit(1)
-    .maybeSingle();
-  if (byFlag.data?.id) return byFlag.data.id;
+    .order("sort_order", { ascending: true })
+    .limit(1);
+  const idFromFlag = byFlag.data?.[0]?.id;
+  if (idFromFlag) return idFromFlag;
 
   const msg = byFlag.error?.message ?? "";
   if (
@@ -45,9 +47,10 @@ async function resolveAlmoxLineId(
       .select("id")
       .eq("company_id", companyId)
       .ilike("name", "%almox%")
-      .limit(1)
-      .maybeSingle();
-    if (byName.data?.id) return byName.data.id;
+      .order("sort_order", { ascending: true })
+      .limit(1);
+    const idFromName = byName.data?.[0]?.id;
+    if (idFromName) return idFromName;
   }
   return null;
 }
@@ -55,6 +58,7 @@ async function resolveAlmoxLineId(
 /**
  * Quando a produção agenda início numa linha “de chão”, o almoxarifado abastece **no mesmo dia**
  * (production_start = production_end = data de início da produção).
+ * @returns true se gravou algo no banco (insert/update/limpeza).
  */
 export async function syncAlmoxarifadoOnProgram(params: {
   supabase: SupabaseClient;
@@ -68,7 +72,7 @@ export async function syncAlmoxarifadoOnProgram(params: {
   orderPcpDeadline: string | null;
   itemPcpDeadline: string | null;
   pcDeliveryDate: string | null;
-}): Promise<void> {
+}): Promise<boolean> {
   const {
     supabase,
     sourceItemId,
@@ -82,7 +86,7 @@ export async function syncAlmoxarifadoOnProgram(params: {
     pcDeliveryDate,
   } = params;
 
-  if (!sourceLineId) return;
+  if (!sourceLineId) return false;
 
   const { data: sourceLine } = await supabase
     .from("production_lines")
@@ -90,17 +94,17 @@ export async function syncAlmoxarifadoOnProgram(params: {
     .eq("id", sourceLineId)
     .maybeSingle();
 
-  if (!sourceLine) return;
+  if (!sourceLine) return false;
 
   const isAlmox =
     sourceLine.is_almoxarifado === true ||
     (typeof sourceLine.name === "string" &&
       sourceLine.name.toLowerCase().includes("almox"));
-  if (isAlmox) return;
+  if (isAlmox) return false;
 
   const companyId = sourceLine.company_id as string;
   const almoxLineId = await resolveAlmoxLineId(supabase, companyId);
-  if (!almoxLineId) return;
+  if (!almoxLineId) return false;
 
   const ref = almoxRefNote(sourceItemId);
   const likePattern = `%${ref}%`;
@@ -119,7 +123,7 @@ export async function syncAlmoxarifadoOnProgram(params: {
   const day = productionStart ? toDateOnly(productionStart) : null;
   const pcDelivery = pcDeliveryDate ? toDateOnly(pcDeliveryDate) : null;
   if (day && pcDelivery && day < pcDelivery) {
-    return;
+    return false;
   }
 
   const pcp =
@@ -127,7 +131,13 @@ export async function syncAlmoxarifadoOnProgram(params: {
 
   if (!day) {
     if (existing?.id) {
-      await supabase
+      const { data: cur } = await supabase
+        .from("order_items")
+        .select("production_start, production_end")
+        .eq("id", existing.id)
+        .maybeSingle();
+      if (!cur?.production_start && !cur?.production_end) return false;
+      const { error } = await supabase
         .from("order_items")
         .update({
           production_start: null,
@@ -135,8 +145,13 @@ export async function syncAlmoxarifadoOnProgram(params: {
           status: "waiting",
         })
         .eq("id", existing.id);
+      if (error) {
+        console.error("[sync-almox] clear mirror:", error.message);
+        return false;
+      }
+      return true;
     }
-    return;
+    return false;
   }
 
   const payload = {
@@ -148,8 +163,29 @@ export async function syncAlmoxarifadoOnProgram(params: {
   };
 
   if (existing?.id) {
-    await supabase.from("order_items").update(payload).eq("id", existing.id);
-    return;
+    const { data: cur } = await supabase
+      .from("order_items")
+      .select("production_start, production_end, status, pcp_deadline, pc_delivery_date")
+      .eq("id", existing.id)
+      .maybeSingle();
+    const curPcp = toDateOnly(cur?.pcp_deadline as string | null);
+    const curPc = toDateOnly(cur?.pc_delivery_date as string | null);
+    const same =
+      toDateOnly(cur?.production_start as string | null) === day &&
+      toDateOnly(cur?.production_end as string | null) === day &&
+      String(cur?.status ?? "") === payload.status &&
+      curPcp === pcp &&
+      curPc === pcDelivery;
+    if (same) return false;
+    const { error } = await supabase
+      .from("order_items")
+      .update(payload)
+      .eq("id", existing.id);
+    if (error) {
+      console.error("[sync-almox] update mirror:", error.message);
+      return false;
+    }
+    return true;
   }
 
   const { data: maxRow } = await supabase
@@ -161,7 +197,7 @@ export async function syncAlmoxarifadoOnProgram(params: {
   const nextNum = (maxRow?.[0]?.item_number ?? 0) + 1;
   const desc = `Abast.: ${String(sourceDescription || "Item").trim()}`.slice(0, 500);
 
-  await supabase.from("order_items").insert({
+  const { error: insErr } = await supabase.from("order_items").insert({
     order_id: orderId,
     item_number: nextNum,
     description: desc,
@@ -170,4 +206,9 @@ export async function syncAlmoxarifadoOnProgram(params: {
     notes: ref,
     ...payload,
   });
+  if (insErr) {
+    console.error("[sync-almox] insert mirror:", insErr.message);
+    return false;
+  }
+  return true;
 }

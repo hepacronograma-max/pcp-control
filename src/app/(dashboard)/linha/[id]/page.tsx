@@ -53,6 +53,8 @@ export default function LinePage() {
   ]);
 
   const [refreshKey, setRefreshKey] = useState(0);
+  /** Evita reconciliar o almox em loop; zera ao sair da linha almox. */
+  const almoxReconcileKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     function onFocus() {
@@ -80,6 +82,43 @@ export default function LinePage() {
   const ganttRef = useRef<HTMLDivElement | null>(null);
 
   const useApi = shouldUseLocalServiceApi(profile);
+
+  useEffect(() => {
+    if (!line?.is_almoxarifado) {
+      almoxReconcileKeyRef.current = null;
+    }
+  }, [lineId, line?.is_almoxarifado]);
+
+  useEffect(() => {
+    if (!useApi || !lineId || loadingData || !line?.is_almoxarifado) return;
+    if (almoxReconcileKeyRef.current === lineId) return;
+    almoxReconcileKeyRef.current = lineId;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/order-items/reconcile-almox", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ lineId }),
+        });
+        if (cancelled) return;
+        if (!res.ok) {
+          almoxReconcileKeyRef.current = null;
+          return;
+        }
+        const j = (await res.json()) as { touched?: number };
+        if ((j.touched ?? 0) > 0) {
+          setRefreshKey((k) => k + 1);
+        }
+      } catch {
+        almoxReconcileKeyRef.current = null;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [useApi, lineId, loadingData, line?.is_almoxarifado]);
 
   useEffect(() => {
     if (!profile || !lineId) return;
