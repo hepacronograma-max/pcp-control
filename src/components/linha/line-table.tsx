@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { CompactDateCell } from "@/components/ui/compact-date-cell";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { LineItemWithOrder } from "./gantt-calendar";
 import type { Profile, ProductionLine } from "@/lib/types/database";
 import { parseLocalDate } from "@/lib/utils/date";
@@ -136,10 +136,13 @@ export function LineTable({
   allLines,
   onSupply,
 }: LineTableProps) {
-  /** Colunas mais estreitas (Qtd, PCP, PC, início/fim) liberam espaço para o Gantt à direita */
+  /**
+   * Início/Fim precisam de ~104–116px: o seletor de data usa área mínima ~96px;
+   * valores menores encavalam colunas e o clique só pega no canto.
+   */
   const defaultWidths = isAlmoxarifado
     ? [60, 140, 200, 55, 110, 90, 80]
-    : [60, 140, 200, 38, 54, 56, 68, 68, 32, 100];
+    : [54, 118, 158, 42, 76, 76, 116, 116, 40, 96];
 
   const [columnWidths, setColumnWidths] = useState<number[]>(defaultWidths);
   const resizingIndexRef = useRef<number | null>(null);
@@ -156,13 +159,23 @@ export function LineTable({
     startWidthsRef.current = [...columnWidths];
   }
 
+  /** Mínimos por coluna (índice alinhado a defaultWidths linha “normal”). */
+  const columnMinWidths = useMemo(
+    () =>
+      isAlmoxarifado
+        ? [44, 72, 96, 36, 72, 64, 56]
+        : [44, 72, 96, 36, 56, 56, 100, 100, 32, 64],
+    [isAlmoxarifado]
+  );
+
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
       if (resizingIndexRef.current === null) return;
       const idx = resizingIndexRef.current;
       const delta = e.clientX - startXRef.current;
       const base = startWidthsRef.current[idx];
-      const next = Math.max(26, base + delta);
+      const minW = columnMinWidths[idx] ?? 32;
+      const next = Math.max(minW, base + delta);
       setColumnWidths((prev) => {
         const copy = [...prev];
         copy[idx] = next;
@@ -180,7 +193,7 @@ export function LineTable({
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [columnWidths]);
+  }, [columnWidths, columnMinWidths]);
   function toggleSort(key: LineSortKey) {
     onChangeSort(getNextSortKeys(sortKeys, key));
   }
@@ -313,10 +326,10 @@ export function LineTable({
   }
 
   return (
-    <div className="min-w-[560px]">
+    <div className="min-w-[720px]">
       <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
         <div
-          className="grid text-[11px] h-[var(--line-gantt-header-h)] items-stretch box-border overflow-hidden bg-slate-50/70"
+          className="grid text-[11px] h-[var(--line-gantt-header-h)] items-stretch box-border overflow-x-clip bg-slate-50/70"
           style={{ gridTemplateColumns: gridTemplate }}
         >
           <HeaderCell
@@ -426,7 +439,7 @@ export function LineTable({
           return (
             <div
               key={item.id}
-              className={`grid text-[11px] items-center border-b border-slate-200 h-[var(--line-gantt-row-h)] gap-x-0 box-border overflow-hidden ${rowBg}`}
+              className={`grid text-[11px] items-center border-b border-slate-200 h-[var(--line-gantt-row-h)] gap-x-0 box-border overflow-x-clip overflow-y-visible ${rowBg}`}
               style={{ gridTemplateColumns: gridTemplate }}
               title={
                 allLineDatesEqualAttention
@@ -459,7 +472,7 @@ export function LineTable({
                   ? format(safeParse(item.pc_delivery_date), "d/M/yy")
                   : "--"}
               </Cell>
-              <Cell className="flex items-stretch p-0 h-full min-h-0 min-w-0">
+              <Cell className="flex items-stretch p-0 h-full min-h-0 !overflow-visible z-[1]">
                 <CompactDateCell
                   value={item.production_start}
                   min={item.pc_delivery_date}
@@ -469,7 +482,7 @@ export function LineTable({
                 />
               </Cell>
               <Cell
-                className={`flex items-stretch p-0 h-full min-h-0 min-w-0 ${willDelay ? "[&_input]:text-red-700 [&_input]:font-semibold" : ""}`}
+                className={`flex items-stretch p-0 h-full min-h-0 !overflow-visible z-[1] ${willDelay ? "[&_input]:text-red-700 [&_input]:font-semibold" : ""}`}
               >
                 <CompactDateCell
                   value={item.production_end}
