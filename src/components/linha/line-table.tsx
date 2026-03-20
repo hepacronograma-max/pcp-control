@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { LineItemWithOrder } from "./gantt-calendar";
 import type { Profile, ProductionLine } from "@/lib/types/database";
 import { parseLocalDate } from "@/lib/utils/date";
+import { toDateOnly } from "@/lib/utils/supabase-data";
 
 function safeParse(d: string): Date {
   return d.includes("-") ? parseLocalDate(d) : new Date(d);
@@ -201,7 +202,7 @@ export function LineTable({
       <div className="min-w-[640px]">
         <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
           <div
-            className="grid text-[10px] font-semibold text-slate-600 min-h-[28px] items-center"
+            className="grid text-[11px] font-semibold text-slate-600 min-h-[42px] items-stretch py-1"
             style={{ gridTemplateColumns: gridTemplate }}
           >
             <HeaderCell
@@ -263,7 +264,7 @@ export function LineTable({
             return (
               <div
                 key={item.id}
-                className={`grid text-[11px] items-center border-b border-slate-200 h-7 ${
+                className={`grid text-[11px] items-center border-b border-slate-200 py-1.5 gap-x-0 ${
                   idx % 2 === 0 ? "bg-white" : "bg-slate-50"
                 }`}
                 style={{ gridTemplateColumns: gridTemplate }}
@@ -315,7 +316,7 @@ export function LineTable({
     <div className="min-w-[560px]">
       <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
         <div
-          className="grid text-[10px] font-semibold text-slate-600 min-h-[28px] items-center"
+          className="grid text-[11px] font-semibold text-slate-600 min-h-[42px] items-stretch py-1"
           style={{ gridTemplateColumns: gridTemplate }}
         >
           <HeaderCell
@@ -401,17 +402,37 @@ export function LineTable({
             item.production_end > pcpDeadline &&
             item.status !== "completed";
 
+          const dayPcp = pcpDeadline ? toDateOnly(pcpDeadline) : null;
+          const dayPc = item.pc_delivery_date ? toDateOnly(item.pc_delivery_date) : null;
+          const dayStart = item.production_start ? toDateOnly(item.production_start) : null;
+          const dayEnd = item.production_end ? toDateOnly(item.production_end) : null;
+          const allLineDatesEqualAttention =
+            !!dayPcp &&
+            !!dayPc &&
+            !!dayStart &&
+            !!dayEnd &&
+            dayPcp === dayPc &&
+            dayPc === dayStart &&
+            dayStart === dayEnd;
+
           const rowBg = willDelay
             ? "bg-red-50"
-            : idx % 2 === 0
-            ? "bg-white"
-            : "bg-slate-50";
+            : allLineDatesEqualAttention
+              ? "bg-amber-50"
+              : idx % 2 === 0
+                ? "bg-white"
+                : "bg-slate-50";
 
           return (
             <div
               key={item.id}
-              className={`grid text-[11px] items-center border-b border-slate-200 h-7 ${rowBg}`}
+              className={`grid text-[11px] items-center border-b border-slate-200 py-1.5 gap-x-0 ${rowBg}`}
               style={{ gridTemplateColumns: gridTemplate }}
+              title={
+                allLineDatesEqualAttention
+                  ? "Atenção: Prazo PCP, PC entrega, início e fim de produção na mesma data."
+                  : undefined
+              }
             >
               <Cell className="font-medium text-slate-800">
                 {item.order.order_number}
@@ -438,7 +459,7 @@ export function LineTable({
                   ? format(safeParse(item.pc_delivery_date), "d/M/yy")
                   : "--"}
               </Cell>
-              <Cell className="flex items-stretch p-0">
+              <Cell className="flex items-stretch p-0 min-h-[28px]">
                 <CompactDateCell
                   value={item.production_start}
                   min={item.pc_delivery_date}
@@ -447,7 +468,9 @@ export function LineTable({
                   }
                 />
               </Cell>
-              <Cell className={`flex items-stretch p-0 ${willDelay ? "[&_input]:text-red-700 [&_input]:font-semibold" : ""}`}>
+              <Cell
+                className={`flex items-stretch p-0 min-h-[28px] ${willDelay ? "[&_input]:text-red-700 [&_input]:font-semibold" : ""}`}
+              >
                 <CompactDateCell
                   value={item.production_end}
                   min={maxDateStr(item.production_start, item.pc_delivery_date)}
@@ -469,10 +492,10 @@ export function LineTable({
                   ✓
                 </button>
               </Cell>
-              <Cell>
+              <Cell className="flex items-center py-0">
                 <input
                   type="text"
-                  className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px]"
+                  className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] h-[28px] box-border"
                   value={item.notes ?? ""}
                   onChange={(e) => onChangeNotes(item.id, e.target.value)}
                   placeholder="Observações..."
@@ -504,7 +527,7 @@ function HeaderCell({
     <button
       type="button"
       onClick={onClick}
-      className={`relative px-2 py-1.5 border-r border-slate-200 bg-white flex items-center gap-1 ${
+      className={`relative px-2 py-2 border-r border-slate-200 bg-white flex items-center gap-1 ${
         onClick ? "cursor-pointer hover:bg-slate-50" : ""
       } ${className}`}
     >

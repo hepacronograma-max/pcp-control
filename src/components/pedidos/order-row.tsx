@@ -6,6 +6,7 @@ import { OrderStatusBadge } from "./order-status-badge";
 import { OrderItems } from "./order-items";
 import { hasPermission } from "@/lib/utils/permissions";
 import {
+  areAllOrderDeadlinesSameDay,
   effectiveOrderProductionDeadline,
   getOrderDeadlineTrafficLight,
 } from "@/lib/utils/order-aggregates";
@@ -129,6 +130,7 @@ export function OrderRow({
   const principalStatus = getPrincipalStatus(order);
   const displayProductionDeadline = effectiveOrderProductionDeadline(order);
   const traffic = getOrderDeadlineTrafficLight(order);
+  const sameDayAllDeadlines = areAllOrderDeadlinesSameDay(order);
   const rowTrafficClass =
     traffic === "red"
       ? "bg-red-50"
@@ -167,11 +169,13 @@ export function OrderRow({
         title={
           traffic === "white"
             ? undefined
-            : traffic === "red"
-              ? "Alerta: PCP após vendas ou produção após vendas."
-              : traffic === "yellow"
-                ? "Atenção: produção após o PCP e até a data de vendas (inclui término no limite)."
-                : "OK: produção até o PCP, antes de vendas."
+            : sameDayAllDeadlines
+              ? "Atenção: prazo de vendas, PCP e produção na mesma data."
+              : traffic === "red"
+                ? "Alerta: PCP após vendas ou produção após vendas."
+                : traffic === "yellow"
+                  ? "Atenção: produção após o PCP e até a data de vendas (inclui término no limite)."
+                  : "OK: produção até o PCP, antes de vendas."
         }
       >
         <button

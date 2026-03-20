@@ -89,7 +89,14 @@ export async function POST(request: NextRequest) {
         .update({ status: "finished", finished_at: nowIso })
         .eq("id", orderId);
       if (error) {
-        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        const msg = error.message || "";
+        const hint = /finished_at|schema cache|column/i.test(msg)
+          ? " No SQL Editor do Supabase execute: ALTER TABLE orders ADD COLUMN IF NOT EXISTS finished_at timestamptz;"
+          : "";
+        return NextResponse.json(
+          { success: false, error: msg + hint },
+          { status: 500 }
+        );
       }
       return NextResponse.json({ success: true });
     }
