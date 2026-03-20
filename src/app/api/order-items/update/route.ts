@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { syncAlmoxarifadoOnProgram } from "@/lib/supabase/sync-almoxarifado-on-program";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 
 /**
@@ -213,6 +214,35 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
+
+      /** Almoxarifado: mesmo dia do início de produção na linha de chão. */
+      const { data: ctxItem } = await supabase
+        .from("order_items")
+        .select(
+          "id, order_id, line_id, description, quantity, pcp_deadline, pc_delivery_date"
+        )
+        .eq("id", itemId)
+        .maybeSingle();
+      if (ctxItem?.order_id) {
+        const { data: orderRow } = await supabase
+          .from("orders")
+          .select("pcp_deadline")
+          .eq("id", ctxItem.order_id)
+          .maybeSingle();
+        await syncAlmoxarifadoOnProgram({
+          supabase,
+          sourceItemId: String(itemId),
+          orderId: ctxItem.order_id,
+          sourceLineId: ctxItem.line_id,
+          sourceDescription: String(ctxItem.description ?? ""),
+          sourceQuantity: Number(ctxItem.quantity ?? 1),
+          productionStart: ps,
+          orderPcpDeadline: orderRow?.pcp_deadline ?? null,
+          itemPcpDeadline: ctxItem.pcp_deadline ?? null,
+          pcDeliveryDate: ctxItem.pc_delivery_date ?? null,
+        });
+      }
+
       return NextResponse.json({ success: true });
     }
 
