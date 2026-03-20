@@ -31,3 +31,8 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS notes text;
 
 -- Se o comando acima falhar (ex.: tipos incompatíveis), crie só a coluna:
 -- ALTER TABLE order_items ADD COLUMN IF NOT EXISTS line_id uuid;
+
+-- Linhas de produção (menu lateral + company-data)
+ALTER TABLE production_lines ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
+ALTER TABLE production_lines ADD COLUMN IF NOT EXISTS sort_order integer DEFAULT 0;
+ALTER TABLE production_lines ADD COLUMN IF NOT EXISTS is_almoxarifado boolean DEFAULT false;

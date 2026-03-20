@@ -121,7 +121,7 @@ export async function GET(request: NextRequest) {
         ordersRes.error.message
       );
     }
-    const linesRes = await supabase
+    const linesFull = await supabase
       .from("production_lines")
       .select(
         "id, name, company_id, is_active, sort_order, is_almoxarifado, created_at, updated_at"
@@ -129,8 +129,48 @@ export async function GET(request: NextRequest) {
       .eq("company_id", companyId)
       .order("sort_order", { ascending: true });
 
+    /** Bancos antigos sem is_almoxarifado: a query inteira falha e a UI perde todas as linhas. */
+    let rawLines: Record<string, unknown>[] = (linesFull.data ?? []) as Record<
+      string,
+      unknown
+    >[];
+    if (linesFull.error) {
+      console.warn("[company-data] linhas (completo):", linesFull.error.message);
+      const linesMid = await supabase
+        .from("production_lines")
+        .select("id, name, company_id, is_active, sort_order, created_at, updated_at")
+        .eq("company_id", companyId)
+        .order("sort_order", { ascending: true });
+      if (!linesMid.error && linesMid.data) {
+        rawLines = linesMid.data as Record<string, unknown>[];
+      } else if (linesMid.error) {
+        console.warn("[company-data] linhas (médio):", linesMid.error.message);
+        const linesMin = await supabase
+          .from("production_lines")
+          .select("id, name, company_id")
+          .eq("company_id", companyId);
+        if (!linesMin.error && linesMin.data) {
+          rawLines = linesMin.data as Record<string, unknown>[];
+        } else if (linesMin.error) {
+          console.error("[company-data] linhas (mínimo):", linesMin.error.message);
+          rawLines = [];
+        }
+      }
+    }
+
     const orders = ordersRes.data ?? [];
-    const lines = linesRes.data ?? [];
+    const lines: Record<string, unknown>[] = [...rawLines].map((row, i) => ({
+      ...row,
+      is_active: row.is_active !== false,
+      is_almoxarifado: row.is_almoxarifado === true,
+      sort_order: typeof row.sort_order === "number" ? row.sort_order : i,
+    }));
+    lines.sort((a, b) => {
+      const sa = a.sort_order as number;
+      const sb = b.sort_order as number;
+      if (sa !== sb) return sa - sb;
+      return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+    });
 
     const unprogrammedByLine: Record<string, number> = {};
     for (const o of orders) {
