@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 
 type TabKey = "open" | "finished";
 
@@ -31,13 +32,18 @@ async function postOrderItemsUpdate(
     body: JSON.stringify(body),
   });
   let message = "";
+  let success = true;
   try {
-    const j = (await res.json()) as { error?: string };
+    const j = (await res.json()) as {
+      error?: string;
+      success?: boolean;
+    };
     message = j.error || "";
+    if (j.success === false) success = false;
   } catch {
     message = "";
   }
-  if (!res.ok) {
+  if (!res.ok || !success) {
     return {
       ok: false,
       error:
@@ -141,7 +147,7 @@ export default function PedidosPage() {
           "id, name, company_id, is_active, sort_order, created_at, updated_at"
         )
         .eq("company_id", companyId)
-        .eq("is_active", true)
+        .or(PRODUCTION_LINES_ACTIVE_OR)
         .order("sort_order");
       setLines((linesData as ProductionLine[]) ?? []);
 

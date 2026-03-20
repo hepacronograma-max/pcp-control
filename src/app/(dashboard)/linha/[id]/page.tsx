@@ -23,6 +23,7 @@ import {
 } from "@/components/linha/gantt-calendar";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 import { toast } from "sonner";
 
 type TabKey = "all" | "in_progress" | "finished";
@@ -172,7 +173,7 @@ export default function LinePage() {
         .from("production_lines")
         .select("id, name, company_id, is_active, sort_order")
         .eq("company_id", companyId ?? currentProfile.company_id)
-        .eq("is_active", true)
+        .or(PRODUCTION_LINES_ACTIVE_OR)
         .order("sort_order");
       setAllLines((allLinesData as ProductionLine[]) ?? []);
 

@@ -11,6 +11,7 @@ import type { ProductionLine, Profile } from "@/lib/types/database";
 import { hasPermission } from "@/lib/utils/permissions";
 import { itemNeedsProductionProgram } from "@/lib/utils/line-program-indicator";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 
 interface CompanyInfo {
   id: string;
@@ -122,7 +123,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         .from("production_lines")
         .select("*")
         .eq("company_id", companyId)
-        .eq("is_active", true)
+        .or(PRODUCTION_LINES_ACTIVE_OR)
         .order("sort_order", { ascending: true });
       setLines(linesData ?? []);
 

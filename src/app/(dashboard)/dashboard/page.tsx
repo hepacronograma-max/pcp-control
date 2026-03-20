@@ -10,6 +10,7 @@ import type { OrderItem, OrderWithItems, ProductionLine } from "@/lib/types/data
 import { computeDashboardFromOrders } from "@/lib/utils/dashboard-local";
 import { KPICard } from "@/components/dashboard/kpi-card";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 
 interface OperatorLineStats {
@@ -194,7 +195,7 @@ export default function DashboardPage() {
         .from("production_lines")
         .select("*")
         .eq("company_id", companyId)
-        .eq("is_active", true)
+        .or(PRODUCTION_LINES_ACTIVE_OR)
         .order("sort_order", { ascending: true });
       setAllLines((linesData as ProductionLine[]) ?? []);
 

@@ -36,3 +36,6 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS notes text;
 ALTER TABLE production_lines ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
 ALTER TABLE production_lines ADD COLUMN IF NOT EXISTS sort_order integer DEFAULT 0;
 ALTER TABLE production_lines ADD COLUMN IF NOT EXISTS is_almoxarifado boolean DEFAULT false;
+
+-- Registros antigos com is_active NULL não apareciam na UI (filtro .eq true).
+UPDATE production_lines SET is_active = true WHERE is_active IS NULL;

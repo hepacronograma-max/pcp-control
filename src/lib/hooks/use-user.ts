@@ -4,6 +4,35 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { Profile } from "@/lib/types/database";
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Com cookie local, o perfil padrão usa company_id "local-company".
+ * Sincroniza com /api/effective-company (empresa com mais pedidos) para o restante
+ * do app e o localStorage usarem o UUID real — evita menu sem linhas e saves “estranhos”.
+ */
+async function syncLocalProfileCompanyId(
+  current: Profile,
+  setProfile: (p: Profile) => void
+): Promise<void> {
+  const cid = current.company_id ?? "";
+  if (cid !== "local-company" && UUID_RE.test(cid)) {
+    return;
+  }
+  try {
+    const res = await fetch("/api/effective-company", { credentials: "include" });
+    const json = (await res.json()) as { companyId?: string | null };
+    const id = json.companyId?.trim() ?? "";
+    if (!id || !UUID_RE.test(id)) return;
+    const merged: Profile = { ...current, company_id: id };
+    window.localStorage.setItem("pcp-local-profile", JSON.stringify(merged));
+    setProfile(merged);
+  } catch {
+    // ignore
+  }
+}
+
 export function useUser() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -36,7 +65,11 @@ export function useUser() {
               );
               raw = JSON.stringify(defaultProfile);
             }
-            if (raw) setProfile(JSON.parse(raw) as Profile);
+            if (raw) {
+              const parsed = JSON.parse(raw) as Profile;
+              setProfile(parsed);
+              void syncLocalProfileCompanyId(parsed, setProfile);
+            }
           } catch {
             // ignore
           }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 
 /**
  * Retorna dados da linha de produção (itens, feriados, etc).
@@ -65,7 +66,7 @@ export async function GET(request: NextRequest) {
       .from("production_lines")
       .select("id, name, company_id, is_active, sort_order")
       .eq("company_id", companyId)
-      .eq("is_active", true)
+      .or(PRODUCTION_LINES_ACTIVE_OR)
       .order("sort_order");
 
     return NextResponse.json({

@@ -37,7 +37,9 @@ export function useEffectiveCompanyId(profile: Profile | null): EffectiveCompany
     setLoaded(false);
     async function fetchFirstCompany() {
       try {
-        const res = await fetch("/api/effective-company");
+        const res = await fetch("/api/effective-company", {
+          credentials: "include",
+        });
         const json = await res.json();
         setCompanyId(json.companyId ?? null);
       } catch {
