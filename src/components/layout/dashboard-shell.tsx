@@ -45,17 +45,35 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     const companyId = effectiveCompanyId ?? profile.company_id;
     if (!companyId) return;
 
-    const useApi = profile.company_id === "local-company";
+    /** Cookie local + Supabase: RLS do anon não aplica; mesmos dados que Pedidos (companyId explícito). */
+    const useCompanyDataApi =
+      !!supabase && !!profile && shouldUseLocalServiceApi(profile);
 
-    if (useApi) {
+    if (useCompanyDataApi) {
+      const resolvedCompanyId =
+        profile.company_id !== "local-company"
+          ? profile.company_id
+          : effectiveCompanyId;
+      if (!resolvedCompanyId || resolvedCompanyId === "local-company") {
+        setCompany(null);
+        setLines([]);
+        setUnprogrammedByLine({});
+        return;
+      }
+      const apiCompanyId: string = resolvedCompanyId;
+
       let cancelled = false;
       async function loadCompanyData() {
         try {
-          const res = await fetch("/api/company-data", { credentials: "include" });
+          const res = await fetch(
+            `/api/company-data?companyId=${encodeURIComponent(apiCompanyId)}`,
+            { credentials: "include" }
+          );
           const json = await res.json();
           if (cancelled) return;
           setCompany(json.company ?? null);
-          setLines(json.lines ?? []);
+          const rawLines = (json.lines ?? []) as ProductionLine[];
+          setLines(rawLines.filter((l) => l.is_active !== false));
           setUnprogrammedByLine(json.unprogrammedByLine ?? {});
           if (profile?.role === "operator") {
             const lineIds = getOperatorLineIdsForLocalUser(profile.id);

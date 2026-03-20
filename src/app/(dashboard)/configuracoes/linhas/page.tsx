@@ -11,26 +11,75 @@ import { Label } from "@/components/ui/label";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
 import { toSortOrder } from "@/lib/utils/supabase-data";
+import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+
+async function postProductionLines(
+  body: Record<string, unknown>
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch("/api/production-lines", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+  let message = "";
+  try {
+    const j = (await res.json()) as { error?: string };
+    message = j.error || "";
+  } catch {
+    message = "";
+  }
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: message || `Erro (${res.status})`,
+    };
+  }
+  return { ok: true };
+}
 
 export default function LinesSettingsPage() {
   const { profile, loading } = useUser();
-  const { companyId: effectiveCompanyId } = useEffectiveCompanyId(profile);
+  const { companyId: effectiveCompanyId, loaded: effectiveLoaded } =
+    useEffectiveCompanyId(profile);
   const supabase = createClient();
   const [lines, setLines] = useState<ProductionLine[]>([]);
   const [newName, setNewName] = useState("");
   const [saving, setSaving] = useState(false);
 
   const isLocal = !supabase;
+  const useLinesApi =
+    !!supabase && !!profile && shouldUseLocalServiceApi(profile);
 
   useEffect(() => {
-    const companyId = effectiveCompanyId ?? profile?.company_id;
-    if (!companyId) return;
+    if (!profile) return;
+    if (useLinesApi && profile.company_id === "local-company" && !effectiveLoaded) {
+      return;
+    }
+    const companyIdRaw = effectiveCompanyId ?? profile.company_id;
+    if (!companyIdRaw || companyIdRaw === "local-company") return;
+    const companyId = companyIdRaw;
+
     if (isLocal) {
       setLines([]);
       return;
     }
-    const client = supabase!;
+
     async function loadLines() {
+      if (useLinesApi) {
+        try {
+          const res = await fetch(
+            `/api/company-data?companyId=${encodeURIComponent(companyId)}`,
+            { credentials: "include" }
+          );
+          const json = await res.json();
+          setLines((json.lines ?? []) as ProductionLine[]);
+        } catch {
+          setLines([]);
+        }
+        return;
+      }
+      const client = supabase!;
       const { data } = await client
         .from("production_lines")
         .select("*")
@@ -39,12 +88,29 @@ export default function LinesSettingsPage() {
       setLines(data ?? []);
     }
     loadLines();
-  }, [profile, supabase, effectiveCompanyId, isLocal]);
+  }, [
+    profile,
+    supabase,
+    effectiveCompanyId,
+    effectiveLoaded,
+    isLocal,
+    useLinesApi,
+  ]);
 
   function refresh() {
     const companyId = effectiveCompanyId ?? profile?.company_id;
-    if (!companyId) return;
+    if (!companyId || companyId === "local-company") return;
     if (isLocal) return;
+    if (useLinesApi) {
+      fetch(
+        `/api/company-data?companyId=${encodeURIComponent(companyId)}`,
+        { credentials: "include" }
+      )
+        .then((r) => r.json())
+        .then((json) => setLines((json.lines ?? []) as ProductionLine[]))
+        .catch(() => setLines([]));
+      return;
+    }
     if (!supabase) return;
     supabase
       .from("production_lines")
@@ -56,9 +122,24 @@ export default function LinesSettingsPage() {
 
   async function handleCreateLine() {
     const companyId = effectiveCompanyId ?? profile?.company_id;
-    if (!companyId || !newName.trim()) return;
+    if (!companyId || companyId === "local-company" || !newName.trim()) return;
     setSaving(true);
     try {
+      if (useLinesApi) {
+        const r = await postProductionLines({
+          action: "create",
+          companyId,
+          name: newName.trim(),
+        });
+        if (!r.ok) {
+          toast.error(r.error);
+          return;
+        }
+        toast.success("Linha criada com sucesso");
+        setNewName("");
+        await refresh();
+        return;
+      }
       if (!supabase) return;
       const { data: maxOrder } = await supabase
         .from("production_lines")
@@ -85,6 +166,20 @@ export default function LinesSettingsPage() {
   }
 
   async function handleRename(id: string, name: string) {
+    if (useLinesApi) {
+      const r = await postProductionLines({
+        action: "update_name",
+        lineId: id,
+        name,
+      });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      toast.success("Linha atualizada");
+      setLines((prev) => prev.map((l) => (l.id === id ? { ...l, name } : l)));
+      return;
+    }
     if (!supabase) return;
     const { error } = await supabase
       .from("production_lines")
@@ -101,6 +196,22 @@ export default function LinesSettingsPage() {
   }
 
   async function handleToggleActive(id: string, active: boolean) {
+    if (useLinesApi) {
+      const r = await postProductionLines({
+        action: "toggle_active",
+        lineId: id,
+        isActive: active,
+      });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      toast.success(active ? "Linha ativada" : "Linha desativada");
+      setLines((prev) =>
+        prev.map((l) => (l.id === id ? { ...l, is_active: active } : l))
+      );
+      return;
+    }
     if (!supabase) return;
     const { error } = await supabase
       .from("production_lines")
@@ -126,8 +237,18 @@ export default function LinesSettingsPage() {
     )
       return;
 
-    if (!supabase) return;
     try {
+      if (useLinesApi) {
+        const r = await postProductionLines({ action: "delete", lineId: id });
+        if (!r.ok) {
+          toast.error(r.error);
+          return;
+        }
+        setLines((prev) => prev.filter((l) => l.id !== id));
+        toast.success("Linha apagada");
+        return;
+      }
+      if (!supabase) return;
       await supabase.from("operator_lines").delete().eq("line_id", id);
       await supabase.from("order_items").update({ line_id: null }).eq("line_id", id);
       const { error } = await supabase.from("production_lines").delete().eq("id", id);
@@ -148,6 +269,19 @@ export default function LinesSettingsPage() {
     const current = lines[index];
     const target = lines[targetIndex];
 
+    if (useLinesApi) {
+      const r = await postProductionLines({
+        action: "reorder",
+        lineId: id,
+        direction,
+      });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      await refresh();
+      return;
+    }
     if (!supabase) return;
     await supabase
       .from("production_lines")

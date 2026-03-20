@@ -1,18 +1,40 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import { itemNeedsProductionProgram } from "@/lib/utils/line-program-indicator";
 
+function isUuid(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    s.trim()
+  );
+}
+
 /**
  * Retorna pedidos (com itens), linhas e dados da empresa.
  * Usa service role para bypassar RLS - garante que o backup apareça.
+ *
+ * Query opcional: `?companyId=<uuid>` — deve ser o mesmo retornado por /api/effective-company
+ * (login local + produção), para não misturar tenant quando há mais de uma empresa.
  */
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = createSupabaseAdminClient();
 
-    // Empresa com mais pedidos (evita pegar outro tenant por .limit(1) sem ordem)
-    let companyId = await resolvePrimaryCompanyId(supabase);
+    const param = request.nextUrl.searchParams.get("companyId")?.trim() ?? "";
+
+    let companyId: string | null = null;
+    if (param && isUuid(param)) {
+      const { data: row } = await supabase
+        .from("companies")
+        .select("id")
+        .eq("id", param)
+        .maybeSingle();
+      if (row?.id) companyId = row.id;
+    }
+
+    if (!companyId) {
+      companyId = await resolvePrimaryCompanyId(supabase);
+    }
     if (!companyId) {
       const { data: anyCompany } = await supabase
         .from("companies")
@@ -101,8 +123,11 @@ export async function GET() {
     }
     const linesRes = await supabase
       .from("production_lines")
-      .select("id, name, company_id")
-      .eq("company_id", companyId);
+      .select(
+        "id, name, company_id, is_active, sort_order, is_almoxarifado, created_at, updated_at"
+      )
+      .eq("company_id", companyId)
+      .order("sort_order", { ascending: true });
 
     const orders = ordersRes.data ?? [];
     const lines = linesRes.data ?? [];

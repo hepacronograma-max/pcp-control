@@ -18,6 +18,7 @@ import {
 } from "@/lib/pdf/parse-omie";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 import { ensureDeliveryColumns } from "@/lib/db/ensure-delivery-columns";
 
@@ -222,6 +223,10 @@ export async function POST(request: NextRequest) {
       try {
         const supabase = createSupabaseAdminClient();
         let companyId = companyIdFromForm;
+        if (!companyId) {
+          /** Mesma regra do /api/company-data e /api/effective-company — evita importar em empresa “aleatória”. */
+          companyId = (await resolvePrimaryCompanyId(supabase)) ?? "";
+        }
         if (!companyId) {
           const { data: firstCompany } = await supabase
             .from("companies")

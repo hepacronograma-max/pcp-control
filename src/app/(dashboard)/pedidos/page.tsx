@@ -53,8 +53,10 @@ async function postOrderItemsUpdate(
 export default function PedidosPage() {
   const supabase = createClient();
   const { profile, loading } = useUser();
-  const { companyId: effectiveCompanyId, loaded: effectiveLoaded } =
-    useEffectiveCompanyId(profile);
+  const {
+    companyId: effectiveCompanyId,
+    loaded: effectiveLoaded,
+  } = useEffectiveCompanyId(profile);
   const router = useRouter();
 
   /** Modo local APENAS quando Supabase não está configurado. Com Supabase, sempre usa banco. */
@@ -82,19 +84,27 @@ export default function PedidosPage() {
   }
 
   useEffect(() => {
-    if (!profile || !effectiveCompanyId) return;
-    const companyId = effectiveCompanyId;
+    if (!profile) return;
     const useApi = shouldUseLocalServiceApi(profile);
+    if (useApi && profile.company_id === "local-company" && !effectiveLoaded) {
+      return;
+    }
+    if (!effectiveCompanyId) return;
+    const companyId = effectiveCompanyId;
 
     async function loadData() {
       setLoadingData(true);
 
       if (useApi) {
         try {
-          const res = await fetch("/api/company-data", { credentials: "include" });
+          const res = await fetch(
+            `/api/company-data?companyId=${encodeURIComponent(companyId)}`,
+            { credentials: "include" }
+          );
           const json = await res.json();
           setOrders((json.orders ?? []) as OrderWithItems[]);
-          setLines((json.lines ?? []) as ProductionLine[]);
+          const raw = (json.lines ?? []) as ProductionLine[];
+          setLines(raw.filter((l) => l.is_active !== false));
         } catch {
           setOrders([]);
           setLines([]);
@@ -139,7 +149,7 @@ export default function PedidosPage() {
     }
 
     loadData();
-  }, [profile, supabase, effectiveCompanyId]);
+  }, [profile, supabase, effectiveCompanyId, effectiveLoaded]);
 
   const userRole: UserRole | null = profile ? profile.role : null;
   const canImport =
@@ -175,8 +185,26 @@ export default function PedidosPage() {
         return;
       }
     } else if (supabase) {
-      await supabase.from("orders").update({ pcp_deadline: dateVal }).eq("id", orderId);
-      await supabase.from("order_items").update({ pcp_deadline: dateVal }).eq("order_id", orderId);
+      const { error: oErr } = await supabase
+        .from("orders")
+        .update({ pcp_deadline: dateVal })
+        .eq("id", orderId);
+      if (oErr) {
+        toast.error(oErr.message || "Erro ao salvar prazo PCP no pedido.");
+        return;
+      }
+      const { error: iErr } = await supabase
+        .from("order_items")
+        .update({ pcp_deadline: dateVal })
+        .eq("order_id", orderId);
+      if (iErr) {
+        toast.error(
+          iErr.message.includes("pcp_deadline")
+            ? "Coluna pcp_deadline ausente em order_items. Execute o SQL em supabase-add-columns.sql"
+            : iErr.message
+        );
+        return;
+      }
     } else return;
 
     updateOrdersState((prev) =>
