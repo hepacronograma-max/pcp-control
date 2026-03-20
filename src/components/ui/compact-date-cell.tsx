@@ -16,7 +16,7 @@ export function CompactDateCell({ value, onChange, min }: CompactDateCellProps) 
   const label = normalized ? format(parseLocalDate(normalized), "d/M/yy") : "--";
 
   return (
-    <div className="relative w-full h-full min-h-[28px] flex-1 min-w-0 rounded-md border border-slate-300 bg-white overflow-hidden">
+    <div className="relative w-full h-full min-h-0 max-h-full flex-1 min-w-0 rounded-md border border-slate-300 bg-white overflow-hidden box-border">
       <span className="absolute inset-0 flex items-center justify-center text-[11px] pointer-events-none">
         {label}
       </span>

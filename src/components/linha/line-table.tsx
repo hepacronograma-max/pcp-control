@@ -202,7 +202,7 @@ export function LineTable({
       <div className="min-w-[640px]">
         <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
           <div
-            className="grid text-[11px] font-semibold text-slate-600 min-h-[42px] items-stretch py-1"
+            className="grid text-[11px] font-semibold text-slate-600 h-[var(--line-gantt-header-h)] items-stretch box-border overflow-hidden"
             style={{ gridTemplateColumns: gridTemplate }}
           >
             <HeaderCell
@@ -264,24 +264,24 @@ export function LineTable({
             return (
               <div
                 key={item.id}
-                className={`grid text-[11px] items-center border-b border-slate-200 h-10 min-h-[40px] gap-x-0 ${
+                className={`grid text-[11px] items-center border-b border-slate-200 h-[var(--line-gantt-row-h)] gap-x-0 box-border overflow-hidden ${
                   idx % 2 === 0 ? "bg-white" : "bg-slate-50"
                 }`}
                 style={{ gridTemplateColumns: gridTemplate }}
               >
-                <Cell className="font-medium text-slate-800">
+                <Cell className="font-medium text-slate-800 flex items-center">
                   {item.order.order_number}
                 </Cell>
-                <Cell title={item.order.client_name}>
+                <Cell title={item.order.client_name} className="flex items-center min-w-0">
                   <span className="truncate block">{item.order.client_name}</span>
                 </Cell>
-                <Cell title={item.description}>
+                <Cell title={item.description} className="flex items-center min-w-0">
                   <span className="truncate block">{item.description}</span>
                 </Cell>
                 <Cell className="text-center flex justify-center items-center">
                   {item.quantity}
                 </Cell>
-                <Cell title={lineName}>
+                <Cell title={lineName} className="flex items-center min-w-0">
                   <span className="truncate block text-slate-600">{lineName}</span>
                 </Cell>
                 <Cell className="text-center flex justify-center items-center">
@@ -316,7 +316,7 @@ export function LineTable({
     <div className="min-w-[560px]">
       <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
         <div
-          className="grid text-[11px] font-semibold text-slate-600 min-h-[42px] items-stretch py-1"
+          className="grid text-[11px] font-semibold text-slate-600 h-[var(--line-gantt-header-h)] items-stretch box-border overflow-hidden"
           style={{ gridTemplateColumns: gridTemplate }}
         >
           <HeaderCell
@@ -426,7 +426,7 @@ export function LineTable({
           return (
             <div
               key={item.id}
-              className={`grid text-[11px] items-center border-b border-slate-200 h-10 min-h-[40px] gap-x-0 ${rowBg}`}
+              className={`grid text-[11px] items-center border-b border-slate-200 h-[var(--line-gantt-row-h)] gap-x-0 box-border overflow-hidden ${rowBg}`}
               style={{ gridTemplateColumns: gridTemplate }}
               title={
                 allLineDatesEqualAttention
@@ -434,15 +434,15 @@ export function LineTable({
                   : undefined
               }
             >
-              <Cell className="font-medium text-slate-800">
+              <Cell className="font-medium text-slate-800 flex items-center">
                 {item.order.order_number}
               </Cell>
-              <Cell title={item.order.client_name}>
+              <Cell title={item.order.client_name} className="flex items-center min-w-0">
                 <span className="truncate block">
                   {item.order.client_name}
                 </span>
               </Cell>
-              <Cell title={item.description}>
+              <Cell title={item.description} className="flex items-center min-w-0">
                 <span className="truncate block">{item.description}</span>
               </Cell>
               <Cell className="text-center flex justify-center items-center">
@@ -452,14 +452,14 @@ export function LineTable({
                 {pcpDisplay ?? "--"}
               </Cell>
               <Cell
-                className="text-center flex justify-center items-center text-[10px]"
+                className="text-center flex justify-center items-center text-[10px] min-w-0"
                 title={item.pc_number ? `PC ${item.pc_number}` : undefined}
               >
                 {item.pc_delivery_date
                   ? format(safeParse(item.pc_delivery_date), "d/M/yy")
                   : "--"}
               </Cell>
-              <Cell className="flex items-stretch p-0 min-h-[28px]">
+              <Cell className="flex items-stretch p-0 h-full min-h-0 min-w-0">
                 <CompactDateCell
                   value={item.production_start}
                   min={item.pc_delivery_date}
@@ -469,7 +469,7 @@ export function LineTable({
                 />
               </Cell>
               <Cell
-                className={`flex items-stretch p-0 min-h-[28px] ${willDelay ? "[&_input]:text-red-700 [&_input]:font-semibold" : ""}`}
+                className={`flex items-stretch p-0 h-full min-h-0 min-w-0 ${willDelay ? "[&_input]:text-red-700 [&_input]:font-semibold" : ""}`}
               >
                 <CompactDateCell
                   value={item.production_end}
@@ -479,7 +479,7 @@ export function LineTable({
                   }
                 />
               </Cell>
-              <Cell className="text-center px-0.5">
+              <Cell className="text-center px-0.5 flex items-center justify-center">
                 <button
                   onClick={() => handleComplete(item.id)}
                   className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px] leading-none ${
@@ -492,10 +492,10 @@ export function LineTable({
                   ✓
                 </button>
               </Cell>
-              <Cell className="flex items-center py-0">
+              <Cell className="flex items-center py-0 h-full min-h-0">
                 <input
                   type="text"
-                  className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] h-[28px] box-border"
+                  className="w-full rounded-md border border-slate-300 bg-white px-2 text-[11px] h-[30px] box-border"
                   value={item.notes ?? ""}
                   onChange={(e) => onChangeNotes(item.id, e.target.value)}
                   placeholder="Observações..."
@@ -527,7 +527,7 @@ function HeaderCell({
     <button
       type="button"
       onClick={onClick}
-      className={`relative px-2 py-2 border-r border-slate-200 bg-white flex items-center gap-1 ${
+      className={`relative h-full min-h-0 px-2 py-0 border-r border-slate-200 bg-white flex items-center gap-1 box-border ${
         onClick ? "cursor-pointer hover:bg-slate-50" : ""
       } ${className}`}
     >
@@ -560,7 +560,7 @@ function Cell({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={`px-2 py-0.5 border-r border-slate-200 overflow-hidden ${className}`}
+      className={`h-full min-h-0 min-w-0 px-2 py-0 border-r border-slate-200 overflow-hidden box-border ${className}`}
       {...rest}
     >
       {children}

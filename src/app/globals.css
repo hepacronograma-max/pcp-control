@@ -9,6 +9,9 @@
   --pcp-warning: #F39C12;
   --pcp-danger: #E74C3C;
   --pcp-background: #F8F9FA;
+  /** Linha de produção: tabela fixa + Gantt (mesmo valor nos dois lados) */
+  --line-gantt-header-h: 3rem; /* 48px — tailwind h-12 */
+  --line-gantt-row-h: 2.5rem; /* 40px — tailwind h-10 */
 }
 
 body {

@@ -85,22 +85,24 @@ export function GanttCalendar({ items, holidays }: GanttCalendarProps) {
   /** Mais dias no horizonte (antes 60); células mais finas cabem mais na tela */
   const days = generateDays(startDate, 90, holidays);
 
-  /** Cabeçalho h-[42px] alinhado ao LineTable; linhas h-10 alinhadas às linhas da tabela. */
+  /** Alturas fixas iguais ao LineTable (--line-gantt-header-h / --line-gantt-row-h). */
   return (
     <div className="min-w-max">
       <div className="sticky top-0 z-10 bg-white border-b border-slate-200 box-border">
-        <div className="flex">
+        <div className="flex h-[var(--line-gantt-header-h)] box-border">
           {days.map((day) => (
             <div
               key={day.date.toISOString()}
-              className={`${GANTT_CELL} h-[42px] flex flex-col items-center justify-center gap-0.5 border-r border-slate-200 box-border leading-none ${getDayBackground(
+              className={`${GANTT_CELL} h-full flex flex-col items-center justify-center gap-0 border-r border-slate-200 box-border leading-none ${getDayBackground(
                 day
               )}`}
             >
-              <span className="text-[8px] font-medium tracking-tight">
+              <span className="text-[8px] font-medium tracking-tight leading-none">
                 {day.label}
               </span>
-              <span className="text-[7px] text-slate-600">{day.dayOfWeek}</span>
+              <span className="text-[7px] text-slate-600 leading-none">
+                {day.dayOfWeek}
+              </span>
             </div>
           ))}
         </div>
@@ -108,7 +110,10 @@ export function GanttCalendar({ items, holidays }: GanttCalendarProps) {
 
       <div>
         {items.map((item) => (
-          <div key={item.id} className="flex h-10 min-h-[40px] border-b border-slate-200 box-border">
+          <div
+            key={item.id}
+            className="flex h-[var(--line-gantt-row-h)] box-border border-b border-slate-200 overflow-hidden"
+          >
             {days.map((day, idx) => {
               const cellsWithBar = days.filter((d) => {
                 const start = item.production_start
@@ -130,7 +135,7 @@ export function GanttCalendar({ items, holidays }: GanttCalendarProps) {
               return (
                 <div
                   key={day.date.toISOString() + "-" + idx}
-                  className={`${GANTT_CELL} h-10 min-h-[40px] flex items-center justify-center border-r border-slate-200 self-stretch ${getDayBackground(
+                  className={`${GANTT_CELL} h-full flex items-center justify-center border-r border-slate-200 box-border ${getDayBackground(
                     day
                   )}`}
                 >
