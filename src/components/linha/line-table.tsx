@@ -202,7 +202,7 @@ export function LineTable({
       <div className="min-w-[640px]">
         <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
           <div
-            className="grid text-[11px] font-semibold text-slate-600 h-[var(--line-gantt-header-h)] items-stretch box-border overflow-hidden"
+            className="grid text-[11px] h-[var(--line-gantt-header-h)] items-stretch box-border overflow-hidden bg-slate-50/70"
             style={{ gridTemplateColumns: gridTemplate }}
           >
             <HeaderCell
@@ -316,7 +316,7 @@ export function LineTable({
     <div className="min-w-[560px]">
       <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
         <div
-          className="grid text-[11px] font-semibold text-slate-600 h-[var(--line-gantt-header-h)] items-stretch box-border overflow-hidden"
+          className="grid text-[11px] h-[var(--line-gantt-header-h)] items-stretch box-border overflow-hidden bg-slate-50/70"
           style={{ gridTemplateColumns: gridTemplate }}
         >
           <HeaderCell
@@ -527,21 +527,26 @@ function HeaderCell({
     <button
       type="button"
       onClick={onClick}
-      className={`relative h-full min-h-0 px-2 py-0 border-r border-slate-200 bg-white flex items-center gap-1 box-border ${
-        onClick ? "cursor-pointer hover:bg-slate-50" : ""
+      className={`relative h-full min-h-0 px-1.5 sm:px-2 py-0 border-r border-slate-200 bg-slate-50/80 flex items-center gap-0 box-border ${
+        onClick ? "cursor-pointer hover:bg-slate-100/90" : ""
       } ${className}`}
     >
       <span
-        className={`flex-1 flex items-center gap-1 ${
+        className={`flex-1 flex items-center gap-1.5 min-w-0 ${
           isCentered ? "justify-center" : ""
         }`}
       >
-        <span>{children}</span>
-        {sortIndex && (
-          <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] text-slate-700">
+        <span className="text-[11px] font-semibold text-slate-700 tracking-tight leading-snug select-none truncate">
+          {children}
+        </span>
+        {sortIndex != null && sortIndex > 0 ? (
+          <span
+            className="inline-flex h-[15px] min-w-[15px] shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white px-0.5 text-[8px] font-bold text-slate-700 shadow-sm"
+            title={`Prioridade de ordenação ${sortIndex}`}
+          >
             {sortIndex}
           </span>
-        )}
+        ) : null}
       </span>
       {onResizeStart && (
         <span
