@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
 
 const LOCAL_LINES_KEY = "pcp-local-lines";
@@ -285,9 +286,31 @@ export default function UsersSettingsPage() {
             Gerencie os usuários e permissões do sistema.
           </p>
         </div>
-        <Button className="text-xs h-8" onClick={openCreateModal}>
-          + Novo Usuário
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <PageExportMenu
+            fileNameBase="configuracao-usuarios"
+            sheetTitle="Usuários"
+            getData={() => ({
+              headers: ["Nome", "Email", "Perfil", "Status", "Linhas"],
+              rows: users.map((u) => [
+                u.full_name,
+                u.email,
+                u.role === "manager"
+                  ? "Manager"
+                  : u.role === "pcp"
+                    ? "PCP"
+                    : u.role === "operator"
+                      ? "Operador"
+                      : "Super Admin",
+                u.is_active ? "Ativo" : "Inativo",
+                u.lines.map((l) => l.name).join("; ") || "—",
+              ]),
+            })}
+          />
+          <Button className="text-xs h-8" onClick={openCreateModal}>
+            + Novo Usuário
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-x-auto">

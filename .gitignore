@@ -19,6 +19,9 @@ npm-debug.log*
 # backup (contém dados sensíveis)
 backup-pcp.json
 
+# PDF de teste (dados de cliente)
+public/test-pedido.pdf
+
 # misc
 *.tsbuildinfo
 next-env.d.ts

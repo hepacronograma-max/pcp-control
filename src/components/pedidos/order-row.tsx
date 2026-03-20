@@ -5,6 +5,10 @@ import { CompactDateCell } from "@/components/ui/compact-date-cell";
 import { OrderStatusBadge } from "./order-status-badge";
 import { OrderItems } from "./order-items";
 import { hasPermission } from "@/lib/utils/permissions";
+import {
+  effectiveOrderProductionDeadline,
+  getOrderDeadlineTrafficLight,
+} from "@/lib/utils/order-aggregates";
 
 export interface OrderRowProps {
   order: OrderWithItems;
@@ -13,6 +17,10 @@ export interface OrderRowProps {
   onUpdateOrderPcpDate: (orderId: string, date: string | null) => void;
   onUpdateItemLine: (itemId: string, lineId: string | null) => void;
   onUpdateItemQuantity: (itemId: string, quantity: number) => void;
+  onUpdateItemPc: (
+    itemId: string,
+    data: { pc_number: string | null; pc_delivery_date: string | null }
+  ) => void;
   onUpdateOrder: (
     orderId: string,
     data: { order_number?: string; client_name?: string; delivery_deadline?: string | null }
@@ -94,19 +102,6 @@ function getPrincipalStatus(order: OrderWithItems): PrincipalStatus {
   return "aguardando_programacao";
 }
 
-function isDelayed(order: OrderWithItems): boolean {
-  if (!order.production_deadline) return false;
-  const prodDate = new Date(order.production_deadline);
-  const deliveryDate = order.delivery_deadline
-    ? new Date(order.delivery_deadline)
-    : null;
-  const pcpDate = order.pcp_deadline ? new Date(order.pcp_deadline) : null;
-
-  if (deliveryDate && prodDate > deliveryDate) return true;
-  if (pcpDate && prodDate > pcpDate) return true;
-  return false;
-}
-
 export function OrderRow({
   order,
   lines,
@@ -114,6 +109,7 @@ export function OrderRow({
   onUpdateOrderPcpDate,
   onUpdateItemLine,
   onUpdateItemQuantity,
+  onUpdateItemPc,
   onUpdateOrder,
   onDeleteOrder,
   onFinishOrder,
@@ -124,7 +120,6 @@ export function OrderRow({
   const [editClient, setEditClient] = useState(order.client_name);
   const [editDelivery, setEditDelivery] = useState(order.delivery_deadline ?? "");
 
-  const delayed = isDelayed(order);
   const allItemsCompleted =
     order.items.length > 0 &&
     order.items.every((item) => item.status === "completed");
@@ -132,6 +127,16 @@ export function OrderRow({
   const canEdit = hasPermission(userRole, "viewOrders");
 
   const principalStatus = getPrincipalStatus(order);
+  const displayProductionDeadline = effectiveOrderProductionDeadline(order);
+  const traffic = getOrderDeadlineTrafficLight(order);
+  const rowTrafficClass =
+    traffic === "red"
+      ? "bg-red-50"
+      : traffic === "yellow"
+        ? "bg-amber-50"
+        : traffic === "green"
+          ? "bg-emerald-50"
+          : "bg-white";
 
   function openEditModal() {
     setEditNumber(order.order_number);
@@ -157,7 +162,18 @@ export function OrderRow({
 
   return (
     <>
-      <div className="grid grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)] gap-2 px-4 py-1.5 border-b border-slate-200 text-xs items-center bg-white">
+      <div
+        className={`grid grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)] gap-2 px-4 py-1.5 border-b border-slate-200 text-xs items-center transition-colors ${rowTrafficClass}`}
+        title={
+          traffic === "white"
+            ? undefined
+            : traffic === "red"
+              ? "Alerta: PCP após vendas ou produção após vendas."
+              : traffic === "yellow"
+                ? "Atenção: produção após o PCP e até a data de vendas (inclui término no limite)."
+                : "OK: produção até o PCP, antes de vendas."
+        }
+      >
         <button
           onClick={() => setExpanded((v) => !v)}
           className="text-slate-500 hover:text-slate-800"
@@ -175,13 +191,7 @@ export function OrderRow({
             onChange={(val) => onUpdateOrderPcpDate(order.id, val)}
           />
         </div>
-        <div
-          className={`text-center ${
-            delayed ? "bg-red-100 font-semibold text-red-700 rounded-md py-1" : ""
-          }`}
-        >
-          {formatShortDate(order.production_deadline)}
-        </div>
+        <div className="text-center">{formatShortDate(displayProductionDeadline)}</div>
         <div className="col-span-2 flex flex-nowrap items-center justify-end gap-1">
           {principalStatus === "atrasado" && (
             <span className="inline-flex items-center shrink-0 rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap">
@@ -297,8 +307,10 @@ export function OrderRow({
         <OrderItems
           items={order.items}
           lines={lines}
+          orderPcpDeadline={order.pcp_deadline}
           onChangeLine={onUpdateItemLine}
           onChangeQuantity={onUpdateItemQuantity}
+          onUpdateItemPc={onUpdateItemPc}
         />
       )}
     </>

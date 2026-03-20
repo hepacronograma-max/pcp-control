@@ -7,6 +7,7 @@ import type {
   UserRole,
 } from "@/lib/types/database";
 import { OrderRow } from "./order-row";
+import { effectiveOrderProductionDeadline } from "@/lib/utils/order-aggregates";
 
 type SortKey =
   | "order_number"
@@ -23,6 +24,10 @@ interface OrdersTableProps {
   onUpdateOrderPcpDate: (orderId: string, date: string | null) => void;
   onUpdateItemLine: (itemId: string, lineId: string | null) => void;
   onUpdateItemQuantity: (itemId: string, quantity: number) => void;
+  onUpdateItemPc: (
+    itemId: string,
+    data: { pc_number: string | null; pc_delivery_date: string | null }
+  ) => void;
   onUpdateOrder: (
     orderId: string,
     data: { order_number?: string; client_name?: string; delivery_deadline?: string | null }
@@ -39,6 +44,7 @@ export function OrdersTable({
   onUpdateOrderPcpDate,
   onUpdateItemLine,
   onUpdateItemQuantity,
+  onUpdateItemPc,
   onUpdateOrder,
   onDeleteOrder,
   onFinishOrder,
@@ -83,8 +89,15 @@ export function OrdersTable({
       });
     }
     return [...list].sort((a, b) => {
-      const av = (a as any)[sortKey] ?? "";
-      const bv = (b as any)[sortKey] ?? "";
+      let av: string = "";
+      let bv: string = "";
+      if (sortKey === "production_deadline") {
+        av = effectiveOrderProductionDeadline(a) ?? "";
+        bv = effectiveOrderProductionDeadline(b) ?? "";
+      } else {
+        av = String((a as unknown as Record<string, unknown>)[sortKey] ?? "");
+        bv = String((b as unknown as Record<string, unknown>)[sortKey] ?? "");
+      }
       if (!av && !bv) return 0;
       if (!av) return 1;
       if (!bv) return -1;
@@ -150,6 +163,7 @@ export function OrdersTable({
             onUpdateOrderPcpDate={onUpdateOrderPcpDate}
             onUpdateItemLine={onUpdateItemLine}
             onUpdateItemQuantity={onUpdateItemQuantity}
+            onUpdateItemPc={onUpdateItemPc}
             onUpdateOrder={onUpdateOrder}
             onDeleteOrder={onDeleteOrder}
             onFinishOrder={onFinishOrder}

@@ -1,3 +1,11 @@
+/**
+ * API de importação de PDFs de pedidos (TOTVS, Omie).
+ *
+ * O prazo de entrega é extraído do PDF e salvo quando as colunas existem.
+ * Se delivery_deadline/pcp_deadline não existirem: tenta criar via ensureDeliveryColumns(),
+ * e se não conseguir, importa sem prazo (fallback) com aviso para o usuário adicionar
+ * as colunas e re-importar.
+ */
 import { NextRequest, NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
@@ -11,6 +19,7 @@ import {
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
+import { ensureDeliveryColumns } from "@/lib/db/ensure-delivery-columns";
 
 const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB (Vercel limite ~4.5 MB)
 
@@ -227,6 +236,8 @@ export async function POST(request: NextRequest) {
             error: "Nenhuma empresa cadastrada no banco. Importe o backup ou crie uma empresa primeiro.",
           }, { status: 400 });
         }
+        // Garante que as colunas de prazo existam antes de inserir/atualizar
+        await ensureDeliveryColumns();
         const { data: existing } = await supabase
           .from("orders")
           .select("id")
@@ -235,24 +246,66 @@ export async function POST(request: NextRequest) {
           .maybeSingle();
 
         if (existing) {
+          // Re-importação: atualiza prazo de entrega e cliente no pedido existente
+          // REGRA: prazo extraído do PDF deve ser salvo - não aceitamos perder
+          const updatePayload: Record<string, unknown> = {
+            client_name: String(extracted.clientName).trim().slice(0, 255),
+            delivery_deadline: toDateOnly(extracted.deliveryDate),
+          };
+          let updateRes = await supabase
+            .from("orders")
+            .update(updatePayload)
+            .eq("id", existing.id)
+            .select();
+            if (updateRes.error?.message?.includes("delivery_deadline")) {
+              const added = await ensureDeliveryColumns();
+              if (added) {
+                updateRes = await supabase
+                  .from("orders")
+                  .update(updatePayload)
+                  .eq("id", existing.id)
+                  .select();
+              }
+              if (updateRes.error?.message?.includes("delivery_deadline")) {
+                const { delivery_deadline: _, ...payloadWithoutDelivery } = updatePayload;
+                await supabase.from("orders").update(payloadWithoutDelivery).eq("id", existing.id).select();
+              }
+            }
+          const deliveryUpdated = !updateRes.error;
           return NextResponse.json({
-            success: false,
-            error: "Pedido já importado anteriormente. Revise na tela de Pedidos.",
+            success: true,
+            savedToSupabase: true,
             orderNumber: extracted.orderNumber,
             clientName: extracted.clientName,
+            deliveryDate: extracted.deliveryDate,
             itemCount: extracted.items.length,
+            updated: true,
+            deliveryUpdated,
+            message: deliveryUpdated
+              ? "Pedido já existia. Prazo de entrega e cliente foram atualizados."
+              : "Pedido atualizado sem prazo. Adicione as colunas em Configurações e re-importe para salvar o prazo.",
           });
         }
 
-        const { data: createdOrders, error: orderError } = await supabase
-          .from("orders")
-          .insert({
-            company_id: companyId,
-            order_number: String(extracted.orderNumber).trim().slice(0, 50),
-            client_name: String(extracted.clientName).trim().slice(0, 255),
-            status: "imported",
-          })
-          .select();
+        const orderPayload = {
+          company_id: companyId,
+          order_number: String(extracted.orderNumber).trim().slice(0, 50),
+          client_name: String(extracted.clientName).trim().slice(0, 255),
+          delivery_deadline: toDateOnly(extracted.deliveryDate),
+          status: "imported",
+        };
+        let ordersRes = await supabase.from("orders").insert(orderPayload).select();
+        if (ordersRes.error?.message?.includes("delivery_deadline")) {
+          const added = await ensureDeliveryColumns();
+          if (added) {
+            ordersRes = await supabase.from("orders").insert(orderPayload).select();
+          }
+          if (ordersRes.error?.message?.includes("delivery_deadline")) {
+            const { delivery_deadline: _, ...payloadWithoutDelivery } = orderPayload;
+            ordersRes = await supabase.from("orders").insert(payloadWithoutDelivery).select();
+          }
+        }
+        const { data: createdOrders, error: orderError } = ordersRes;
 
         if (orderError || !createdOrders?.[0]) {
           console.error("Erro ao criar pedido (local auth):", orderError);
@@ -286,15 +339,21 @@ export async function POST(request: NextRequest) {
           ordersPath
         );
 
+        const createdOrderData = createdOrder as { id: string; delivery_deadline?: string | null };
+        const deliverySaved = !!createdOrderData?.delivery_deadline;
         return NextResponse.json({
           success: true,
           orderNumber: extracted.orderNumber,
           clientName: extracted.clientName,
           deliveryDate: extracted.deliveryDate,
+          deliverySaved,
           itemCount: extracted.items.length,
           savedToSupabase: true,
-          orderId: createdOrder.id,
+          orderId: createdOrderData.id,
           pdfSavedTo: savedPath ?? undefined,
+          message: !deliverySaved && extracted.deliveryDate
+            ? "Importado. Adicione as colunas em Configurações e re-importe para salvar o prazo."
+            : undefined,
         });
       } catch (err) {
         console.error("Erro na importação (local auth):", err);
@@ -345,6 +404,9 @@ export async function POST(request: NextRequest) {
             (company?.orders_path || company?.import_path || "").trim();
         }
 
+        // Garante que as colunas de prazo existam antes de inserir/atualizar
+        await ensureDeliveryColumns();
+
         // Verificar duplicidade
         const { data: existing } = await supabase
           .from("orders")
@@ -354,25 +416,65 @@ export async function POST(request: NextRequest) {
           .maybeSingle();
 
         if (existing) {
+          // Re-importação: atualiza prazo de entrega e cliente no pedido existente
+          const updatePayload: Record<string, unknown> = {
+            client_name: String(extracted.clientName).trim().slice(0, 255),
+            delivery_deadline: toDateOnly(extracted.deliveryDate),
+          };
+          let updateRes = await supabase
+            .from("orders")
+            .update(updatePayload)
+            .eq("id", existing.id)
+            .select();
+          if (updateRes.error?.message?.includes("delivery_deadline")) {
+            const added = await ensureDeliveryColumns();
+            if (added) {
+              updateRes = await supabase
+                .from("orders")
+                .update(updatePayload)
+                .eq("id", existing.id)
+                .select();
+            }
+            if (updateRes.error?.message?.includes("delivery_deadline")) {
+              const { delivery_deadline: _, ...payloadWithoutDelivery } = updatePayload;
+              await supabase.from("orders").update(payloadWithoutDelivery).eq("id", existing.id).select();
+            }
+          }
+          const deliveryUpdated = !updateRes.error;
           return NextResponse.json({
-            success: false,
-            error:
-              "Pedido já importado anteriormente. Revise na tela de Pedidos.",
+            success: true,
+            savedToSupabase: true,
             orderNumber: extracted.orderNumber,
             clientName: extracted.clientName,
+            deliveryDate: extracted.deliveryDate,
             itemCount: extracted.items.length,
+            updated: true,
+            deliveryUpdated,
+            message: deliveryUpdated
+              ? "Pedido já existia. Prazo de entrega e cliente foram atualizados."
+              : "Pedido atualizado sem prazo. Adicione as colunas em Configurações e re-importe para salvar o prazo.",
           });
         }
 
-        const { data: createdOrders, error: orderError } = await supabase
-          .from("orders")
-          .insert({
-            company_id: profile.company_id,
-            order_number: String(extracted.orderNumber).trim().slice(0, 50),
-            client_name: String(extracted.clientName).trim().slice(0, 255),
-            status: "imported",
-          })
-          .select();
+        const orderPayload = {
+          company_id: profile.company_id,
+          order_number: String(extracted.orderNumber).trim().slice(0, 50),
+          client_name: String(extracted.clientName).trim().slice(0, 255),
+          delivery_deadline: toDateOnly(extracted.deliveryDate),
+          status: "imported",
+        };
+        let ordersRes = await supabase.from("orders").insert(orderPayload).select();
+        if (ordersRes.error?.message?.includes("delivery_deadline")) {
+          const added = await ensureDeliveryColumns();
+          if (added) {
+            ordersRes = await supabase.from("orders").insert(orderPayload).select();
+          }
+          if (ordersRes.error?.message?.includes("delivery_deadline")) {
+            const { delivery_deadline: _, ...payloadWithoutDelivery } = orderPayload;
+            ordersRes = await supabase.from("orders").insert(payloadWithoutDelivery).select();
+          }
+        }
+        const { data: createdOrders, error: orderError } = ordersRes;
 
         if (orderError || !createdOrders?.[0]) {
           console.error("Erro ao criar pedido:", orderError);
@@ -413,15 +515,21 @@ export async function POST(request: NextRequest) {
           ordersPath
         );
 
+        const createdOrderData = createdOrder as { id: string; delivery_deadline?: string | null };
+        const deliverySaved = !!createdOrderData?.delivery_deadline;
         return NextResponse.json({
           success: true,
           orderNumber: extracted.orderNumber,
           clientName: extracted.clientName,
           deliveryDate: extracted.deliveryDate,
+          deliverySaved,
           itemCount: extracted.items.length,
           savedToSupabase: true,
-          orderId: createdOrder.id,
+          orderId: createdOrderData.id,
           pdfSavedTo: savedPath ?? undefined,
+          message: !deliverySaved && extracted.deliveryDate
+            ? "Importado. Adicione as colunas em Configurações e re-importe para salvar o prazo."
+            : undefined,
         });
       } catch (supabaseErr) {
         console.error("Erro Supabase na importação:", supabaseErr);

@@ -78,6 +78,10 @@ export interface OrderItem {
   completed_by: string | null;
   notes: string | null;
   supplied_at: string | null;
+  /** Número do pedido de compras (matéria-prima) */
+  pc_number: string | null;
+  /** Data prevista de entrega do PC (matéria-prima) — início/fim de produção não podem ser antes */
+  pc_delivery_date: string | null;
   created_at: string;
   updated_at: string;
 }

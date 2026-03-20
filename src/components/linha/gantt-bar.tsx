@@ -45,7 +45,7 @@ export function GanttBar({
 
   return (
     <div
-      className={`h-6 w-full ${radiusClass} ${
+      className={`h-5 w-full max-h-[20px] ${radiusClass} ${
         isCompleted ? "bg-green-600" : "bg-green-300"
       }`}
     />

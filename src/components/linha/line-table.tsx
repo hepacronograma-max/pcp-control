@@ -9,6 +9,19 @@ function safeParse(d: string): Date {
   return d.includes("-") ? parseLocalDate(d) : new Date(d);
 }
 
+/** Menor data mínima aceita no input (YYYY-MM-DD) */
+function maxDateStr(
+  a: string | null | undefined,
+  b: string | null | undefined
+): string | undefined {
+  const as = a?.slice(0, 10) ?? "";
+  const bs = b?.slice(0, 10) ?? "";
+  if (!as && !bs) return undefined;
+  if (!as) return bs || undefined;
+  if (!bs) return as || undefined;
+  return as >= bs ? as : bs;
+}
+
 export type LineSortKey =
   | "order_number"
   | "client_name"
@@ -122,9 +135,10 @@ export function LineTable({
   allLines,
   onSupply,
 }: LineTableProps) {
+  /** Colunas mais estreitas (Qtd, PCP, PC, início/fim) liberam espaço para o Gantt à direita */
   const defaultWidths = isAlmoxarifado
     ? [60, 140, 200, 55, 110, 90, 80]
-    : [60, 140, 200, 55, 70, 90, 90, 60, 120];
+    : [60, 140, 200, 38, 54, 56, 68, 68, 32, 100];
 
   const [columnWidths, setColumnWidths] = useState<number[]>(defaultWidths);
   const resizingIndexRef = useRef<number | null>(null);
@@ -147,7 +161,7 @@ export function LineTable({
       const idx = resizingIndexRef.current;
       const delta = e.clientX - startXRef.current;
       const base = startWidthsRef.current[idx];
-      const next = Math.max(40, base + delta);
+      const next = Math.max(26, base + delta);
       setColumnWidths((prev) => {
         const copy = [...prev];
         copy[idx] = next;
@@ -298,7 +312,7 @@ export function LineTable({
   }
 
   return (
-    <div className="min-w-[640px]">
+    <div className="min-w-[560px]">
       <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
         <div
           className="grid text-[10px] font-semibold text-slate-600 min-h-[28px] items-center"
@@ -343,9 +357,15 @@ export function LineTable({
           </HeaderCell>
           <HeaderCell
             className="text-center"
+            onResizeStart={(e) => handleResizeStart(5, e)}
+          >
+            PC entrega
+          </HeaderCell>
+          <HeaderCell
+            className="text-center"
             onClick={() => toggleSort("production_start")}
             sortIndex={getSortIndex("production_start")}
-            onResizeStart={(e) => handleResizeStart(5, e)}
+            onResizeStart={(e) => handleResizeStart(6, e)}
           >
             Início Prod.
           </HeaderCell>
@@ -353,17 +373,17 @@ export function LineTable({
             className="text-center"
             onClick={() => toggleSort("production_end")}
             sortIndex={getSortIndex("production_end")}
-            onResizeStart={(e) => handleResizeStart(6, e)}
+            onResizeStart={(e) => handleResizeStart(7, e)}
           >
             Fim Prod.
           </HeaderCell>
           <HeaderCell
             className="text-center"
-            onResizeStart={(e) => handleResizeStart(7, e)}
+            onResizeStart={(e) => handleResizeStart(8, e)}
           >
             ✓
           </HeaderCell>
-          <HeaderCell onResizeStart={(e) => handleResizeStart(8, e)}>
+          <HeaderCell onResizeStart={(e) => handleResizeStart(9, e)}>
             Obs.
           </HeaderCell>
         </div>
@@ -410,9 +430,18 @@ export function LineTable({
               <Cell className={`text-center flex justify-center items-center ${willDelay ? "text-red-700 font-semibold" : ""}`}>
                 {pcpDisplay ?? "--"}
               </Cell>
+              <Cell
+                className="text-center flex justify-center items-center text-[10px]"
+                title={item.pc_number ? `PC ${item.pc_number}` : undefined}
+              >
+                {item.pc_delivery_date
+                  ? format(safeParse(item.pc_delivery_date), "d/M/yy")
+                  : "--"}
+              </Cell>
               <Cell className="flex items-stretch p-0">
                 <CompactDateCell
                   value={item.production_start}
+                  min={item.pc_delivery_date}
                   onChange={(val) =>
                     onChangeDate(item.id, "production_start", val)
                   }
@@ -421,15 +450,16 @@ export function LineTable({
               <Cell className={`flex items-stretch p-0 ${willDelay ? "[&_input]:text-red-700 [&_input]:font-semibold" : ""}`}>
                 <CompactDateCell
                   value={item.production_end}
+                  min={maxDateStr(item.production_start, item.pc_delivery_date)}
                   onChange={(val) =>
                     onChangeDate(item.id, "production_end", val)
                   }
                 />
               </Cell>
-              <Cell className="text-center">
+              <Cell className="text-center px-0.5">
                 <button
                   onClick={() => handleComplete(item.id)}
-                  className={`inline-flex h-6 w-6 items-center justify-center rounded border text-xs ${
+                  className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px] leading-none ${
                     willDelay
                       ? "border-red-300 text-red-700 hover:bg-red-100"
                       : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"

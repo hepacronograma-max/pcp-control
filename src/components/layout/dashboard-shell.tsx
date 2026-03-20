@@ -9,6 +9,8 @@ import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { getOperatorLineIdsForLocalUser } from "@/lib/local-users";
 import type { ProductionLine, Profile } from "@/lib/types/database";
 import { hasPermission } from "@/lib/utils/permissions";
+import { itemNeedsProductionProgram } from "@/lib/utils/line-program-indicator";
+import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 
 interface CompanyInfo {
   id: string;
@@ -18,25 +20,6 @@ interface CompanyInfo {
 
 interface OperatorLine {
   line_id: string;
-}
-
-/** Conta itens não programados (status waiting ou sem production_start, excluindo finalizados) por linha */
-function countUnprogrammedByLine(
-  orders: { items: { line_id: string | null; status: string; production_start: string | null }[] }[]
-): Record<string, number> {
-  const counts: Record<string, number> = {};
-  for (const order of orders) {
-    for (const item of order.items) {
-      if (!item.line_id) continue;
-      if (item.status === "completed") continue;
-      const needsProgram =
-        item.status === "waiting" || item.production_start == null;
-      if (needsProgram) {
-        counts[item.line_id] = (counts[item.line_id] ?? 0) + 1;
-      }
-    }
-  }
-  return counts;
 }
 
 export function DashboardShell({ children }: { children: ReactNode }) {
@@ -65,9 +48,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     const useApi = profile.company_id === "local-company";
 
     if (useApi) {
-      fetch("/api/company-data")
-        .then((res) => res.json())
-        .then((json) => {
+      let cancelled = false;
+      async function loadCompanyData() {
+        try {
+          const res = await fetch("/api/company-data", { credentials: "include" });
+          const json = await res.json();
+          if (cancelled) return;
           setCompany(json.company ?? null);
           setLines(json.lines ?? []);
           setUnprogrammedByLine(json.unprogrammedByLine ?? {});
@@ -75,13 +61,23 @@ export function DashboardShell({ children }: { children: ReactNode }) {
             const lineIds = getOperatorLineIdsForLocalUser(profile.id);
             setOperatorLines(lineIds.map((line_id) => ({ line_id })));
           }
-        })
-        .catch(() => {
-          setCompany(null);
-          setLines([]);
-          setUnprogrammedByLine({});
-        });
-      return;
+        } catch {
+          if (!cancelled) {
+            setCompany(null);
+            setLines([]);
+            setUnprogrammedByLine({});
+          }
+        }
+      }
+      loadCompanyData();
+      const interval = setInterval(loadCompanyData, 5000);
+      const onFocus = () => loadCompanyData();
+      window.addEventListener("focus", onFocus);
+      return () => {
+        cancelled = true;
+        clearInterval(interval);
+        window.removeEventListener("focus", onFocus);
+      };
     }
 
     if (!supabase) {
@@ -128,11 +124,11 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       try {
         const { data: itemsData } = await client
           .from("order_items")
-          .select("line_id, status, production_start")
+          .select("line_id, status, production_start, production_end")
           .not("line_id", "is", null);
         const counts: Record<string, number> = {};
         for (const it of itemsData ?? []) {
-          if (it.line_id && (it.status === "waiting" || !it.production_start)) {
+          if (itemNeedsProductionProgram(it)) {
             counts[it.line_id] = (counts[it.line_id] ?? 0) + 1;
           }
         }
@@ -145,19 +141,22 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     loadData();
   }, [profile, supabase, effectiveCompanyId, effectiveLoaded, pathname]);
 
-  // Atualiza contagem de itens não programados ao trocar de aba ou periodicamente (apenas Supabase)
+  // Atualiza contagem ao trocar de aba / intervalo — só com sessão Supabase no browser.
+  // Login local (+ company-data na API) NÃO deve usar isto: RLS do anon zera a contagem e o piscar “morre”.
   useEffect(() => {
     if (!supabase || !effectiveCompanyId) return;
+    if (shouldUseLocalServiceApi(profile)) return;
+
     const client = supabase;
     async function refreshCounts() {
       try {
         const { data } = await client
           .from("order_items")
-          .select("line_id, status, production_start")
+          .select("line_id, status, production_start, production_end")
           .not("line_id", "is", null);
         const counts: Record<string, number> = {};
         for (const it of data ?? []) {
-          if (it.line_id && (it.status === "waiting" || !it.production_start)) {
+          if (itemNeedsProductionProgram(it)) {
             counts[it.line_id] = (counts[it.line_id] ?? 0) + 1;
           }
         }
@@ -449,16 +448,26 @@ function SidebarItem({ label, href, active, hasUnprogrammed, onClick }: SidebarI
       className={`w-full flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-xs font-medium transition-colors ${
         active
           ? "bg-[#1B4F72] text-white"
+          : hasUnprogrammed
+          ? "text-slate-800 bg-amber-50 border-2 border-amber-400 pcp-sidebar-line-alert"
           : "text-slate-700 hover:bg-slate-100"
       }`}
+      title={
+        hasUnprogrammed
+          ? "Itens nesta linha sem data de produção programada — defina na Linha de Produção"
+          : undefined
+      }
     >
       {hasUnprogrammed && (
         <span
-          className="h-2 w-2 shrink-0 rounded-full bg-red-500 animate-pulse"
-          title="Itens aguardando programação"
+          className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-500 ring-2 ring-amber-400/50 pcp-sidebar-line-alert-dot"
+          title="Aguardando programação"
         />
       )}
       <span className="flex-1 truncate">{label}</span>
+      {hasUnprogrammed && (
+        <span className="text-[10px] font-bold text-amber-600 shrink-0">!</span>
+      )}
     </button>
   );
 }

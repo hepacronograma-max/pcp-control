@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import Link from "next/link";
+import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/hooks/use-user";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
@@ -19,6 +20,8 @@ export default function ConfiguracoesPage() {
   const [clearing, setClearing] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreResult, setRestoreResult] = useState<{ success: boolean; msg: string } | null>(null);
+  const [setupColumnsResult, setSetupColumnsResult] = useState<{ success: boolean; msg: string } | null>(null);
+  const [settingUpColumns, setSettingUpColumns] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
   const { profile } = useUser();
@@ -74,6 +77,23 @@ export default function ConfiguracoesPage() {
     }
   }
 
+  async function handleSetupDeliveryColumns() {
+    setSettingUpColumns(true);
+    setSetupColumnsResult(null);
+    try {
+      const res = await fetch("/api/setup-delivery-columns", { method: "POST" });
+      const json = await res.json();
+      setSetupColumnsResult({
+        success: json.success,
+        msg: json.msg || json.error || (json.success ? "Colunas adicionadas!" : "Erro"),
+      });
+    } catch {
+      setSetupColumnsResult({ success: false, msg: "Erro ao conectar" });
+    } finally {
+      setSettingUpColumns(false);
+    }
+  }
+
   async function handleClearOrders() {
     setClearing(true);
     try {
@@ -99,11 +119,21 @@ export default function ConfiguracoesPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Configurações</h1>
-        <p className="text-sm text-slate-600 mt-1">
-          Configure linhas de produção, dados da empresa, feriados e usuários.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Configurações</h1>
+          <p className="text-sm text-slate-600 mt-1">
+            Configure linhas de produção, dados da empresa, feriados e usuários.
+          </p>
+        </div>
+        <PageExportMenu
+          fileNameBase="configuracoes-menu"
+          sheetTitle="Configurações — atalhos"
+          getData={() => ({
+            headers: ["Seção", "Descrição", "Rota"],
+            rows: links.map((item) => [item.label, item.description, item.href]),
+          })}
+        />
       </div>
       <div className="grid gap-3">
         {links.map((item) => (
@@ -123,6 +153,60 @@ export default function ConfiguracoesPage() {
 
       <div className="border-t border-slate-200 pt-6">
         <h2 className="text-sm font-semibold text-slate-800 mb-2">Manutenção</h2>
+
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-lg border border-amber-200 bg-amber-50 mb-3">
+          <div>
+            <h3 className="text-sm font-medium text-amber-800">Colunas do banco (prazos + linha + PC)</h3>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Cria/atualiza colunas em <code className="text-[10px]">orders</code> e{" "}
+              <code className="text-[10px]">order_items</code> (inclui{" "}
+              <code className="text-[10px]">pc_number</code> e{" "}
+              <code className="text-[10px]">pc_delivery_date</code> para o botão PC). Se o botão
+              &quot;Adicionar colunas&quot; falhar, use o SQL do arquivo{" "}
+              <code className="text-[10px]">supabase-add-columns.sql</code> no Supabase.
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <button
+              onClick={handleSetupDeliveryColumns}
+              disabled={settingUpColumns}
+              className="px-3 py-1.5 rounded-md bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-50"
+            >
+              {settingUpColumns ? "Executando..." : "Adicionar colunas"}
+            </button>
+            {setupColumnsResult && (
+              <div className="text-xs">
+                <span className={`font-medium ${setupColumnsResult.success ? "text-emerald-700" : "text-red-700"}`}>
+                  {setupColumnsResult.msg}
+                </span>
+                {!setupColumnsResult.success &&
+                  (setupColumnsResult.msg.includes("DATABASE_URL") ||
+                    setupColumnsResult.msg.includes("ACCESS_TOKEN")) && (
+                  <p className="mt-1 text-amber-700">
+                    Ou execute no Supabase → SQL Editor (projeto correto) o arquivo{" "}
+                    <strong>supabase-add-columns.sql</strong> na raiz do <code>pcp-control</code>, ou pelo menos:
+                    <code className="block mt-1 p-2 bg-amber-100 rounded text-[10px] overflow-x-auto whitespace-pre-wrap">
+{`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS pc_number text;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS pc_delivery_date date;`}
+                    </code>
+                    Depois: aguarde 1–2 minutos (cache do PostgREST) e teste de novo; às vezes basta reiniciar o app local.
+                    <a
+                      href="https://supabase.com/dashboard/project/_/sql/new"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-amber-800 underline mt-1 inline-block"
+                    >
+                      Abrir SQL Editor →
+                    </a>
+                  </p>
+                )}
+              </div>
+            )}
+            <p className="text-[10px] text-amber-600 max-w-[200px]">
+              Requer DATABASE_URL no .env (Supabase: Settings &gt; Database &gt; Connection string)
+            </p>
+          </div>
+        </div>
 
         {supabase && (
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 rounded-lg border border-emerald-200 bg-emerald-50 mb-3">

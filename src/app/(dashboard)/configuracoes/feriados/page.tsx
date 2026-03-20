@@ -8,6 +8,7 @@ import type { Holiday } from "@/lib/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
 import { toDateOnly, toBoolean } from "@/lib/utils/supabase-data";
 
@@ -136,16 +137,39 @@ export default function HolidaysSettingsPage() {
 
   return (
     <div className="space-y-4 max-w-2xl">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Feriados</h1>
           <p className="text-sm text-slate-600">
             Gerencie os feriados que impactam o calendário de produção.
           </p>
         </div>
-        <Button className="text-xs h-8" onClick={handlePreload}>
-          Carregar feriados nacionais
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <PageExportMenu
+            fileNameBase="configuracao-feriados"
+            sheetTitle="Feriados"
+            getData={() => ({
+              headers: ["Data", "Descrição", "Recorrente"],
+              rows: holidays.map((h) => {
+                const dateObj = new Date(h.date);
+                const formatted = h.is_recurring
+                  ? dateObj.toLocaleDateString("pt-BR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                    })
+                  : dateObj.toLocaleDateString("pt-BR");
+                return [
+                  formatted,
+                  h.description,
+                  h.is_recurring ? "Anual" : "Único",
+                ];
+              }),
+            })}
+          />
+          <Button className="text-xs h-8" onClick={handlePreload}>
+            Carregar feriados nacionais
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm space-y-2">

@@ -9,6 +9,8 @@ import { getOperatorLineIdsForLocalUser } from "@/lib/local-users";
 import type { OrderItem, OrderWithItems, ProductionLine } from "@/lib/types/database";
 import { computeDashboardFromOrders } from "@/lib/utils/dashboard-local";
 import { KPICard } from "@/components/dashboard/kpi-card";
+import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import { PageExportMenu } from "@/components/ui/page-export-menu";
 
 interface OperatorLineStats {
   lineId: string;
@@ -148,14 +150,14 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!profile || !effectiveCompanyId) return;
     const companyId = effectiveCompanyId;
-    const useApi = profile.company_id === "local-company";
+    const useApi = shouldUseLocalServiceApi(profile);
 
     async function loadData() {
       setLoadingData(true);
 
       if (useApi) {
         try {
-          const res = await fetch("/api/company-data");
+          const res = await fetch("/api/company-data", { credentials: "include" });
           const json = await res.json();
           setOrders((json.orders ?? []) as OrderWithItems[]);
           setAllLines((json.lines ?? []) as ProductionLine[]);
@@ -242,7 +244,7 @@ export default function DashboardPage() {
   if (isOperator && operatorDash) {
     return (
       <section className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <div>
             <h1 className="text-xl font-semibold text-slate-900">
               Meus Itens
@@ -251,8 +253,33 @@ export default function DashboardPage() {
               Resumo dos itens nas suas linhas de produção
             </p>
           </div>
-          <div className="text-xs text-slate-500">
-            <span>📅 {monthYear}</span>
+          <div className="flex items-center gap-2">
+            <PageExportMenu
+              fileNameBase="dashboard-operador"
+              sheetTitle="Dashboard — Meus itens"
+              getData={() => {
+                const headers = [
+                  "Pedido",
+                  "Cliente",
+                  "Descrição",
+                  "Qtd",
+                  "Prazo",
+                  "Status",
+                ];
+                const rows = operatorDash.recentItems.map((item) => [
+                  item.orderNumber,
+                  item.clientName,
+                  item.description,
+                  item.quantity,
+                  item.deliveryDeadline ?? "",
+                  item.status,
+                ]);
+                return { headers, rows };
+              }}
+            />
+            <div className="text-xs text-slate-500">
+              <span>📅 {monthYear}</span>
+            </div>
           </div>
         </div>
 
@@ -435,10 +462,47 @@ export default function DashboardPage() {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
         <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
-        <div className="text-xs text-slate-500">
-          <span>📅 {monthYear}</span>
+        <div className="flex items-center gap-2">
+          <PageExportMenu
+            fileNameBase="dashboard"
+            sheetTitle="Dashboard — Resumo"
+            getData={() => {
+              const headers = ["Indicador", "Valor"];
+              const rows: (string | number)[][] = [
+                ["Pedidos em aberto", dashboard.openOrders],
+                ["Pedidos em atraso", dashboard.delayedOrders],
+                [
+                  "Prazo médio (dias)",
+                  dashboard.avgLeadTime === "--" ? "—" : dashboard.avgLeadTime,
+                ],
+                ["Entrega no prazo (%)", dashboard.onTimeRate],
+              ];
+              rows.push(["", ""]);
+              rows.push(["Pedido", "Cliente", "Status", "Prazo entrega"]);
+              for (const o of orders.filter((x) => x.status !== "finished")) {
+                rows.push([
+                  o.order_number,
+                  o.client_name,
+                  o.status,
+                  o.delivery_deadline ?? "",
+                ]);
+              }
+              return {
+                headers: ["A", "B", "C", "D"],
+                rows: rows.map((r) => [
+                  r[0] ?? "",
+                  r[1] ?? "",
+                  r[2] ?? "",
+                  r[3] ?? "",
+                ]),
+              };
+            }}
+          />
+          <div className="text-xs text-slate-500">
+            <span>📅 {monthYear}</span>
+          </div>
         </div>
       </div>
 

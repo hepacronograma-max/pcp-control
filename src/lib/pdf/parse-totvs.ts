@@ -89,14 +89,27 @@ export function parseTotvsOrcamento(
     }
   }
 
-  // --- Previsão de Faturamento ---
+  // --- Previsão de Faturamento (prazo de entrega de vendas) ---
+  const padroesData = [
+    /Previs[aã]o\s+de\s+Faturamento\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    /Previsao\s+de\s+Faturamento\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    /Prazo\s+de\s+[Ee]ntrega\s*(?:\([^)]*\))?\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    /Data\s+(?:de\s+)?[Ee]ntrega\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+    /Data\s+Prevista\s*:\s*(\d{1,2}\/\d{1,2}\/\d{4})/i,
+  ];
   for (const l of linhas) {
-    const m = l.match(/Previs[aã]o\s+de\s+Faturamento\s*:\s*(\d{2}\/\d{2}\/\d{4})/i);
-    if (m) {
-      const [d, mth, y] = m[1].split("/");
-      deliveryDate = `${y}-${mth}-${d}`;
-      break;
+    for (const re of padroesData) {
+      const m = l.match(re);
+      if (m) {
+        const parts = m[1].split("/");
+        const d = parts[0].padStart(2, "0");
+        const mth = parts[1].padStart(2, "0");
+        const y = parts[2];
+        deliveryDate = `${y}-${mth}-${d}`;
+        break;
+      }
     }
+    if (deliveryDate) break;
   }
 
   // --- Nº do Pedido do Cliente ---

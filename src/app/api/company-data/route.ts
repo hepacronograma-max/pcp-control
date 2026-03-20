@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
+import { itemNeedsProductionProgram } from "@/lib/utils/line-program-indicator";
 
 /**
  * Retorna pedidos (com itens), linhas e dados da empresa.
@@ -9,14 +11,16 @@ export async function GET() {
   try {
     const supabase = createSupabaseAdminClient();
 
-    // Busca empresa que TEM pedidos (evita empresa vazia de imports antigos)
-    const { data: orderWithCompany } = await supabase
-      .from("orders")
-      .select("company_id")
-      .limit(1)
-      .maybeSingle();
-
-    const companyId = orderWithCompany?.company_id;
+    // Empresa com mais pedidos (evita pegar outro tenant por .limit(1) sem ordem)
+    let companyId = await resolvePrimaryCompanyId(supabase);
+    if (!companyId) {
+      const { data: anyCompany } = await supabase
+        .from("companies")
+        .select("id")
+        .limit(1)
+        .maybeSingle();
+      companyId = anyCompany?.id ?? null;
+    }
     if (!companyId) {
       return NextResponse.json({
         companyId: null,
@@ -46,6 +50,7 @@ export async function GET() {
       )
       .eq("company_id", companyId)
       .order("delivery_deadline", { ascending: true });
+
     if (ordersRes.error?.message?.includes("delivery_deadline")) {
       ordersRes = await supabase
         .from("orders")
@@ -61,6 +66,39 @@ export async function GET() {
         .eq("company_id", companyId)
         .order("id", { ascending: true });
     }
+
+    // Se a query com embed production_line falhar (schema cache, FK, coluna nova), não retornar lista vazia: tentar só order_items(*)
+    if (ordersRes.error) {
+      console.warn("[company-data] select com production_line falhou:", ordersRes.error.message);
+      ordersRes = await supabase
+        .from("orders")
+        .select(
+          `
+          *,
+          items:order_items(*)
+        `
+        )
+        .eq("company_id", companyId)
+        .order("delivery_deadline", { ascending: true });
+    }
+    if (ordersRes.error?.message?.includes("delivery_deadline")) {
+      ordersRes = await supabase
+        .from("orders")
+        .select(
+          `
+          *,
+          items:order_items(*)
+        `
+        )
+        .eq("company_id", companyId)
+        .order("id", { ascending: true });
+    }
+    if (ordersRes.error) {
+      console.error(
+        "[company-data] falha ao carregar pedidos após fallbacks:",
+        ordersRes.error.message
+      );
+    }
     const linesRes = await supabase
       .from("production_lines")
       .select("id, name, company_id")
@@ -71,12 +109,18 @@ export async function GET() {
 
     const unprogrammedByLine: Record<string, number> = {};
     for (const o of orders) {
-      const items = (o as { items?: { line_id: string | null; status: string; production_start: string | null }[] }).items ?? [];
+      const items =
+        (o as {
+          items?: {
+            line_id: string | null;
+            status: string;
+            production_start: string | null;
+            production_end?: string | null;
+          }[];
+        }).items ?? [];
       for (const it of items) {
-        if (!it.line_id) continue;
-        if (it.status === "waiting" || !it.production_start) {
-          unprogrammedByLine[it.line_id] = (unprogrammedByLine[it.line_id] ?? 0) + 1;
-        }
+        if (!itemNeedsProductionProgram(it)) continue;
+        unprogrammedByLine[it.line_id!] = (unprogrammedByLine[it.line_id!] ?? 0) + 1;
       }
     }
 

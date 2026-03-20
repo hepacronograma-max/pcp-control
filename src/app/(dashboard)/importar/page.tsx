@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import { Button } from "@/components/ui/button";
+import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { useUser } from "@/lib/hooks/use-user";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { createClient } from "@/lib/supabase/client";
@@ -13,6 +14,9 @@ interface ImportResult {
   clientName?: string;
   itemCount?: number;
   error?: string;
+  message?: string;
+  updated?: boolean;
+  deliverySaved?: boolean;
 }
 
 export default function ImportPage() {
@@ -22,6 +26,11 @@ export default function ImportPage() {
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
   const { profile } = useUser();
   const { companyId: effectiveCompanyId } = useEffectiveCompanyId(profile);
+
+  // Tenta adicionar colunas de prazo ao carregar (se DATABASE_URL estiver configurado)
+  useEffect(() => {
+    fetch("/api/setup-delivery-columns", { method: "POST" }).catch(() => {});
+  }, []);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const pdfs = acceptedFiles.filter(
@@ -103,6 +112,9 @@ export default function ImportPage() {
         orderNumber: data.orderNumber,
         clientName: data.clientName,
         itemCount: data.itemCount ?? data.items?.length ?? 0,
+        message: data.message,
+        updated: data.updated,
+        deliverySaved: data.deliverySaved,
       };
     }
 
@@ -149,14 +161,38 @@ export default function ImportPage() {
 
   return (
     <div className="space-y-4 max-w-3xl">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">
-          Importar Pedidos
-        </h1>
-        <p className="text-sm text-slate-600">
-          Envie arquivos PDF de pedidos de venda do Omie para criar pedidos e
-          itens automaticamente.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">
+            Importar Pedidos
+          </h1>
+          <p className="text-sm text-slate-600">
+            Envie arquivos PDF de pedidos de venda (TOTVS, Omie) para criar pedidos e
+            itens automaticamente. O prazo de entrega é extraído do PDF.
+          </p>
+        </div>
+        <PageExportMenu
+          fileNameBase="importar-resultados"
+          sheetTitle="Importação — resultados"
+          getData={() => ({
+            headers: [
+              "Arquivo",
+              "Sucesso",
+              "Pedido",
+              "Cliente",
+              "Itens",
+              "Mensagem / Erro",
+            ],
+            rows: results.map((r) => [
+              r.fileName,
+              r.success ? "Sim" : "Não",
+              r.orderNumber ?? "",
+              r.clientName ?? "",
+              r.itemCount ?? "",
+              r.error || r.message || "",
+            ]),
+          })}
+        />
       </div>
 
       <div
@@ -249,14 +285,25 @@ export default function ImportPage() {
                 </span>
                 <div>
                   {r.success ? (
-                    <p className="text-slate-700">
-                      Pedido {r.orderNumber} - {r.clientName} - Importado (
-                      {r.itemCount} itens)
-                    </p>
+                    <div>
+                      <p className="text-slate-700">
+                        Pedido {r.orderNumber} - {r.clientName}
+                        {r.updated ? (
+                          <> - {r.message ?? "Atualizado"}</>
+                        ) : (
+                          <> - Importado ({r.itemCount} itens)</>
+                        )}
+                      </p>
+                      {r.deliverySaved === false && r.message && (
+                        <p className="text-amber-600 text-[11px] mt-0.5">{r.message}</p>
+                      )}
+                    </div>
                   ) : (
-                    <p className="text-slate-700">
-                      {r.fileName} - Erro: {r.error}
-                    </p>
+                    <div>
+                      <p className="text-slate-700">
+                        {r.fileName} - Erro: {r.error}
+                      </p>
+                    </div>
                   )}
                 </div>
               </li>

@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
 
 const LOGO_WIDTH = 200;
@@ -176,11 +177,27 @@ export default function CompanySettingsPage() {
 
   return (
     <div className="max-w-xl space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Empresa</h1>
-        <p className="text-sm text-slate-600">
-          Configure o nome, logo e pasta matriz para salvar os PDFs dos pedidos.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Empresa</h1>
+          <p className="text-sm text-slate-600">
+            Configure o nome, logo e pasta matriz para salvar os PDFs dos pedidos.
+          </p>
+        </div>
+        {form && (
+          <PageExportMenu
+            fileNameBase="configuracao-empresa"
+            sheetTitle="Empresa"
+            getData={() => ({
+              headers: ["Campo", "Valor"],
+              rows: [
+                ["Nome", form.name],
+                ["Pasta pedidos (PDF)", form.orders_path],
+                ["URL do logo", form.logo_url ?? ""],
+              ],
+            })}
+          />
+        )}
       </div>
 
       <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">

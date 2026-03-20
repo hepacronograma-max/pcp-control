@@ -8,6 +8,7 @@ import type { ProductionLine } from "@/lib/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
 import { toSortOrder } from "@/lib/utils/supabase-data";
 
@@ -175,7 +176,20 @@ export default function LinesSettingsPage() {
             Gerencie as linhas de produção da empresa.
           </p>
         </div>
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-2 flex-wrap justify-end">
+          <PageExportMenu
+            fileNameBase="configuracao-linhas-producao"
+            sheetTitle="Linhas de Produção"
+            getData={() => ({
+              headers: ["Ordem", "Nome", "Status", "Linha padrão (almox.)"],
+              rows: lines.map((line, idx) => [
+                line.sort_order ?? idx + 1,
+                line.name,
+                line.is_active ? "Ativa" : "Inativa",
+                line.is_almoxarifado ? "Sim" : "Não",
+              ]),
+            })}
+          />
           <div>
             <Label className="text-xs">Nova linha</Label>
             <Input

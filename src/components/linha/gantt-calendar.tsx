@@ -64,11 +64,15 @@ function parseLocalDate(dateStr: string): Date {
 }
 
 function getDayBackground(day: GanttDay): string {
-  if (day.isToday) return "bg-yellow-200 border-yellow-400 border-x-2";
+  if (day.isToday) return "bg-yellow-200 border-yellow-400 border-x";
   if (day.isHoliday) return "bg-blue-50";
   if (day.isWeekend) return "bg-gray-100";
   return "bg-white";
 }
+
+/** Coluna por dia: mais estreita que o w-10 original (40px); fonte menor = mais dias na tela */
+const GANTT_CELL =
+  "w-7 min-w-[28px] max-w-[28px] shrink-0 box-border";
 
 interface GanttCalendarProps {
   items: LineItemWithOrder[];
@@ -78,17 +82,18 @@ interface GanttCalendarProps {
 export function GanttCalendar({ items, holidays }: GanttCalendarProps) {
   const today = new Date();
   const startDate = subDays(today, 2);
-  const days = generateDays(startDate, 60, holidays);
+  /** Mais dias no horizonte (antes 60); células mais finas cabem mais na tela */
+  const days = generateDays(startDate, 90, holidays);
 
   return (
     <div className="min-w-max -mt-5">
-      {/* Header de datas */}
-      <div className="sticky top-0 z-10 bg-white border-b border-slate-200">
+      {/* Header de datas: altura extra para alinhar com o cabeçalho da tabela à esquerda */}
+      <div className="sticky top-0 z-10 bg-white border-b border-slate-200 box-border">
         <div className="flex">
           {days.map((day) => (
             <div
               key={day.date.toISOString()}
-              className={`w-10 h-5 text-[11px] leading-none flex items-center justify-center border-r border-slate-200 ${getDayBackground(
+              className={`${GANTT_CELL} h-[22px] text-[8px] leading-none tracking-tight flex items-center justify-center border-r border-slate-200 box-border ${getDayBackground(
                 day
               )}`}
             >
@@ -100,7 +105,7 @@ export function GanttCalendar({ items, holidays }: GanttCalendarProps) {
           {days.map((day) => (
             <div
               key={day.date.toISOString() + "-dow"}
-              className={`w-10 h-4 text-[10px] leading-none flex items-center justify-center border-r border-slate-200 ${getDayBackground(
+              className={`${GANTT_CELL} h-4 text-[7px] leading-none tracking-tight flex items-center justify-center border-r border-slate-200 box-border ${getDayBackground(
                 day
               )}`}
             >
@@ -135,7 +140,7 @@ export function GanttCalendar({ items, holidays }: GanttCalendarProps) {
               return (
                 <div
                   key={day.date.toISOString() + "-" + idx}
-                  className={`w-10 flex items-center justify-center border-r border-slate-200 ${getDayBackground(
+                  className={`${GANTT_CELL} flex items-center justify-center border-r border-slate-200 ${getDayBackground(
                     day
                   )}`}
                 >

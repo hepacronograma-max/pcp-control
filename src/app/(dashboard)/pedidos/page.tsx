@@ -15,8 +15,40 @@ import { OrdersTable } from "@/components/pedidos/orders-table";
 import { hasPermission } from "@/lib/utils/permissions";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 import { Button } from "@/components/ui/button";
+import { PageExportMenu } from "@/components/ui/page-export-menu";
+import { toast } from "sonner";
+import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 
 type TabKey = "open" | "finished";
+
+async function postOrderItemsUpdate(
+  body: Record<string, unknown>
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const res = await fetch("/api/order-items/update", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+  let message = "";
+  try {
+    const j = (await res.json()) as { error?: string };
+    message = j.error || "";
+  } catch {
+    message = "";
+  }
+  if (!res.ok) {
+    return {
+      ok: false,
+      error:
+        message ||
+        (res.status === 401
+          ? "Não autenticado. Saia e entre de novo (login local)."
+          : `Erro ao salvar (${res.status})`),
+    };
+  }
+  return { ok: true };
+}
 
 export default function PedidosPage() {
   const supabase = createClient();
@@ -52,14 +84,14 @@ export default function PedidosPage() {
   useEffect(() => {
     if (!profile || !effectiveCompanyId) return;
     const companyId = effectiveCompanyId;
-    const useApi = profile.company_id === "local-company";
+    const useApi = shouldUseLocalServiceApi(profile);
 
     async function loadData() {
       setLoadingData(true);
 
       if (useApi) {
         try {
-          const res = await fetch("/api/company-data");
+          const res = await fetch("/api/company-data", { credentials: "include" });
           const json = await res.json();
           setOrders((json.orders ?? []) as OrderWithItems[]);
           setLines((json.lines ?? []) as ProductionLine[]);
@@ -122,17 +154,30 @@ export default function PedidosPage() {
     [orders]
   );
 
+  const useApi = shouldUseLocalServiceApi(profile);
+
   async function handleUpdateOrderPcpDate(orderId: string, date: string | null) {
-    if (!supabase) return;
     const dateVal = toDateOnly(date);
-    await supabase
-      .from("orders")
-      .update({ pcp_deadline: dateVal })
-      .eq("id", orderId);
-    await supabase
-      .from("order_items")
-      .update({ pcp_deadline: dateVal })
-      .eq("order_id", orderId);
+    if (useApi) {
+      const r = await postOrderItemsUpdate({
+        action: "pcp_deadline",
+        orderId,
+        pcp_deadline: date,
+      });
+      if (!r.ok) {
+        toast.error(r.error);
+        if (/pcp_deadline|column|does not exist/i.test(r.error)) {
+          toast.message(
+            "Execute no Supabase (SQL): ALTER TABLE order_items ADD COLUMN IF NOT EXISTS pcp_deadline date;",
+            { duration: 12000 }
+          );
+        }
+        return;
+      }
+    } else if (supabase) {
+      await supabase.from("orders").update({ pcp_deadline: dateVal }).eq("id", orderId);
+      await supabase.from("order_items").update({ pcp_deadline: dateVal }).eq("order_id", orderId);
+    } else return;
 
     updateOrdersState((prev) =>
       prev.map((o) =>
@@ -151,11 +196,15 @@ export default function PedidosPage() {
   }
 
   async function handleUpdateItemLine(itemId: string, lineId: string | null) {
-    if (!supabase) return;
-    await supabase
-      .from("order_items")
-      .update({ line_id: lineId })
-      .eq("id", itemId);
+    if (useApi) {
+      const r = await postOrderItemsUpdate({ action: "line", itemId, lineId });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+    } else if (supabase) {
+      await supabase.from("order_items").update({ line_id: lineId }).eq("id", itemId);
+    } else return;
     updateOrdersState((prev) =>
       prev.map((order) => ({
         ...order,
@@ -168,10 +217,55 @@ export default function PedidosPage() {
 
   // Prazo PCP por item deixou de ser editável; os itens herdam o prazo do pedido.
 
+  async function handleUpdateItemPc(
+    itemId: string,
+    data: { pc_number: string | null; pc_delivery_date: string | null }
+  ) {
+    const pcNum = data.pc_number;
+    const pcDate = toDateOnly(data.pc_delivery_date);
+    if (useApi) {
+      const r = await postOrderItemsUpdate({
+        action: "pc",
+        itemId,
+        pc_number: pcNum,
+        pc_delivery_date: data.pc_delivery_date,
+      });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+    } else if (supabase) {
+      await supabase
+        .from("order_items")
+        .update({
+          pc_number: pcNum,
+          pc_delivery_date: pcDate,
+        })
+        .eq("id", itemId);
+    } else return;
+    updateOrdersState((prev) =>
+      prev.map((order) => ({
+        ...order,
+        items: order.items.map((item) =>
+          item.id === itemId
+            ? { ...item, pc_number: pcNum, pc_delivery_date: pcDate }
+            : item
+        ),
+      }))
+    );
+  }
+
   async function handleUpdateItemQuantity(itemId: string, quantity: number) {
-    if (!supabase) return;
-    await supabase.from("order_items").update({ quantity: toQuantity(quantity) }).eq("id", itemId);
     const qty = toQuantity(quantity);
+    if (useApi) {
+      const r = await postOrderItemsUpdate({ action: "quantity", itemId, quantity });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+    } else if (supabase) {
+      await supabase.from("order_items").update({ quantity: qty }).eq("id", itemId);
+    } else return;
     updateOrdersState((prev) =>
       prev.map((order) => ({
         ...order,
@@ -190,13 +284,20 @@ export default function PedidosPage() {
       delivery_deadline?: string | null;
     }
   ) {
-    if (!supabase) return;
     const update: Record<string, unknown> = {};
     if (data.order_number !== undefined) update.order_number = String(data.order_number).trim().slice(0, 50);
     if (data.client_name !== undefined) update.client_name = String(data.client_name).trim().slice(0, 255);
     if (data.delivery_deadline !== undefined) update.delivery_deadline = toDateOnly(data.delivery_deadline);
     if (Object.keys(update).length === 0) return;
-    await supabase.from("orders").update(update).eq("id", orderId);
+    if (useApi) {
+      const r = await postOrderItemsUpdate({ action: "order", orderId, ...data });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+    } else if (supabase) {
+      await supabase.from("orders").update(update).eq("id", orderId);
+    } else return;
     updateOrdersState((prev) =>
       prev.map((o) =>
         o.id === orderId ? { ...o, ...update } : o
@@ -212,19 +313,17 @@ export default function PedidosPage() {
     ) {
       return;
     }
-    if (!supabase) return;
-    await supabase.from("order_items").delete().eq("order_id", orderId);
-    await supabase.from("orders").delete().eq("id", orderId);
+    if (useApi) {
+      const r = await postOrderItemsUpdate({ action: "delete", orderId });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+    } else if (supabase) {
+      await supabase.from("order_items").delete().eq("order_id", orderId);
+      await supabase.from("orders").delete().eq("id", orderId);
+    } else return;
     updateOrdersState((prev) => prev.filter((o) => o.id !== orderId));
-  }
-
-  /** Recalcula production_deadline do pedido com base nos itens (maior production_end). */
-  function recalcOrderProductionDeadline(order: OrderWithItems): string | null {
-    const dates = order.items
-      .map((i) => i.production_end)
-      .filter((d): d is string => !!d);
-    if (dates.length === 0) return null;
-    return dates.sort((a, b) => (a > b ? -1 : 1))[0] ?? null;
   }
 
   async function handleFinishOrder(orderId: string) {
@@ -237,11 +336,18 @@ export default function PedidosPage() {
     }
 
     const nowIso = new Date().toISOString();
-    if (!supabase) return;
-    await supabase
-      .from("orders")
-      .update({ status: "finished", finished_at: nowIso })
-      .eq("id", orderId);
+    if (useApi) {
+      const r = await postOrderItemsUpdate({ action: "finish", orderId });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+    } else if (supabase) {
+      await supabase
+        .from("orders")
+        .update({ status: "finished", finished_at: nowIso })
+        .eq("id", orderId);
+    } else return;
 
     updateOrdersState((prev) =>
       prev.map((o) =>
@@ -401,7 +507,49 @@ export default function PedidosPage() {
             Finalizados ({finishedCount})
           </button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <PageExportMenu
+            fileNameBase={`pedidos-${tab === "open" ? "abertos" : "finalizados"}`}
+            sheetTitle="Pedidos"
+            getData={() => {
+              const headers = [
+                "Nº Pedido",
+                "Cliente",
+                "Prazo Vendas",
+                "Prazo PCP",
+                "Item",
+                "Descrição",
+                "Qtd",
+                "Linha",
+                "PC nº",
+                "PC entrega",
+                "Prazo Prod.",
+                "Status pedido",
+              ];
+              const rows: (string | number | null)[][] = [];
+              for (const o of visibleOrders) {
+                const lineName = (id: string | null) =>
+                  id ? lines.find((l) => l.id === id)?.name ?? "" : "";
+                for (const it of o.items ?? []) {
+                  rows.push([
+                    o.order_number,
+                    o.client_name,
+                    o.delivery_deadline ?? "",
+                    o.pcp_deadline ?? "",
+                    it.item_number,
+                    it.description,
+                    it.quantity,
+                    lineName(it.line_id),
+                    it.pc_number ?? "",
+                    it.pc_delivery_date ?? "",
+                    it.production_end ?? "",
+                    o.status,
+                  ]);
+                }
+              }
+              return { headers, rows };
+            }}
+          />
           <Button
             className="bg-slate-100 text-slate-800 hover:bg-slate-200 text-xs"
             onClick={() => setShowNewDialog(true)}
@@ -430,6 +578,7 @@ export default function PedidosPage() {
           onUpdateOrderPcpDate={handleUpdateOrderPcpDate}
           onUpdateItemLine={handleUpdateItemLine}
           onUpdateItemQuantity={handleUpdateItemQuantity}
+          onUpdateItemPc={handleUpdateItemPc}
           onUpdateOrder={handleUpdateOrder}
           onDeleteOrder={handleDeleteOrder}
           onFinishOrder={handleFinishOrder}

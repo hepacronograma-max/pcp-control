@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/hooks/use-user";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
@@ -21,6 +21,9 @@ import {
   GanttCalendar,
   type LineItemWithOrder,
 } from "@/components/linha/gantt-calendar";
+import { PageExportMenu } from "@/components/ui/page-export-menu";
+import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import { toast } from "sonner";
 
 type TabKey = "all" | "in_progress" | "finished";
 
@@ -32,12 +35,15 @@ export default function LinePage() {
   const { companyId: effectiveCompanyId, loaded: effectiveLoaded } =
     useEffectiveCompanyId(profile);
   const router = useRouter();
+  const pathname = usePathname();
+  /** Ao sair da tela da linha e voltar (ou trocar de linha), sempre reabre em "Em Produção". */
+  const prevPathnameRef = useRef<string | null>(null);
 
   const [line, setLine] = useState<ProductionLine | null>(null);
   const [items, setItems] = useState<LineItemWithOrder[]>([]);
   const [allLines, setAllLines] = useState<ProductionLine[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
-  const [tab, setTab] = useState<TabKey>("all");
+  const [tab, setTab] = useState<TabKey>("in_progress");
   const [loadingData, setLoadingData] = useState(false);
   const [sortKeys, setSortKeys] = useState<LineSortKey[]>([
     "production_start",
@@ -55,8 +61,24 @@ export default function LinePage() {
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
+  useEffect(() => {
+    setTab("in_progress");
+  }, [lineId]);
+
+  useEffect(() => {
+    const path = pathname ?? "";
+    const onLinePage = path.startsWith("/linha/");
+    const wasOnLinePage = prevPathnameRef.current?.startsWith("/linha/") ?? false;
+    if (onLinePage && !wasOnLinePage) {
+      setTab("in_progress");
+    }
+    prevPathnameRef.current = path;
+  }, [pathname]);
+
   const fixedRef = useRef<HTMLDivElement | null>(null);
   const ganttRef = useRef<HTMLDivElement | null>(null);
+
+  const useApi = shouldUseLocalServiceApi(profile);
 
   useEffect(() => {
     if (!profile || !lineId) return;
@@ -64,6 +86,29 @@ export default function LinePage() {
     const companyId = effectiveCompanyId ?? profile.company_id;
 
     async function checkAccessAndLoad() {
+      setLoadingData(true);
+
+      if (useApi) {
+        try {
+          const res = await fetch(
+            `/api/line-data?lineId=${encodeURIComponent(lineId)}&tab=${encodeURIComponent(tab)}`,
+            { credentials: "include" }
+          );
+          const json = await res.json();
+          setLine((json.line as ProductionLine) ?? null);
+          setItems((json.items as LineItemWithOrder[]) ?? []);
+          setHolidays((json.holidays as Holiday[]) ?? []);
+          setAllLines((json.allLines as ProductionLine[]) ?? []);
+        } catch {
+          setLine(null);
+          setItems([]);
+          setAllLines([]);
+          setHolidays([]);
+        }
+        setLoadingData(false);
+        return;
+      }
+
       if (!supabase) {
         setLine(null);
         setItems([]);
@@ -73,7 +118,6 @@ export default function LinePage() {
         return;
       }
 
-      setLoadingData(true);
       if (currentProfile.role === "operator") {
         const { data: access } = await supabase
           .from("operator_lines")
@@ -109,12 +153,13 @@ export default function LinePage() {
         .order("production_start", { ascending: true, nullsFirst: false })
         .order("production_end", { ascending: true });
 
-      const query =
-        tab === "in_progress"
-          ? baseItemsQuery.neq("status", "completed")
-          : baseItemsQuery.eq("status", "completed");
-
-      const { data: itemsData } = await query;
+      let itemsQuery = baseItemsQuery;
+      if (tab === "in_progress") {
+        itemsQuery = baseItemsQuery.neq("status", "completed");
+      } else if (tab === "finished") {
+        itemsQuery = baseItemsQuery.eq("status", "completed");
+      }
+      const { data: itemsData } = await itemsQuery;
       setItems((itemsData as unknown as LineItemWithOrder[]) ?? []);
 
       const { data: holidaysData } = await supabase
@@ -123,11 +168,19 @@ export default function LinePage() {
         .eq("company_id", companyId ?? currentProfile.company_id);
       setHolidays((holidaysData as Holiday[]) ?? []);
 
+      const { data: allLinesData } = await supabase
+        .from("production_lines")
+        .select("id, name, company_id, is_active, sort_order")
+        .eq("company_id", companyId ?? currentProfile.company_id)
+        .eq("is_active", true)
+        .order("sort_order");
+      setAllLines((allLinesData as ProductionLine[]) ?? []);
+
       setLoadingData(false);
     }
 
     checkAccessAndLoad();
-  }, [profile, effectiveCompanyId, lineId, tab, supabase, router, refreshKey]);
+  }, [profile, effectiveCompanyId, lineId, tab, supabase, router, refreshKey, useApi]);
 
   function syncScroll(source: "fixed" | "gantt") {
     if (source === "fixed" && fixedRef.current && ganttRef.current) {
@@ -146,6 +199,17 @@ export default function LinePage() {
     const targetItem = items.find((i) => i.id === itemId);
     if (!targetItem) return;
 
+    const pcDelivery = targetItem.pc_delivery_date
+      ? toDateOnly(targetItem.pc_delivery_date)
+      : null;
+    const valueNorm = toDateOnly(value);
+    if (pcDelivery && valueNorm && valueNorm < pcDelivery) {
+      alert(
+        "A data não pode ser antes da entrega do pedido de compras (chegada da matéria-prima)."
+      );
+      return;
+    }
+
     if (
       field === "production_end" &&
       targetItem.production_start &&
@@ -156,15 +220,42 @@ export default function LinePage() {
       return;
     }
 
-    if (!supabase) return;
     const dateVal = toDateOnly(value);
-    await supabase
-      .from("order_items")
-      .update({
-        [field]: dateVal,
-        status: "scheduled" as OrderItem["status"],
-      })
-      .eq("id", itemId);
+    /** Só envia o campo alterado — senão a API gravava null no outro e apagava a data */
+    const payload: Record<string, unknown> = {
+      action: "program",
+      itemId,
+      [field]: value,
+    };
+    if (useApi) {
+      const res = await fetch("/api/order-items/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      let errMsg = "";
+      try {
+        const j = (await res.json()) as { success?: boolean; error?: string };
+        if (!res.ok || j.success === false) {
+          errMsg = j.error || `Erro ao salvar (${res.status})`;
+        }
+      } catch {
+        if (!res.ok) errMsg = `Erro ao salvar (${res.status})`;
+      }
+      if (errMsg) {
+        toast.error(errMsg);
+        return;
+      }
+    } else if (supabase) {
+      await supabase
+        .from("order_items")
+        .update({
+          [field]: dateVal,
+          status: "scheduled" as OrderItem["status"],
+        })
+        .eq("id", itemId);
+    } else return;
 
     const finalVal = dateVal ?? value;
     setItems((prev) =>
@@ -175,12 +266,18 @@ export default function LinePage() {
   }
 
   async function handleChangeNotes(itemId: string, value: string) {
-    if (!supabase) return;
     const notesVal = value.trim().slice(0, 2000);
-    await supabase
-      .from("order_items")
-      .update({ notes: notesVal })
-      .eq("id", itemId);
+    if (useApi) {
+      const res = await fetch("/api/order-items/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "notes", itemId, notes: notesVal }),
+      });
+      if (!res.ok) return;
+    } else if (supabase) {
+      await supabase.from("order_items").update({ notes: notesVal }).eq("id", itemId);
+    } else return;
     setItems((prev) =>
       prev.map((item) => (item.id === itemId ? { ...item, notes: notesVal } : item))
     );
@@ -196,21 +293,50 @@ export default function LinePage() {
     const fillStart = !targetItem?.production_start ? todayStr : undefined;
     const fillEnd = !targetItem?.production_end ? todayStr : undefined;
 
-    if (!supabase) return;
-    const updateData: Record<string, unknown> = {
-      status: "completed",
-      completed_at: nowIso,
+    const payload = {
+      action: "complete",
+      itemId,
       completed_by: profile.id,
+      production_start: fillStart ?? targetItem?.production_start,
+      production_end: fillEnd ?? targetItem?.production_end,
     };
-    if (fillStart) updateData.production_start = toDateOnly(todayStr) ?? todayStr;
-    if (fillEnd) updateData.production_end = toDateOnly(todayStr) ?? todayStr;
+    if (useApi) {
+      const res = await fetch("/api/order-items/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        let msg = "";
+        try {
+          const j = (await res.json()) as { error?: string };
+          msg = j.error ?? "";
+        } catch {
+          // ignore
+        }
+        toast.error(msg || "Não foi possível finalizar o item.");
+        return;
+      }
+    } else if (supabase) {
+      const updateData: Record<string, unknown> = {
+        status: "completed",
+        completed_at: nowIso,
+        completed_by: profile.id,
+      };
+      if (fillStart) updateData.production_start = toDateOnly(todayStr) ?? todayStr;
+      if (fillEnd) updateData.production_end = toDateOnly(todayStr) ?? todayStr;
+      const { error } = await supabase.from("order_items").update(updateData).eq("id", itemId);
+      if (error) {
+        toast.error(error.message || "Erro ao finalizar.");
+        return;
+      }
+    } else return;
 
-    await supabase
-      .from("order_items")
-      .update(updateData)
-      .eq("id", itemId);
-
-    setItems((prev) => prev.filter((item) => item.id !== itemId));
+    toast.success("Item finalizado.");
+    /** Igual Pedidos: leva o usuário à aba só com itens concluídos nesta linha */
+    setTab("finished");
+    setRefreshKey((k) => k + 1);
   }
 
   const isAlmoxarifado = line?.is_almoxarifado === true;
@@ -277,7 +403,44 @@ export default function LinePage() {
             Visualização dos itens alocados nesta linha com calendário Gantt.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <PageExportMenu
+            fileNameBase={`linha-${line?.id?.slice(0, 8) ?? "export"}-${tab}`}
+            sheetTitle={title}
+            getData={() => ({
+              headers: [
+                "Pedido",
+                "Cliente",
+                "Descrição",
+                "Qtd",
+                "Prazo PCP",
+                "PC nº",
+                "PC entrega",
+                "Início prod.",
+                "Fim prod.",
+                "Status",
+              ],
+              rows: sortedItems.map((it) => {
+                const pcp =
+                  it.pcp_deadline ??
+                  it.order.pcp_deadline ??
+                  it.order.delivery_deadline ??
+                  "";
+                return [
+                  it.order.order_number,
+                  it.order.client_name,
+                  it.description,
+                  it.quantity,
+                  pcp,
+                  it.pc_number ?? "",
+                  it.pc_delivery_date ?? "",
+                  it.production_start ?? "",
+                  it.production_end ?? "",
+                  it.status,
+                ];
+              }),
+            })}
+          />
           <button
             className={`px-3 py-1.5 rounded-md text-xs font-medium border ${
               tab === "all"
@@ -345,17 +508,17 @@ export default function LinePage() {
             onScroll={() => syncScroll("gantt")}
             className="flex-1 overflow-x-auto overflow-y-auto"
           >
-            {tab === "in_progress" ? (
-              <GanttCalendar items={sortedItems} holidays={holidays} />
-            ) : (
+            {tab === "finished" ? (
               <div className="flex flex-col h-full">
                 <div className="px-2 pt-1 pb-1 text-[11px] text-slate-600">
-                  Itens finalizados - Gantt estático.
+                  Itens finalizados nesta linha.
                 </div>
                 <div className="flex-1">
                   <GanttCalendar items={sortedItems} holidays={holidays} />
                 </div>
               </div>
+            ) : (
+              <GanttCalendar items={sortedItems} holidays={holidays} />
             )}
           </div>
         </div>
