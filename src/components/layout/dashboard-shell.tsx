@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/hooks/use-user";
@@ -35,6 +35,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  /** Uma tentativa de criar linha padrão Almoxarifado por empresa (sessão). */
+  const ensureDefaultsTriedRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!profile) return;
@@ -66,11 +68,39 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       let cancelled = false;
       async function loadCompanyData() {
         try {
-          const res = await fetch(
-            `/api/company-data?companyId=${encodeURIComponent(apiCompanyId)}`,
-            { credentials: "include" }
-          );
-          const json = await res.json();
+          const dataUrl = `/api/company-data?companyId=${encodeURIComponent(apiCompanyId)}`;
+          let res = await fetch(dataUrl, { credentials: "include" });
+          let json = await res.json();
+          if (cancelled) return;
+
+          if (
+            apiCompanyId &&
+            ensureDefaultsTriedRef.current !== apiCompanyId
+          ) {
+            ensureDefaultsTriedRef.current = apiCompanyId;
+            try {
+              const ens = await fetch("/api/production-lines", {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "ensure_defaults",
+                  companyId: apiCompanyId,
+                }),
+              });
+              const ej = (await ens.json()) as {
+                success?: boolean;
+                created?: boolean;
+              };
+              if (ej.success && ej.created) {
+                res = await fetch(dataUrl, { credentials: "include" });
+                json = await res.json();
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+
           if (cancelled) return;
           setCompany(json.company ?? null);
           const rawLines = (json.lines ?? []) as ProductionLine[];

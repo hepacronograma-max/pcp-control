@@ -1,4 +1,10 @@
-export type UserRole = "super_admin" | "manager" | "pcp" | "operator";
+export type UserRole =
+  | "super_admin"
+  | "manager"
+  | "pcp"
+  | "operator"
+  /** Valor comum em `profiles.role` no Supabase; tratado como manager nas permissões */
+  | "admin";
 export type OrderStatus =
   | "imported"
   | "planning"

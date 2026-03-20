@@ -20,19 +20,28 @@ export const PERMISSIONS = {
   manageHolidays: ["manager"] as UserRole[],
 };
 
+/** Perfis no Supabase às vezes usam `admin`; no app equivale a manager. */
+export function normalizeUserRole(userRole: UserRole | string | null | undefined): UserRole {
+  if (!userRole) return "operator";
+  if (userRole === "admin") return "manager";
+  return userRole as UserRole;
+}
+
 export function hasPermission(
-  userRole: UserRole,
+  userRole: UserRole | string | null | undefined,
   permission: keyof typeof PERMISSIONS
 ): boolean {
-  return PERMISSIONS[permission].includes(userRole);
+  const r = normalizeUserRole(userRole);
+  return PERMISSIONS[permission].includes(r);
 }
 
 export function canAccessLine(
-  userRole: UserRole,
+  userRole: UserRole | string | null | undefined,
   lineId: string,
   operatorLines: string[]
 ): boolean {
-  if (["super_admin", "manager", "pcp"].includes(userRole)) return true;
+  const r = normalizeUserRole(userRole);
+  if (["super_admin", "manager", "pcp"].includes(r)) return true;
   return operatorLines.includes(lineId);
 }
 

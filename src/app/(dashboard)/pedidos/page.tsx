@@ -190,6 +190,7 @@ export default function PedidosPage() {
         }
         return;
       }
+      toast.success("Prazo PCP salvo.");
     } else if (supabase) {
       const { error: oErr } = await supabase
         .from("orders")
@@ -211,6 +212,7 @@ export default function PedidosPage() {
         );
         return;
       }
+      toast.success("Prazo PCP salvo.");
     } else return;
 
     updateOrdersState((prev) =>

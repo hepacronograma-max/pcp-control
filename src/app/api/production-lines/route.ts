@@ -100,6 +100,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    /** Garante uma linha "Almoxarifado" marcada como is_almoxarifado (abastecimento). */
+    if (action === "ensure_defaults") {
+      if (!companyId || typeof companyId !== "string") {
+        return NextResponse.json(
+          { success: false, error: "companyId obrigatório" },
+          { status: 400 }
+        );
+      }
+      const { data: almoxRows } = await supabase
+        .from("production_lines")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("is_almoxarifado", true)
+        .limit(1);
+      if (almoxRows?.length) {
+        return NextResponse.json({ success: true, created: false });
+      }
+      const { data: minRow } = await supabase
+        .from("production_lines")
+        .select("sort_order")
+        .eq("company_id", companyId)
+        .order("sort_order", { ascending: true })
+        .limit(1);
+      const first =
+        typeof minRow?.[0]?.sort_order === "number" ? minRow[0].sort_order : 0;
+      const sortOrder = first - 1;
+      let payload: Record<string, unknown> = {
+        company_id: companyId,
+        name: "Almoxarifado",
+        is_active: true,
+        sort_order: sortOrder,
+        is_almoxarifado: true,
+      };
+      let { error } = await supabase.from("production_lines").insert(payload);
+      const msg = error?.message ?? "";
+      if (/is_almoxarifado|column|does not exist|schema cache/i.test(msg)) {
+        payload = {
+          company_id: companyId,
+          name: "Almoxarifado",
+          is_active: true,
+          sort_order: Math.min(sortOrder, 0),
+        };
+        ({ error } = await supabase.from("production_lines").insert(payload));
+      }
+      if (error) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, created: true });
+    }
+
     if (action === "reorder") {
       if (!lineId || (direction !== "up" && direction !== "down")) {
         return NextResponse.json(
