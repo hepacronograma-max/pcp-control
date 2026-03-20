@@ -481,45 +481,39 @@ export default function LinePage() {
           Nenhum item encontrado para esta linha.
         </div>
       ) : (
-        <div className="flex flex-1 overflow-hidden border border-slate-200 rounded-md bg-white">
-          {/* Colunas fixas */}
-          <div
-            ref={fixedRef}
-            onScroll={() => syncScroll("fixed")}
-            className="flex-shrink-0 overflow-y-auto sticky left-0 z-10 bg-white shadow-[4px_0_6px_-1px_rgba(0,0,0,0.1)]"
-          >
-            <LineTable
-              items={sortedItems}
-              profile={profile}
-              sortKeys={sortKeys}
-              onChangeSort={setSortKeys}
-              onChangeDate={handleChangeDate}
-              onChangeNotes={handleChangeNotes}
-              onComplete={handleComplete}
-              isAlmoxarifado={isAlmoxarifado}
-              allLines={allLines}
-              onSupply={handleSupply}
-            />
-          </div>
+        <div className="flex flex-col flex-1 min-h-0">
+          {tab === "finished" && (
+            <p className="text-[11px] text-slate-600 px-2 py-1 shrink-0 bg-white">
+              Itens finalizados nesta linha.
+            </p>
+          )}
+          <div className="flex flex-1 min-h-0 overflow-hidden border border-slate-200 rounded-md bg-white">
+            <div
+              ref={fixedRef}
+              onScroll={() => syncScroll("fixed")}
+              className="flex-shrink-0 overflow-y-auto sticky left-0 z-10 bg-white shadow-[4px_0_6px_-1px_rgba(0,0,0,0.1)]"
+            >
+              <LineTable
+                items={sortedItems}
+                profile={profile}
+                sortKeys={sortKeys}
+                onChangeSort={setSortKeys}
+                onChangeDate={handleChangeDate}
+                onChangeNotes={handleChangeNotes}
+                onComplete={handleComplete}
+                isAlmoxarifado={isAlmoxarifado}
+                allLines={allLines}
+                onSupply={handleSupply}
+              />
+            </div>
 
-          {/* Área do Gantt */}
-          <div
-            ref={ganttRef}
-            onScroll={() => syncScroll("gantt")}
-            className="flex-1 overflow-x-auto overflow-y-auto"
-          >
-            {tab === "finished" ? (
-              <div className="flex flex-col h-full">
-                <div className="px-2 pt-1 pb-1 text-[11px] text-slate-600">
-                  Itens finalizados nesta linha.
-                </div>
-                <div className="flex-1">
-                  <GanttCalendar items={sortedItems} holidays={holidays} />
-                </div>
-              </div>
-            ) : (
+            <div
+              ref={ganttRef}
+              onScroll={() => syncScroll("gantt")}
+              className="flex-1 overflow-x-auto overflow-y-auto min-w-0"
+            >
               <GanttCalendar items={sortedItems} holidays={holidays} />
-            )}
+            </div>
           </div>
         </div>
       )}

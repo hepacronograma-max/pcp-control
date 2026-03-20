@@ -264,7 +264,7 @@ export function LineTable({
             return (
               <div
                 key={item.id}
-                className={`grid text-[11px] items-center border-b border-slate-200 py-1.5 gap-x-0 ${
+                className={`grid text-[11px] items-center border-b border-slate-200 h-10 min-h-[40px] gap-x-0 ${
                   idx % 2 === 0 ? "bg-white" : "bg-slate-50"
                 }`}
                 style={{ gridTemplateColumns: gridTemplate }}
@@ -426,7 +426,7 @@ export function LineTable({
           return (
             <div
               key={item.id}
-              className={`grid text-[11px] items-center border-b border-slate-200 py-1.5 gap-x-0 ${rowBg}`}
+              className={`grid text-[11px] items-center border-b border-slate-200 h-10 min-h-[40px] gap-x-0 ${rowBg}`}
               style={{ gridTemplateColumns: gridTemplate }}
               title={
                 allLineDatesEqualAttention

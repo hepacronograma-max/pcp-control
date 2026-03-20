@@ -84,14 +84,24 @@ export async function POST(request: NextRequest) {
 
     if (action === "finish" && orderId) {
       const nowIso = new Date().toISOString();
-      const { error } = await supabase
+      let { error } = await supabase
         .from("orders")
         .update({ status: "finished", finished_at: nowIso })
         .eq("id", orderId);
+      /** Bancos sem migração: grava só status (recomendado ainda adicionar finished_at). */
+      if (
+        error &&
+        /finished_at|schema cache|column|does not exist/i.test(error.message)
+      ) {
+        ({ error } = await supabase
+          .from("orders")
+          .update({ status: "finished" })
+          .eq("id", orderId));
+      }
       if (error) {
         const msg = error.message || "";
         const hint = /finished_at|schema cache|column/i.test(msg)
-          ? " No SQL Editor do Supabase execute: ALTER TABLE orders ADD COLUMN IF NOT EXISTS finished_at timestamptz;"
+          ? " Opcional: ALTER TABLE orders ADD COLUMN IF NOT EXISTS finished_at timestamptz;"
           : "";
         return NextResponse.json(
           { success: false, error: msg + hint },

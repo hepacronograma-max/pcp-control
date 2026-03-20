@@ -343,10 +343,23 @@ export default function PedidosPage() {
         return;
       }
     } else if (supabase) {
-      await supabase
+      let { error } = await supabase
         .from("orders")
         .update({ status: "finished", finished_at: nowIso })
         .eq("id", orderId);
+      if (
+        error &&
+        /finished_at|schema cache|column|does not exist/i.test(error.message)
+      ) {
+        ({ error } = await supabase
+          .from("orders")
+          .update({ status: "finished" })
+          .eq("id", orderId));
+      }
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
     } else return;
 
     updateOrdersState((prev) =>
