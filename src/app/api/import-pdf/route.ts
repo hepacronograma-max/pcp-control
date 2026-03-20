@@ -203,21 +203,13 @@ export async function POST(request: NextRequest) {
     const hasSupabase =
       supabaseUrl?.startsWith("http://") || supabaseUrl?.startsWith("https://");
 
-    // Modo local: cookie pcp-local-auth em localhost. Se Supabase configurado + company_id, salva no banco.
-    const host = request.headers.get("host") || "";
-    const hostname = host.split(":")[0];
-    const isLocalhost =
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "::1" ||
-      hostname.startsWith("192.168.") ||
-      hostname.startsWith("10.");
+    // Modo local: cookie pcp-local-auth (funciona em qualquer domínio, inclusive produção).
     const hasLocalAuth =
       request.cookies.get("pcp-local-auth")?.value === "1";
     let companyIdFromForm = (formData.get("company_id") as string)?.trim();
     if (companyIdFromForm === "local-company") companyIdFromForm = "";
 
-    if (isLocalhost && hasLocalAuth && hasSupabase) {
+    if (hasLocalAuth && hasSupabase) {
       try {
         const supabase = createSupabaseAdminClient();
         let companyId = companyIdFromForm;
