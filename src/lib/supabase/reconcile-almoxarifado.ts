@@ -22,10 +22,6 @@ export async function reconcileAlmoxMirrorsForCompany(
     return { touched: 0, error: ae?.message ?? "Linha não encontrada" };
   }
 
-  if (!productionLineIsAlmoxarifado(almoxRow)) {
-    return { touched: 0, error: "not_almox_line" };
-  }
-
   const companyId = almoxRow.company_id as string;
 
   const { data: allLines, error: le } = await supabase
@@ -60,22 +56,24 @@ export async function reconcileAlmoxMirrorsForCompany(
     return { touched: 0, error: qe.message };
   }
 
+  const orderIds = [...new Set((items ?? []).map((it) => it.order_id))];
+  const orderPcpMap = new Map<string, string | null>();
+  const CHUNK = 120;
+  for (let i = 0; i < orderIds.length; i += CHUNK) {
+    const chunk = orderIds.slice(i, i + CHUNK);
+    const { data: ords } = await supabase
+      .from("orders")
+      .select("id, pcp_deadline")
+      .in("id", chunk);
+    for (const o of ords ?? []) {
+      orderPcpMap.set(o.id, (o.pcp_deadline as string | null) ?? null);
+    }
+  }
+
   let touched = 0;
-  const orderPcpCache = new Map<string, string | null>();
 
   for (const it of items ?? []) {
-    let orderPcp: string | null;
-    if (orderPcpCache.has(it.order_id)) {
-      orderPcp = orderPcpCache.get(it.order_id) ?? null;
-    } else {
-      const { data: ord } = await supabase
-        .from("orders")
-        .select("pcp_deadline")
-        .eq("id", it.order_id)
-        .maybeSingle();
-      orderPcp = ord?.pcp_deadline ?? null;
-      orderPcpCache.set(it.order_id, orderPcp);
-    }
+    const orderPcp = orderPcpMap.get(it.order_id) ?? null;
 
     const changed = await syncAlmoxarifadoOnProgram({
       supabase,

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import { itemNeedsProductionProgram } from "@/lib/utils/line-program-indicator";
@@ -7,6 +8,91 @@ function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     s.trim()
   );
+}
+
+async function loadNormalizedProductionLines(
+  supabase: SupabaseClient,
+  companyId: string
+): Promise<Record<string, unknown>[]> {
+  const linesFull = await supabase
+    .from("production_lines")
+    .select(
+      "id, name, company_id, is_active, sort_order, is_almoxarifado, created_at, updated_at"
+    )
+    .eq("company_id", companyId)
+    .order("sort_order", { ascending: true });
+
+  let rawLines: Record<string, unknown>[] = (linesFull.data ?? []) as Record<
+    string,
+    unknown
+  >[];
+  if (linesFull.error) {
+    console.warn("[company-data] linhas (completo):", linesFull.error.message);
+    const linesMid = await supabase
+      .from("production_lines")
+      .select("id, name, company_id, is_active, sort_order, created_at, updated_at")
+      .eq("company_id", companyId)
+      .order("sort_order", { ascending: true });
+    if (!linesMid.error && linesMid.data) {
+      rawLines = linesMid.data as Record<string, unknown>[];
+    } else if (linesMid.error) {
+      console.warn("[company-data] linhas (médio):", linesMid.error.message);
+      const linesMin = await supabase
+        .from("production_lines")
+        .select("id, name, company_id")
+        .eq("company_id", companyId);
+      if (!linesMin.error && linesMin.data) {
+        rawLines = linesMin.data as Record<string, unknown>[];
+      } else if (linesMin.error) {
+        console.error("[company-data] linhas (mínimo):", linesMin.error.message);
+        rawLines = [];
+      }
+    }
+  }
+
+  const lines: Record<string, unknown>[] = [...rawLines].map((row, i) => ({
+    ...row,
+    is_active: row.is_active !== false,
+    is_almoxarifado: row.is_almoxarifado === true,
+    sort_order: typeof row.sort_order === "number" ? row.sort_order : i,
+  }));
+  lines.sort((a, b) => {
+    const sa = a.sort_order as number;
+    const sb = b.sort_order as number;
+    if (sa !== sb) return sa - sb;
+    return String(a.name ?? "").localeCompare(String(b.name ?? ""));
+  });
+  return lines;
+}
+
+/** Contagem leve para o menu lateral (sem carregar todos os pedidos). */
+async function unprogrammedByLineFromDb(
+  supabase: SupabaseClient,
+  companyId: string
+): Promise<Record<string, number>> {
+  const { data: orderRows } = await supabase
+    .from("orders")
+    .select("id")
+    .eq("company_id", companyId);
+  const ids = (orderRows ?? []).map((r) => r.id);
+  if (ids.length === 0) return {};
+
+  const unprogrammedByLine: Record<string, number> = {};
+  const CHUNK = 200;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const chunk = ids.slice(i, i + CHUNK);
+    const { data: items } = await supabase
+      .from("order_items")
+      .select("line_id, status, production_start, production_end")
+      .in("order_id", chunk);
+    for (const it of items ?? []) {
+      if (!itemNeedsProductionProgram(it)) continue;
+      const lid = it.line_id;
+      if (!lid) continue;
+      unprogrammedByLine[lid] = (unprogrammedByLine[lid] ?? 0) + 1;
+    }
+  }
+  return unprogrammedByLine;
 }
 
 /**
@@ -58,6 +144,27 @@ export async function GET(request: NextRequest) {
       .select("id, name, logo_url")
       .eq("id", companyId)
       .maybeSingle();
+
+    const companyPayload = company
+      ? {
+          id: company.id,
+          name: company.name ?? "",
+          logo_url: company.logo_url,
+        }
+      : { id: companyId, name: "Empresa", logo_url: null };
+
+    const lite = request.nextUrl.searchParams.get("lite") === "1";
+    if (lite) {
+      const lines = await loadNormalizedProductionLines(supabase, companyId);
+      const unprogrammedByLine = await unprogrammedByLineFromDb(supabase, companyId);
+      return NextResponse.json({
+        companyId,
+        company: companyPayload,
+        orders: [],
+        lines,
+        unprogrammedByLine,
+      });
+    }
 
     let ordersRes = await supabase
       .from("orders")
@@ -121,56 +228,8 @@ export async function GET(request: NextRequest) {
         ordersRes.error.message
       );
     }
-    const linesFull = await supabase
-      .from("production_lines")
-      .select(
-        "id, name, company_id, is_active, sort_order, is_almoxarifado, created_at, updated_at"
-      )
-      .eq("company_id", companyId)
-      .order("sort_order", { ascending: true });
-
-    /** Bancos antigos sem is_almoxarifado: a query inteira falha e a UI perde todas as linhas. */
-    let rawLines: Record<string, unknown>[] = (linesFull.data ?? []) as Record<
-      string,
-      unknown
-    >[];
-    if (linesFull.error) {
-      console.warn("[company-data] linhas (completo):", linesFull.error.message);
-      const linesMid = await supabase
-        .from("production_lines")
-        .select("id, name, company_id, is_active, sort_order, created_at, updated_at")
-        .eq("company_id", companyId)
-        .order("sort_order", { ascending: true });
-      if (!linesMid.error && linesMid.data) {
-        rawLines = linesMid.data as Record<string, unknown>[];
-      } else if (linesMid.error) {
-        console.warn("[company-data] linhas (médio):", linesMid.error.message);
-        const linesMin = await supabase
-          .from("production_lines")
-          .select("id, name, company_id")
-          .eq("company_id", companyId);
-        if (!linesMin.error && linesMin.data) {
-          rawLines = linesMin.data as Record<string, unknown>[];
-        } else if (linesMin.error) {
-          console.error("[company-data] linhas (mínimo):", linesMin.error.message);
-          rawLines = [];
-        }
-      }
-    }
-
     const orders = ordersRes.data ?? [];
-    const lines: Record<string, unknown>[] = [...rawLines].map((row, i) => ({
-      ...row,
-      is_active: row.is_active !== false,
-      is_almoxarifado: row.is_almoxarifado === true,
-      sort_order: typeof row.sort_order === "number" ? row.sort_order : i,
-    }));
-    lines.sort((a, b) => {
-      const sa = a.sort_order as number;
-      const sb = b.sort_order as number;
-      if (sa !== sb) return sa - sb;
-      return String(a.name ?? "").localeCompare(String(b.name ?? ""));
-    });
+    const lines = await loadNormalizedProductionLines(supabase, companyId);
 
     const unprogrammedByLine: Record<string, number> = {};
     for (const o of orders) {
@@ -191,7 +250,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       companyId,
-      company: company ? { id: company.id, name: company.name ?? "", logo_url: company.logo_url } : { id: companyId, name: "Empresa", logo_url: null },
+      company: companyPayload,
       orders,
       lines,
       unprogrammedByLine,

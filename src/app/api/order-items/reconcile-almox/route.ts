@@ -45,10 +45,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       touched,
-      warning:
-        reErr === "not_almox_line"
-          ? "Esta rota só se aplica à linha Almoxarifado."
-          : reErr,
+      warning: reErr,
     });
   } catch (err) {
     console.error("[reconcile-almox]", err);

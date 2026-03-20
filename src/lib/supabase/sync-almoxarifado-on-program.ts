@@ -73,14 +73,11 @@ async function pickAlmoxLineId(
   if (targetAlmoxLineId) {
     const { data: t } = await supabase
       .from("production_lines")
-      .select("id, company_id, name, is_almoxarifado")
+      .select("id, company_id")
       .eq("id", targetAlmoxLineId)
       .maybeSingle();
-    if (
-      t &&
-      String(t.company_id) === companyId &&
-      productionLineIsAlmoxarifado(t)
-    ) {
+    /** Mesma empresa: confia no UUID da URL/menu (evita falhar se nome não contém "almox" ou flag null). */
+    if (t && String(t.company_id) === companyId) {
       return t.id;
     }
   }

@@ -21,7 +21,9 @@ Itens que já estão **na** linha almoxarifado não disparam espelho (evita loop
 
 ### Reconciliação ao abrir o Almoxarifado
 
-Ao entrar na página da linha **Almoxarifado** (com login local), o app chama `POST /api/order-items/reconcile-almox` com o `lineId` da URL e cria/atualiza espelhos **nessa** linha para itens nas outras linhas que já tenham **início e fim** programados.
+O `GET /api/line-data` (login local), ao carregar uma linha que é almox (nome com “almox”, flag `is_almoxarifado`, ou UUID igual ao resolvido pela empresa), **reconcilia no servidor antes** de devolver os itens — não depende mais só de um POST extra no navegador.
+
+Opcional: `POST /api/order-items/reconcile-almox` com `lineId` continua disponível para forçar reconciliação.
 
 **Obs.:** Quem salvar programação **só pelo cliente Supabase no browser** (sem cookie local / sem API) não passa por essa lógica; o fluxo recomendado é login local em produção, que já usa a API.
 

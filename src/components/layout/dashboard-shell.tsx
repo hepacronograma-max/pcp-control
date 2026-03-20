@@ -68,7 +68,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       let cancelled = false;
       async function loadCompanyData() {
         try {
-          const dataUrl = `/api/company-data?companyId=${encodeURIComponent(apiCompanyId)}`;
+          const dataUrl = `/api/company-data?companyId=${encodeURIComponent(apiCompanyId)}&lite=1`;
           let res = await fetch(dataUrl, { credentials: "include" });
           let json = await res.json();
           if (cancelled) return;
@@ -119,7 +119,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         }
       }
       loadCompanyData();
-      const interval = setInterval(loadCompanyData, 5000);
+      /** Atualização em background: antes 5s puxava todos os pedidos — pesado. */
+      const interval = setInterval(loadCompanyData, 60000);
       const onFocus = () => loadCompanyData();
       window.addEventListener("focus", onFocus);
       return () => {

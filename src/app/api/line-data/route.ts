@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
+import { reconcileAlmoxMirrorsForCompany } from "@/lib/supabase/reconcile-almoxarifado";
+import {
+  productionLineIsAlmoxarifado,
+  resolveAlmoxLineId,
+} from "@/lib/supabase/sync-almoxarifado-on-program";
 
 /**
  * Retorna dados da linha de produção (itens, feriados, etc).
@@ -37,6 +42,24 @@ export async function GET(request: NextRequest) {
 
     const companyId = lineData.company_id;
 
+    /** Garante espelhos no servidor antes de listar. */
+    const lineRow = lineData as {
+      name?: string | null;
+      is_almoxarifado?: boolean | null;
+    };
+    let isAlmoxPage = productionLineIsAlmoxarifado(lineRow);
+    if (!isAlmoxPage) {
+      const resolvedAlmox = await resolveAlmoxLineId(supabase, companyId);
+      isAlmoxPage = resolvedAlmox != null && resolvedAlmox === lineId;
+    }
+    if (isAlmoxPage) {
+      try {
+        await reconcileAlmoxMirrorsForCompany(supabase, lineId);
+      } catch (e) {
+        console.error("[line-data] reconcile almox:", e);
+      }
+    }
+
     let baseQuery = supabase
       .from("order_items")
       .select(
@@ -62,12 +85,31 @@ export async function GET(request: NextRequest) {
       .select("id, company_id, date, description, is_recurring, created_at")
       .eq("company_id", companyId);
 
-    const { data: allLinesData } = await supabase
+    const allLinesRes = await supabase
       .from("production_lines")
-      .select("id, name, company_id, is_active, sort_order")
+      .select("id, name, company_id, is_active, sort_order, is_almoxarifado")
       .eq("company_id", companyId)
       .or(PRODUCTION_LINES_ACTIVE_OR)
       .order("sort_order");
+    let allLinesData: Record<string, unknown>[] = (allLinesRes.data ??
+      []) as Record<string, unknown>[];
+    if (
+      allLinesRes.error &&
+      /is_almoxarifado|column|does not exist|schema cache/i.test(allLinesRes.error.message)
+    ) {
+      const retry = await supabase
+        .from("production_lines")
+        .select("id, name, company_id, is_active, sort_order")
+        .eq("company_id", companyId)
+        .or(PRODUCTION_LINES_ACTIVE_OR)
+        .order("sort_order");
+      if (!retry.error && retry.data) {
+        allLinesData = retry.data.map((row) => ({
+          ...row,
+          is_almoxarifado: false,
+        })) as Record<string, unknown>[];
+      }
+    }
 
     return NextResponse.json({
       line: lineData,
