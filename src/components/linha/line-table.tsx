@@ -495,7 +495,7 @@ export function LineTable({
               <Cell className="flex items-center py-0 h-full min-h-0">
                 <input
                   type="text"
-                  className="w-full rounded-md border border-slate-300 bg-white px-2 text-[11px] h-[30px] box-border"
+                  className="w-full rounded-md border border-slate-300 bg-white px-2 text-[10px] h-[26px] box-border"
                   value={item.notes ?? ""}
                   onChange={(e) => onChangeNotes(item.id, e.target.value)}
                   placeholder="Observações..."

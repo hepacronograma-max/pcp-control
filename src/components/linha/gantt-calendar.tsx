@@ -70,9 +70,9 @@ function getDayBackground(day: GanttDay): string {
   return "bg-white";
 }
 
-/** Coluna por dia: mais estreita que o w-10 original (40px); fonte menor = mais dias na tela */
+/** Coluna por dia: largura mínima para data e dia legíveis na horizontal */
 const GANTT_CELL =
-  "w-7 min-w-[28px] max-w-[28px] shrink-0 box-border";
+  "w-9 min-w-[36px] max-w-[36px] shrink-0 box-border";
 
 interface GanttCalendarProps {
   items: LineItemWithOrder[];
@@ -93,15 +93,21 @@ export function GanttCalendar({ items, holidays }: GanttCalendarProps) {
           {days.map((day) => (
             <div
               key={day.date.toISOString()}
-              className={`${GANTT_CELL} h-full flex flex-col items-center justify-center gap-0 border-r border-slate-200 box-border leading-none ${getDayBackground(
+              className={`${GANTT_CELL} h-full flex items-center justify-center px-0.5 border-r border-slate-200 box-border ${getDayBackground(
                 day
               )}`}
+              title={`${day.label} ${day.dayOfWeek}${day.holidayName ? ` — ${day.holidayName}` : ""}`}
             >
-              <span className="text-[8px] font-medium tracking-tight leading-none">
-                {day.label}
-              </span>
-              <span className="text-[7px] text-slate-600 leading-none">
-                {day.dayOfWeek}
+              <span className="whitespace-nowrap text-center leading-tight tabular-nums">
+                <span className="text-[10px] font-semibold text-slate-800">
+                  {day.label}
+                </span>
+                <span className="mx-0.5 text-[9px] font-normal text-slate-400">
+                  ·
+                </span>
+                <span className="text-[9px] font-medium text-slate-600">
+                  {day.dayOfWeek}
+                </span>
               </span>
             </div>
           ))}
