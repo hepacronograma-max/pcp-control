@@ -250,9 +250,7 @@ export async function POST(request: NextRequest) {
             company_id: companyId,
             order_number: String(extracted.orderNumber).trim().slice(0, 50),
             client_name: String(extracted.clientName).trim().slice(0, 255),
-            delivery_deadline: toDateOnly(extracted.deliveryDate),
             status: "imported",
-            created_by: null,
           })
           .select();
 
@@ -266,9 +264,8 @@ export async function POST(request: NextRequest) {
 
         const createdOrder = createdOrders[0];
         const { error: itemsError } = await supabase.from("order_items").insert(
-          extracted.items.map((item, index) => ({
+          extracted.items.map((item) => ({
             order_id: createdOrder.id,
-            item_number: index + 1,
             description: String(item.description || "").trim().slice(0, 500),
             quantity: toQuantity(item.quantity),
           }))
@@ -373,9 +370,7 @@ export async function POST(request: NextRequest) {
             company_id: profile.company_id,
             order_number: String(extracted.orderNumber).trim().slice(0, 50),
             client_name: String(extracted.clientName).trim().slice(0, 255),
-            delivery_deadline: toDateOnly(extracted.deliveryDate),
             status: "imported",
-            created_by: user.id,
           })
           .select();
 
@@ -392,9 +387,8 @@ export async function POST(request: NextRequest) {
 
         const createdOrder = createdOrders[0];
         const { error: itemsError } = await supabase.from("order_items").insert(
-          extracted.items.map((item, index) => ({
+          extracted.items.map((item) => ({
             order_id: createdOrder.id,
-            item_number: index + 1,
             description: String(item.description || "").trim().slice(0, 500),
             quantity: toQuantity(item.quantity),
           }))
