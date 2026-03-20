@@ -33,6 +33,7 @@ export async function POST(request: NextRequest) {
       complete,
       pc_number,
       pc_delivery_date,
+      target_almox_line_id,
     } = body;
 
     const supabase = createSupabaseAdminClient();
@@ -229,6 +230,10 @@ export async function POST(request: NextRequest) {
           .select("pcp_deadline")
           .eq("id", ctxItem.order_id)
           .maybeSingle();
+        const tid =
+          typeof target_almox_line_id === "string" && target_almox_line_id
+            ? target_almox_line_id
+            : null;
         await syncAlmoxarifadoOnProgram({
           supabase,
           sourceItemId: String(itemId),
@@ -237,9 +242,11 @@ export async function POST(request: NextRequest) {
           sourceDescription: String(ctxItem.description ?? ""),
           sourceQuantity: Number(ctxItem.quantity ?? 1),
           productionStart: ps,
+          productionEnd: pe,
           orderPcpDeadline: orderRow?.pcp_deadline ?? null,
           itemPcpDeadline: ctxItem.pcp_deadline ?? null,
           pcDeliveryDate: ctxItem.pc_delivery_date ?? null,
+          targetAlmoxLineId: tid,
         });
       }
 

@@ -1,32 +1,32 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  resolveAlmoxLineId,
+  productionLineIsAlmoxarifado,
   syncAlmoxarifadoOnProgram,
 } from "./sync-almoxarifado-on-program";
 
-function lineLooksAlmox(l: {
-  id: string;
-  name?: string | null;
-  is_almoxarifado?: boolean | null;
-}): boolean {
-  return (
-    l.is_almoxarifado === true ||
-    (typeof l.name === "string" && l.name.toLowerCase().includes("almox"))
-  );
-}
-
 /**
- * Cria/atualiza itens espelho no almox para todos os itens já programados nas linhas de chão.
- * Útil quando a programação foi feita antes do sync existir ou se o insert falhou em silêncio.
+ * Cria/atualiza itens espelho **nesta** linha Almoxarifado (a da URL do menu).
+ * Só considera itens nas linhas de chão com **início e fim** já programados.
  */
 export async function reconcileAlmoxMirrorsForCompany(
   supabase: SupabaseClient,
-  companyId: string
+  targetAlmoxLineId: string
 ): Promise<{ touched: number; error?: string }> {
-  const almoxLineId = await resolveAlmoxLineId(supabase, companyId);
-  if (!almoxLineId) {
-    return { touched: 0, error: "no_almox_line" };
+  const { data: almoxRow, error: ae } = await supabase
+    .from("production_lines")
+    .select("id, company_id, name, is_almoxarifado")
+    .eq("id", targetAlmoxLineId)
+    .maybeSingle();
+
+  if (ae || !almoxRow?.company_id) {
+    return { touched: 0, error: ae?.message ?? "Linha não encontrada" };
   }
+
+  if (!productionLineIsAlmoxarifado(almoxRow)) {
+    return { touched: 0, error: "not_almox_line" };
+  }
+
+  const companyId = almoxRow.company_id as string;
 
   const { data: allLines, error: le } = await supabase
     .from("production_lines")
@@ -38,7 +38,10 @@ export async function reconcileAlmoxMirrorsForCompany(
   }
 
   const sourceLineIds = allLines
-    .filter((l) => l.id !== almoxLineId && !lineLooksAlmox(l))
+    .filter(
+      (l) =>
+        l.id !== targetAlmoxLineId && !productionLineIsAlmoxarifado(l)
+    )
     .map((l) => l.id);
 
   if (!sourceLineIds.length) return { touched: 0 };
@@ -46,10 +49,11 @@ export async function reconcileAlmoxMirrorsForCompany(
   const { data: items, error: qe } = await supabase
     .from("order_items")
     .select(
-      "id, order_id, line_id, description, quantity, pcp_deadline, pc_delivery_date, production_start"
+      "id, order_id, line_id, description, quantity, pcp_deadline, pc_delivery_date, production_start, production_end"
     )
     .in("line_id", sourceLineIds)
-    .not("production_start", "is", null);
+    .not("production_start", "is", null)
+    .not("production_end", "is", null);
 
   if (qe) {
     console.error("[reconcile-almox]", qe);
@@ -81,9 +85,11 @@ export async function reconcileAlmoxMirrorsForCompany(
       sourceDescription: String(it.description ?? ""),
       sourceQuantity: Number(it.quantity ?? 1),
       productionStart: it.production_start as string,
+      productionEnd: it.production_end as string,
       orderPcpDeadline: orderPcp,
       itemPcpDeadline: it.pcp_deadline,
       pcDeliveryDate: it.pc_delivery_date,
+      targetAlmoxLineId,
     });
     if (changed) touched += 1;
   }

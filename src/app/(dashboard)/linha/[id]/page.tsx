@@ -24,6 +24,7 @@ import {
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
+import { productionLineIsAlmoxarifado } from "@/lib/supabase/sync-almoxarifado-on-program";
 import { toast } from "sonner";
 
 type TabKey = "all" | "in_progress" | "finished";
@@ -51,6 +52,12 @@ export default function LinePage() {
     "production_end",
     "order_number",
   ]);
+
+  /** Linha do menu Almoxarifado (UUID) — enviada na API para gravar o espelho no lugar certo. */
+  const preferredAlmoxLineId = useMemo(() => {
+    const almox = allLines.find((l) => productionLineIsAlmoxarifado(l));
+    return almox?.id ?? null;
+  }, [allLines]);
 
   const [refreshKey, setRefreshKey] = useState(0);
   /** Evita reconciliar o almox em loop; zera ao sair da linha almox. */
@@ -83,14 +90,16 @@ export default function LinePage() {
 
   const useApi = shouldUseLocalServiceApi(profile);
 
-  useEffect(() => {
-    if (!line?.is_almoxarifado) {
-      almoxReconcileKeyRef.current = null;
-    }
-  }, [lineId, line?.is_almoxarifado]);
+  const lineIsAlmox = line ? productionLineIsAlmoxarifado(line) : false;
 
   useEffect(() => {
-    if (!useApi || !lineId || loadingData || !line?.is_almoxarifado) return;
+    if (!lineIsAlmox) {
+      almoxReconcileKeyRef.current = null;
+    }
+  }, [lineId, lineIsAlmox]);
+
+  useEffect(() => {
+    if (!useApi || !lineId || loadingData || !lineIsAlmox) return;
     if (almoxReconcileKeyRef.current === lineId) return;
     almoxReconcileKeyRef.current = lineId;
     let cancelled = false;
@@ -118,7 +127,7 @@ export default function LinePage() {
     return () => {
       cancelled = true;
     };
-  }, [useApi, lineId, loadingData, line?.is_almoxarifado]);
+  }, [useApi, lineId, loadingData, lineIsAlmox]);
 
   useEffect(() => {
     if (!profile || !lineId) return;
@@ -267,6 +276,9 @@ export default function LinePage() {
       itemId,
       [field]: value,
     };
+    if (preferredAlmoxLineId) {
+      payload.target_almox_line_id = preferredAlmoxLineId;
+    }
     if (useApi) {
       const res = await fetch("/api/order-items/update", {
         method: "POST",
@@ -379,7 +391,7 @@ export default function LinePage() {
     setRefreshKey((k) => k + 1);
   }
 
-  const isAlmoxarifado = line?.is_almoxarifado === true;
+  const isAlmoxarifado = line ? productionLineIsAlmoxarifado(line) : false;
 
   async function handleSupply(itemId: string) {
     const nowIso = new Date().toISOString();

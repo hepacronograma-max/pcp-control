@@ -7,6 +7,16 @@ function almoxRefNote(sourceItemId: string): string {
   return `${REF_PREFIX}${sourceItemId}`;
 }
 
+export function productionLineIsAlmoxarifado(l: {
+  name?: string | null;
+  is_almoxarifado?: boolean | null;
+}): boolean {
+  return (
+    l.is_almoxarifado === true ||
+    (typeof l.name === "string" && l.name.toLowerCase().includes("almox"))
+  );
+}
+
 /**
  * Marca no `notes` que este item do almox espelha o item de produção `sourceItemId`.
  * Evita colisão com LIKE: prefixo sem underscore.
@@ -55,10 +65,32 @@ export async function resolveAlmoxLineId(
   return null;
 }
 
+async function pickAlmoxLineId(
+  supabase: SupabaseClient,
+  companyId: string,
+  targetAlmoxLineId?: string | null
+): Promise<string | null> {
+  if (targetAlmoxLineId) {
+    const { data: t } = await supabase
+      .from("production_lines")
+      .select("id, company_id, name, is_almoxarifado")
+      .eq("id", targetAlmoxLineId)
+      .maybeSingle();
+    if (
+      t &&
+      String(t.company_id) === companyId &&
+      productionLineIsAlmoxarifado(t)
+    ) {
+      return t.id;
+    }
+  }
+  return resolveAlmoxLineId(supabase, companyId);
+}
+
 /**
- * Quando a produção agenda início numa linha “de chão”, o almoxarifado abastece **no mesmo dia**
- * (production_start = production_end = data de início da produção).
- * @returns true se gravou algo no banco (insert/update/limpeza).
+ * Lista de abastecimento: só entra no almox com **início e fim** programados na linha de chão.
+ * O espelho usa a **data de início** (início = fim no item do almox).
+ * `targetAlmoxLineId` = linha do menu (URL), para não gravar em outro UUID almox da empresa.
  */
 export async function syncAlmoxarifadoOnProgram(params: {
   supabase: SupabaseClient;
@@ -67,11 +99,12 @@ export async function syncAlmoxarifadoOnProgram(params: {
   sourceLineId: string | null;
   sourceDescription: string;
   sourceQuantity: number;
-  /** Início efetivo após o update (null = limpar datas no espelho almox) */
   productionStart: string | null;
+  productionEnd: string | null;
   orderPcpDeadline: string | null;
   itemPcpDeadline: string | null;
   pcDeliveryDate: string | null;
+  targetAlmoxLineId?: string | null;
 }): Promise<boolean> {
   const {
     supabase,
@@ -81,9 +114,11 @@ export async function syncAlmoxarifadoOnProgram(params: {
     sourceDescription,
     sourceQuantity,
     productionStart,
+    productionEnd,
     orderPcpDeadline,
     itemPcpDeadline,
     pcDeliveryDate,
+    targetAlmoxLineId,
   } = params;
 
   if (!sourceLineId) return false;
@@ -96,14 +131,14 @@ export async function syncAlmoxarifadoOnProgram(params: {
 
   if (!sourceLine) return false;
 
-  const isAlmox =
-    sourceLine.is_almoxarifado === true ||
-    (typeof sourceLine.name === "string" &&
-      sourceLine.name.toLowerCase().includes("almox"));
-  if (isAlmox) return false;
+  if (productionLineIsAlmoxarifado(sourceLine)) return false;
 
   const companyId = sourceLine.company_id as string;
-  const almoxLineId = await resolveAlmoxLineId(supabase, companyId);
+  const almoxLineId = await pickAlmoxLineId(
+    supabase,
+    companyId,
+    targetAlmoxLineId
+  );
   if (!almoxLineId) return false;
 
   const ref = almoxRefNote(sourceItemId);
@@ -121,6 +156,7 @@ export async function syncAlmoxarifadoOnProgram(params: {
     existingRows?.find((r) => (r.notes ?? "").includes(ref)) ?? existingRows?.[0];
 
   const day = productionStart ? toDateOnly(productionStart) : null;
+  const endDay = productionEnd ? toDateOnly(productionEnd) : null;
   const pcDelivery = pcDeliveryDate ? toDateOnly(pcDeliveryDate) : null;
   if (day && pcDelivery && day < pcDelivery) {
     return false;
@@ -129,7 +165,7 @@ export async function syncAlmoxarifadoOnProgram(params: {
   const pcp =
     toDateOnly(itemPcpDeadline) ?? toDateOnly(orderPcpDeadline) ?? null;
 
-  if (!day) {
+  if (!day || !endDay) {
     if (existing?.id) {
       const { data: cur } = await supabase
         .from("order_items")

@@ -39,13 +39,16 @@ export async function POST(request: NextRequest) {
 
     const { touched, error: reErr } = await reconcileAlmoxMirrorsForCompany(
       supabase,
-      lineRow.company_id
+      lineId
     );
 
     return NextResponse.json({
       success: true,
       touched,
-      warning: reErr === "no_almox_line" ? "Nenhuma linha Almoxarifado encontrada na empresa." : reErr,
+      warning:
+        reErr === "not_almox_line"
+          ? "Esta rota só se aplica à linha Almoxarifado."
+          : reErr,
     });
   } catch (err) {
     console.error("[reconcile-almox]", err);
