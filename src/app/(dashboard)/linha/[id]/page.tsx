@@ -46,6 +46,8 @@ export default function LinePage() {
   const [allLines, setAllLines] = useState<ProductionLine[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [tab, setTab] = useState<TabKey>("in_progress");
+  const [search, setSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loadingData, setLoadingData] = useState(false);
   const [sortKeys, setSortKeys] = useState<LineSortKey[]>([
     "production_start",
@@ -71,6 +73,8 @@ export default function LinePage() {
 
   useEffect(() => {
     setTab("in_progress");
+    setSearch("");
+    setSelectedIds(new Set());
   }, [lineId]);
 
   useEffect(() => {
@@ -294,63 +298,84 @@ export default function LinePage() {
     );
   }
 
-  async function handleComplete(itemId: string) {
-    if (!profile) return;
+  async function runCompleteItems(itemIds: string[]) {
+    if (!profile || itemIds.length === 0) return;
 
     const nowIso = new Date().toISOString();
     const todayStr = new Date().toISOString().slice(0, 10);
-    const targetItem = items.find((i) => i.id === itemId);
 
-    const fillStart = !targetItem?.production_start ? todayStr : undefined;
-    const fillEnd = !targetItem?.production_end ? todayStr : undefined;
+    for (const itemId of itemIds) {
+      const targetItem = items.find((i) => i.id === itemId);
+      if (!targetItem) continue;
 
-    const payload = {
-      action: "complete",
-      itemId,
-      completed_by: profile.id,
-      production_start: fillStart ?? targetItem?.production_start,
-      production_end: fillEnd ?? targetItem?.production_end,
-    };
-    if (useApi) {
-      const res = await fetch("/api/order-items/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        let msg = "";
-        try {
-          const j = (await res.json()) as { error?: string };
-          msg = j.error ?? "";
-        } catch {
-          // ignore
-        }
-        toast.error(msg || "Não foi possível finalizar o item.");
-        return;
-      }
-    } else if (supabase) {
-      const updateData: Record<string, unknown> = {
-        status: "completed",
-        completed_at: nowIso,
+      const fillStart = !targetItem.production_start ? todayStr : undefined;
+      const fillEnd = !targetItem.production_end ? todayStr : undefined;
+
+      const payload = {
+        action: "complete",
+        itemId,
         completed_by: profile.id,
+        production_start: fillStart ?? targetItem.production_start,
+        production_end: fillEnd ?? targetItem.production_end,
       };
-      if (fillStart) updateData.production_start = toDateOnly(todayStr) ?? todayStr;
-      if (fillEnd) updateData.production_end = toDateOnly(todayStr) ?? todayStr;
-      const { error } = await supabase.from("order_items").update(updateData).eq("id", itemId);
-      if (error) {
-        toast.error(error.message || "Erro ao finalizar.");
-        return;
-      }
-    } else return;
+      if (useApi) {
+        const res = await fetch("/api/order-items/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          let msg = "";
+          try {
+            const j = (await res.json()) as { error?: string };
+            msg = j.error ?? "";
+          } catch {
+            // ignore
+          }
+          toast.error(msg || "Não foi possível finalizar o item.");
+          return;
+        }
+      } else if (supabase) {
+        const updateData: Record<string, unknown> = {
+          status: "completed",
+          completed_at: nowIso,
+          completed_by: profile.id,
+        };
+        if (fillStart) updateData.production_start = toDateOnly(todayStr) ?? todayStr;
+        if (fillEnd) updateData.production_end = toDateOnly(todayStr) ?? todayStr;
+        const { error } = await supabase.from("order_items").update(updateData).eq("id", itemId);
+        if (error) {
+          toast.error(error.message || "Erro ao finalizar.");
+          return;
+        }
+      } else return;
+    }
 
-    toast.success("Item finalizado.");
-    /** Igual Pedidos: leva o usuário à aba só com itens concluídos nesta linha */
-    setTab("finished");
+    toast.success(
+      itemIds.length === 1 ? "Item finalizado." : `${itemIds.length} itens finalizados.`
+    );
+    setSelectedIds(new Set());
     setRefreshKey((k) => k + 1);
   }
 
-  const isAlmoxarifado = line ? productionLineIsAlmoxarifado(line) : false;
+  async function handleComplete(itemId: string) {
+    if (!window.confirm("Marcar item como concluído?")) return;
+    await runCompleteItems([itemId]);
+  }
+
+  async function handleBulkComplete() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    if (
+      !window.confirm(
+        `Marcar ${ids.length} item(ns) como concluído(s)?`
+      )
+    ) {
+      return;
+    }
+    await runCompleteItems(ids);
+  }
 
   async function handleSupply(itemId: string) {
     const nowIso = new Date().toISOString();
@@ -377,6 +402,19 @@ export default function LinePage() {
     () => sortLineItemsByKeys(items, sortKeys),
     [items, sortKeys]
   );
+
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return sortedItems;
+    return sortedItems.filter((it) => {
+      if (it.order.order_number?.toLowerCase().includes(q)) return true;
+      if (it.order.client_name?.toLowerCase().includes(q)) return true;
+      if (it.description?.toLowerCase().includes(q)) return true;
+      return false;
+    });
+  }, [sortedItems, search]);
+
+  const isAlmoxarifado = line ? productionLineIsAlmoxarifado(line) : false;
 
   const needsEffectiveCompany =
     supabase && profile?.company_id === "local-company";
@@ -415,6 +453,15 @@ export default function LinePage() {
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          {!isAlmoxarifado && (
+            <input
+              type="text"
+              className="w-56 max-w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-xs"
+              placeholder="Buscar pedido, cliente ou descrição..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          )}
           <PageExportMenu
             fileNameBase={`linha-${line?.id?.slice(0, 8) ?? "export"}-${tab}`}
             sheetTitle={title}
@@ -485,11 +532,35 @@ export default function LinePage() {
         </div>
       </div>
 
+      {!isAlmoxarifado && selectedIds.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-md border border-amber-200 bg-amber-50 text-xs text-slate-800">
+          <span className="font-medium">{selectedIds.size} selecionado(s)</span>
+          <button
+            type="button"
+            className="rounded-md border border-emerald-400 bg-emerald-50 px-2 py-1 text-emerald-800 hover:bg-emerald-100"
+            onClick={handleBulkComplete}
+          >
+            Finalizar selecionados
+          </button>
+          <button
+            type="button"
+            className="text-slate-600 underline hover:text-slate-900"
+            onClick={() => setSelectedIds(new Set())}
+          >
+            Limpar seleção
+          </button>
+        </div>
+      )}
+
       {loadingData ? (
         <div className="text-sm text-slate-500">Carregando itens...</div>
       ) : items.length === 0 ? (
         <div className="text-sm text-slate-500">
           Nenhum item encontrado para esta linha.
+        </div>
+      ) : filteredItems.length === 0 ? (
+        <div className="text-sm text-slate-500">
+          Nenhum item corresponde à busca.
         </div>
       ) : (
         <div className="flex flex-col flex-1 min-h-0">
@@ -505,7 +576,7 @@ export default function LinePage() {
               className="flex-shrink-0 overflow-y-auto sticky left-0 z-10 bg-white shadow-[4px_0_6px_-1px_rgba(0,0,0,0.1)]"
             >
               <LineTable
-                items={sortedItems}
+                items={filteredItems}
                 profile={profile}
                 sortKeys={sortKeys}
                 onChangeSort={setSortKeys}
@@ -515,6 +586,31 @@ export default function LinePage() {
                 isAlmoxarifado={isAlmoxarifado}
                 allLines={allLines}
                 onSupply={handleSupply}
+                selectedItemIds={selectedIds}
+                onToggleItemSelected={
+                  isAlmoxarifado
+                    ? undefined
+                    : (id) => {
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(id)) next.delete(id);
+                          else next.add(id);
+                          return next;
+                        });
+                      }
+                }
+                onToggleSelectAllVisible={
+                  isAlmoxarifado
+                    ? undefined
+                    : () => {
+                        const ids = filteredItems.map((i) => i.id);
+                        setSelectedIds((prev) => {
+                          const allSel = ids.length > 0 && ids.every((id) => prev.has(id));
+                          if (allSel) return new Set();
+                          return new Set(ids);
+                        });
+                      }
+                }
               />
             </div>
 
@@ -523,7 +619,7 @@ export default function LinePage() {
               onScroll={() => syncScroll("gantt")}
               className="flex-1 overflow-x-auto overflow-y-auto min-w-0"
             >
-              <GanttCalendar items={sortedItems} holidays={holidays} />
+              <GanttCalendar items={filteredItems} holidays={holidays} />
             </div>
           </div>
         </div>

@@ -262,8 +262,13 @@ export function parseOmiePedido(
 
   if (!orderNumber) {
     const baseName = fileName.replace(/\.pdf$/i, "");
-    const mNum = baseName.match(/\d+/);
-    orderNumber = mNum ? mNum[0] : baseName || "PDF";
+    const partial = baseName.match(/^(\d+)[_\-](\d+)$/);
+    if (partial) {
+      orderNumber = `${partial[1]}/${partial[2]}`.slice(0, 50);
+    } else {
+      const mNum = baseName.match(/\d+/);
+      orderNumber = mNum ? mNum[0] : baseName || "PDF";
+    }
   }
 
   if (!clientName) {

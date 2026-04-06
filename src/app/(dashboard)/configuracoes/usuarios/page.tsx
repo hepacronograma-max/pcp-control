@@ -225,6 +225,31 @@ export default function UsersSettingsPage() {
         toast.success("Usuário criado com sucesso");
         closeModal();
         window.location.reload();
+      } else if (modalMode === "edit" && editUserId) {
+        const res = await fetch("/api/users", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: editUserId,
+            fullName: formName.trim(),
+            email: formEmail.trim(),
+            password: formPassword || undefined,
+            role: formRole,
+            lineIds: formRole === "operator" ? formLineIds : [],
+          }),
+        });
+        let data: { success?: boolean; error?: string } = {};
+        try {
+          data = await res.json();
+        } catch {
+          data = { error: `Erro ${res.status}` };
+        }
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Erro ao atualizar usuário");
+        }
+        toast.success("Usuário atualizado");
+        closeModal();
+        window.location.reload();
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Erro ao salvar";

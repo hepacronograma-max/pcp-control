@@ -122,6 +122,10 @@ interface LineTableProps {
   isAlmoxarifado?: boolean;
   allLines?: ProductionLine[];
   onSupply?: (itemId: string) => void;
+  /** Seletor múltiplo (linha de produção) */
+  selectedItemIds?: Set<string>;
+  onToggleItemSelected?: (itemId: string) => void;
+  onToggleSelectAllVisible?: () => void;
 }
 
 export function LineTable({
@@ -135,14 +139,20 @@ export function LineTable({
   isAlmoxarifado,
   allLines,
   onSupply,
+  selectedItemIds,
+  onToggleItemSelected,
+  onToggleSelectAllVisible,
 }: LineTableProps) {
   /**
    * Início/Fim precisam de ~104–116px: o seletor de data usa área mínima ~96px;
    * valores menores encavalam colunas e o clique só pega no canto.
    */
+  const selectCol = Boolean(onToggleItemSelected);
   const defaultWidths = isAlmoxarifado
     ? [60, 140, 200, 55, 110, 90, 80]
-    : [54, 118, 158, 42, 76, 76, 116, 116, 40, 96];
+    : selectCol
+      ? [32, 54, 118, 158, 42, 76, 76, 116, 116, 40, 96]
+      : [54, 118, 158, 42, 76, 76, 116, 116, 40, 96];
 
   const [columnWidths, setColumnWidths] = useState<number[]>(defaultWidths);
   const resizingIndexRef = useRef<number | null>(null);
@@ -164,9 +174,24 @@ export function LineTable({
     () =>
       isAlmoxarifado
         ? [44, 72, 96, 36, 72, 64, 56]
-        : [44, 72, 96, 36, 56, 56, 100, 100, 32, 64],
-    [isAlmoxarifado]
+        : selectCol
+          ? [28, 44, 72, 96, 36, 56, 56, 100, 100, 32, 64]
+          : [44, 72, 96, 36, 56, 56, 100, 100, 32, 64],
+    [isAlmoxarifado, selectCol]
   );
+
+  const sel = selectedItemIds ?? new Set<string>();
+  const allVisibleSelected =
+    items.length > 0 && items.every((it) => sel.has(it.id));
+  const someSelected = items.some((it) => sel.has(it.id));
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  const colOff = selectCol ? 1 : 0;
+
+  useEffect(() => {
+    const el = selectAllRef.current;
+    if (!el) return;
+    el.indeterminate = someSelected && !allVisibleSelected;
+  }, [someSelected, allVisibleSelected]);
 
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
@@ -204,7 +229,6 @@ export function LineTable({
   }
 
   function handleComplete(itemId: string) {
-    if (!window.confirm("Marcar item como concluído?")) return;
     onComplete(itemId);
   }
 
@@ -332,24 +356,36 @@ export function LineTable({
           className="grid text-[11px] h-[var(--line-gantt-header-h)] items-stretch box-border overflow-x-clip bg-slate-50/70"
           style={{ gridTemplateColumns: gridTemplate }}
         >
+          {selectCol && (
+            <div className="relative h-full min-h-0 px-1 flex items-center justify-center border-r border-slate-200 bg-slate-50/80">
+              <input
+                ref={selectAllRef}
+                type="checkbox"
+                checked={allVisibleSelected}
+                onChange={() => onToggleSelectAllVisible?.()}
+                title="Selecionar todos os itens visíveis"
+                className="h-3.5 w-3.5 accent-slate-700 cursor-pointer"
+              />
+            </div>
+          )}
           <HeaderCell
             onClick={() => toggleSort("order_number")}
             sortIndex={getSortIndex("order_number")}
-            onResizeStart={(e) => handleResizeStart(0, e)}
+            onResizeStart={(e) => handleResizeStart(0 + colOff, e)}
           >
             Pedido
           </HeaderCell>
           <HeaderCell
             onClick={() => toggleSort("client_name")}
             sortIndex={getSortIndex("client_name")}
-            onResizeStart={(e) => handleResizeStart(1, e)}
+            onResizeStart={(e) => handleResizeStart(1 + colOff, e)}
           >
             Cliente
           </HeaderCell>
           <HeaderCell
             onClick={() => toggleSort("description")}
             sortIndex={getSortIndex("description")}
-            onResizeStart={(e) => handleResizeStart(2, e)}
+            onResizeStart={(e) => handleResizeStart(2 + colOff, e)}
           >
             Descrição
           </HeaderCell>
@@ -357,7 +393,7 @@ export function LineTable({
             className="text-center"
             onClick={() => toggleSort("quantity")}
             sortIndex={getSortIndex("quantity")}
-            onResizeStart={(e) => handleResizeStart(3, e)}
+            onResizeStart={(e) => handleResizeStart(3 + colOff, e)}
           >
             Qtd
           </HeaderCell>
@@ -365,13 +401,13 @@ export function LineTable({
             className="text-center"
             onClick={() => toggleSort("delivery_deadline")}
             sortIndex={getSortIndex("delivery_deadline")}
-            onResizeStart={(e) => handleResizeStart(4, e)}
+            onResizeStart={(e) => handleResizeStart(4 + colOff, e)}
           >
             Prazo PCP
           </HeaderCell>
           <HeaderCell
             className="text-center"
-            onResizeStart={(e) => handleResizeStart(5, e)}
+            onResizeStart={(e) => handleResizeStart(5 + colOff, e)}
           >
             PC entrega
           </HeaderCell>
@@ -379,7 +415,7 @@ export function LineTable({
             className="text-center"
             onClick={() => toggleSort("production_start")}
             sortIndex={getSortIndex("production_start")}
-            onResizeStart={(e) => handleResizeStart(6, e)}
+            onResizeStart={(e) => handleResizeStart(6 + colOff, e)}
           >
             Início Prod.
           </HeaderCell>
@@ -387,17 +423,17 @@ export function LineTable({
             className="text-center"
             onClick={() => toggleSort("production_end")}
             sortIndex={getSortIndex("production_end")}
-            onResizeStart={(e) => handleResizeStart(7, e)}
+            onResizeStart={(e) => handleResizeStart(7 + colOff, e)}
           >
             Fim Prod.
           </HeaderCell>
           <HeaderCell
             className="text-center"
-            onResizeStart={(e) => handleResizeStart(8, e)}
+            onResizeStart={(e) => handleResizeStart(8 + colOff, e)}
           >
             ✓
           </HeaderCell>
-          <HeaderCell onResizeStart={(e) => handleResizeStart(9, e)}>
+          <HeaderCell onResizeStart={(e) => handleResizeStart(9 + colOff, e)}>
             Obs.
           </HeaderCell>
         </div>
@@ -447,6 +483,17 @@ export function LineTable({
                   : undefined
               }
             >
+              {selectCol && (
+                <Cell className="flex items-center justify-center px-0">
+                  <input
+                    type="checkbox"
+                    checked={sel.has(item.id)}
+                    onChange={() => onToggleItemSelected?.(item.id)}
+                    className="h-3.5 w-3.5 accent-slate-700 cursor-pointer"
+                    aria-label="Selecionar item"
+                  />
+                </Cell>
+              )}
               <Cell className="font-medium text-slate-800 flex items-center">
                 {item.order.order_number}
               </Cell>

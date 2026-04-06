@@ -362,21 +362,13 @@ export default function PedidosPage() {
     updateOrdersState((prev) => prev.filter((o) => o.id !== orderId));
   }
 
-  async function handleFinishOrder(orderId: string) {
-    if (
-      !window.confirm(
-        "Tem certeza que deseja finalizar este pedido? Esta ação não pode ser desfeita."
-      )
-    ) {
-      return;
-    }
-
+  async function runFinishOrder(orderId: string) {
     const nowIso = new Date().toISOString();
     if (useApi) {
       const r = await postOrderItemsUpdate({ action: "finish", orderId });
       if (!r.ok) {
         toast.error(r.error);
-        return;
+        return false;
       }
     } else if (supabase) {
       let { error } = await supabase
@@ -394,9 +386,9 @@ export default function PedidosPage() {
       }
       if (error) {
         toast.error(error.message);
-        return;
+        return false;
       }
-    } else return;
+    } else return false;
 
     updateOrdersState((prev) =>
       prev.map((o) =>
@@ -405,6 +397,52 @@ export default function PedidosPage() {
           : o
       )
     );
+    return true;
+  }
+
+  async function handleFinishOrder(orderId: string) {
+    if (
+      !window.confirm(
+        "Tem certeza que deseja finalizar este pedido? Esta ação não pode ser desfeita."
+      )
+    ) {
+      return;
+    }
+    await runFinishOrder(orderId);
+  }
+
+  async function handleFinishOrdersBulk(orderIds: string[]) {
+    if (orderIds.length === 0) return;
+    const ready = orderIds.filter((id) => {
+      const o = orders.find((x) => x.id === id);
+      return (
+        o &&
+        o.items.length > 0 &&
+        o.items.every((it) => it.status === "completed")
+      );
+    });
+    if (ready.length === 0) {
+      toast.error(
+        "Nenhum pedido selecionado pode ser finalizado (todos os itens precisam estar concluídos)."
+      );
+      return;
+    }
+    if (
+      !window.confirm(
+        `Finalizar ${ready.length} pedido(s)? Esta ação não pode ser desfeita.`
+      )
+    ) {
+      return;
+    }
+    let ok = 0;
+    for (const id of ready) {
+      if (await runFinishOrder(id)) ok++;
+    }
+    if (ok > 0) {
+      toast.success(
+        ok === 1 ? "Pedido finalizado." : `${ok} pedidos finalizados.`
+      );
+    }
   }
 
   const [showNewDialog, setShowNewDialog] = useState(false);
@@ -631,6 +669,7 @@ export default function PedidosPage() {
           onUpdateOrder={handleUpdateOrder}
           onDeleteOrder={handleDeleteOrder}
           onFinishOrder={handleFinishOrder}
+          onFinishOrdersBulk={handleFinishOrdersBulk}
         />
       )}
 

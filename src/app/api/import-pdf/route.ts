@@ -21,6 +21,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 import { ensureDeliveryColumns } from "@/lib/db/ensure-delivery-columns";
+import { orderNumberFromPdfFileName } from "@/lib/utils/order-number-filename";
 
 const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB (Vercel limite ~4.5 MB)
 
@@ -204,6 +205,11 @@ export async function POST(request: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const extracted = await extractFromPdf(buffer, file.name);
+
+    const partialFromFile = orderNumberFromPdfFileName(file.name);
+    if (partialFromFile) {
+      extracted.orderNumber = partialFromFile;
+    }
 
     // Pasta matriz: cliente pode enviar ou virá da empresa (Supabase)
     let ordersPath =

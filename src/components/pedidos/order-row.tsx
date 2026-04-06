@@ -28,6 +28,9 @@ export interface OrderRowProps {
   ) => void;
   onDeleteOrder: (orderId: string) => void;
   onFinishOrder: (orderId: string) => void;
+  showSelect?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 type PrincipalStatus =
@@ -114,6 +117,9 @@ export function OrderRow({
   onUpdateOrder,
   onDeleteOrder,
   onFinishOrder,
+  showSelect,
+  selected,
+  onToggleSelect,
 }: OrderRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -165,7 +171,11 @@ export function OrderRow({
   return (
     <>
       <div
-        className={`grid grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)] gap-2 px-4 py-1.5 border-b border-slate-200 text-xs items-center transition-colors ${rowTrafficClass}`}
+        className={`grid gap-2 px-4 py-1.5 border-b border-slate-200 text-xs items-center transition-colors ${
+          showSelect
+            ? "grid-cols-[28px_32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
+            : "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
+        } ${rowTrafficClass}`}
         title={
           traffic === "white"
             ? undefined
@@ -178,6 +188,18 @@ export function OrderRow({
                   : "OK: produção até o PCP, antes de vendas."
         }
       >
+        {showSelect && (
+          <div className="flex items-center justify-center">
+            <input
+              type="checkbox"
+              checked={!!selected}
+              onChange={onToggleSelect}
+              onClick={(e) => e.stopPropagation()}
+              className="h-3.5 w-3.5 accent-slate-700 cursor-pointer"
+              aria-label="Selecionar pedido"
+            />
+          </div>
+        )}
         <button
           onClick={() => setExpanded((v) => !v)}
           className="text-slate-500 hover:text-slate-800"

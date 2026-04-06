@@ -75,36 +75,28 @@ export default function CompanySettingsPage() {
   }, [profile, supabase, effectiveCompanyId]);
 
   async function handleLogoUpload(file: File) {
-    if (!companyId || !supabase) return;
-    const client = supabase;
-    const ext = file.name.split(".").pop();
-    const filePath = `${companyId}/logo.${ext}`;
-
-    const { error: uploadError } = await client.storage
-      .from("company-logos")
-      .upload(filePath, file, { upsert: true as any });
-
-    if (uploadError) {
-      toast.error("Erro ao fazer upload do logo");
+    if (!companyId) return;
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("companyId", companyId);
+    const res = await fetch("/api/company-logo", {
+      method: "POST",
+      body: fd,
+      credentials: "include",
+    });
+    let data: { success?: boolean; error?: string; logo_url?: string } = {};
+    try {
+      data = (await res.json()) as typeof data;
+    } catch {
+      data = { error: `Erro ${res.status}` };
+    }
+    if (!res.ok || !data.success || !data.logo_url) {
+      toast.error(data.error || "Erro ao fazer upload do logo");
       return;
     }
 
-    const {
-      data: { publicUrl },
-    } = client.storage.from("company-logos").getPublicUrl(filePath);
-
-    const { error } = await client
-      .from("companies")
-      .update({ logo_url: publicUrl })
-      .eq("id", companyId);
-
-    if (error) {
-      toast.error("Erro ao salvar URL do logo");
-      return;
-    }
-
-    setForm((prev) => (prev ? { ...prev, logo_url: publicUrl } : prev));
-    setLogoPreview(publicUrl);
+    setForm((prev) => (prev ? { ...prev, logo_url: data.logo_url! } : prev));
+    setLogoPreview(data.logo_url);
     toast.success("Logo atualizado com sucesso");
   }
 
@@ -138,26 +130,37 @@ export default function CompanySettingsPage() {
   }
 
   async function handleSaveCompany() {
-    if (!form || !companyId || !supabase) return;
-    const client = supabase;
+    if (!form || !companyId) return;
     setSaving(true);
     try {
-      const { error } = await client
-        .from("companies")
-        .update({
+      const res = await fetch("/api/company-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          companyId,
           name: form.name,
           orders_path: form.orders_path,
-          import_path: form.orders_path,
-        })
-        .eq("id", companyId);
-      if (error) throw error;
+        }),
+      });
+      let data: { success?: boolean; error?: string } = {};
+      try {
+        data = (await res.json()) as typeof data;
+      } catch {
+        data = { error: `Erro ${res.status}` };
+      }
+      if (!res.ok || !data.success) {
+        toast.error(data.error || "Erro ao salvar dados da empresa");
+        return;
+      }
       toast.success("Dados da empresa salvos com sucesso");
       if (logoFile) {
         await handleLogoUpload(logoFile);
         setLogoFile(null);
       }
-    } catch {
-      toast.error("Erro ao salvar dados da empresa");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Erro ao salvar dados da empresa";
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
