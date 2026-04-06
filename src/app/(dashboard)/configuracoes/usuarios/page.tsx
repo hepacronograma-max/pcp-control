@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useUser } from "@/lib/hooks/use-user";
+import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { createClient } from "@/lib/supabase/client";
+import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 import type { Profile, ProductionLine } from "@/lib/types/database";
 import {
   createLocalUser,
@@ -41,6 +43,8 @@ type ModalMode = "create" | "edit";
 
 export default function UsersSettingsPage() {
   const { profile, loading } = useUser();
+  const { companyId: effectiveCompanyId, loaded: effectiveLoaded } =
+    useEffectiveCompanyId(profile);
   const supabase = createClient();
   const [users, setUsers] = useState<UserWithLines[]>([]);
   const [lines, setLines] = useState<ProductionLine[]>([]);
@@ -55,10 +59,16 @@ export default function UsersSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  /**
+   * "Local" só quando não há Supabase ou é demo sem cookie de API.
+   * Com `pcp-local-auth` + Supabase, usamos o mesmo banco que o resto do app
+   * (senão linhas ficam vazias — vinham só do localStorage).
+   */
   const isLocal =
     !supabase ||
-    profile?.company_id === "local-company" ||
-    profile?.id === "local-admin";
+    (profile?.company_id === "local-company" &&
+      !shouldUseLocalServiceApi(profile)) ||
+    (profile?.id === "local-admin" && !shouldUseLocalServiceApi(profile));
 
   function reloadUsers() {
     if (!profile?.company_id) return;
@@ -71,7 +81,11 @@ export default function UsersSettingsPage() {
 
   useEffect(() => {
     if (!profile?.company_id) return;
-    const companyId = profile.company_id;
+    const needsEffective =
+      supabase && profile.company_id === "local-company";
+    if (needsEffective && !effectiveLoaded) return;
+
+    const companyId = effectiveCompanyId ?? profile.company_id;
 
     if (isLocal) {
       const allLines = loadLocalLines(companyId);
@@ -89,11 +103,26 @@ export default function UsersSettingsPage() {
         .eq("company_id", companyId)
         .order("full_name", { ascending: true });
 
-      const { data: allLines } = await client
-        .from("production_lines")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("sort_order", { ascending: true });
+      let allLines: ProductionLine[] | null = null;
+      if (shouldUseLocalServiceApi(profile)) {
+        try {
+          const res = await fetch(
+            `/api/company-data?companyId=${encodeURIComponent(companyId)}&lite=1`,
+            { credentials: "include" }
+          );
+          const json = (await res.json()) as { lines?: ProductionLine[] };
+          allLines = (json.lines ?? []) as ProductionLine[];
+        } catch {
+          allLines = [];
+        }
+      } else {
+        const { data } = await client
+          .from("production_lines")
+          .select("*")
+          .eq("company_id", companyId)
+          .order("sort_order", { ascending: true });
+        allLines = data;
+      }
 
       const { data: opLines } = await client
         .from("operator_lines")
@@ -116,7 +145,7 @@ export default function UsersSettingsPage() {
       );
     }
     load();
-  }, [profile, supabase]);
+  }, [profile, supabase, isLocal, effectiveCompanyId, effectiveLoaded]);
 
   function openCreateModal() {
     setModalMode("create");
@@ -448,18 +477,26 @@ export default function UsersSettingsPage() {
             {formRole === "operator" && (
               <div className="space-y-1">
                 <Label>Linhas de produção</Label>
-                <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-                  {lines.map((line) => (
-                    <label key={line.id} className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={formLineIds.includes(line.id)}
-                        onChange={() => toggleFormLine(line.id)}
-                      />
-                      {line.name}
-                    </label>
-                  ))}
-                </div>
+                {lines.length === 0 ? (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                    Nenhuma linha carregada. Confira em{" "}
+                    <strong>Configurações → Linhas</strong> se existem linhas ativas
+                    para a empresa.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto border border-slate-100 rounded-md p-2">
+                    {lines.map((line) => (
+                      <label key={line.id} className="flex items-center gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={formLineIds.includes(line.id)}
+                          onChange={() => toggleFormLine(line.id)}
+                        />
+                        {line.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
