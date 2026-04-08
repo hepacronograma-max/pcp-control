@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
+import type { Profile } from "@/lib/types/database";
 
 function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -63,6 +64,124 @@ function getSupabaseAdmin(): SupabaseClient {
   return createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
+}
+
+/**
+ * Lista perfis da empresa com e-mail vindo do Auth (tabela `profiles` pode não ter coluna `email`).
+ */
+export async function GET(request: NextRequest) {
+  let supabaseAdmin: SupabaseClient;
+  try {
+    supabaseAdmin = getSupabaseAdmin();
+  } catch (configError) {
+    const msg =
+      configError instanceof Error
+        ? configError.message
+        : "Supabase não configurado corretamente";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+
+  try {
+    const cookieStore = await cookies();
+    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const companyIdParam = request.nextUrl.searchParams.get("companyId");
+
+    let companyId: string | null = null;
+
+    if (hasLocalAuth) {
+      const cid = String(companyIdParam ?? "").trim();
+      if (!cid || !isUuid(cid)) {
+        return NextResponse.json(
+          { error: "companyId obrigatório na URL" },
+          { status: 400 }
+        );
+      }
+      let primary = await resolvePrimaryCompanyId(supabaseAdmin);
+      if (!primary) {
+        const { data: anyCompany } = await supabaseAdmin
+          .from("companies")
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+        primary = anyCompany?.id ?? null;
+      }
+      if (primary && cid !== primary) {
+        return NextResponse.json(
+          { error: "Não permitido para esta empresa" },
+          { status: 403 }
+        );
+      }
+      if (!primary) {
+        const { data: row } = await supabaseAdmin
+          .from("companies")
+          .select("id")
+          .eq("id", cid)
+          .maybeSingle();
+        if (!row?.id) {
+          return NextResponse.json(
+            { error: "Empresa não encontrada" },
+            { status: 400 }
+          );
+        }
+      }
+      companyId = cid;
+    } else {
+      const supabase = await createServerSupabaseClient();
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, company_id")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile || !canManageUsers(profile.role)) {
+        return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
+      }
+
+      companyId = profile.company_id as string;
+    }
+
+    if (!companyId || !isUuid(companyId)) {
+      return NextResponse.json({ error: "Empresa inválida" }, { status: 400 });
+    }
+
+    const { data: rows, error } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .eq("company_id", companyId)
+      .order("full_name", { ascending: true });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    const enriched = await Promise.all(
+      (rows ?? []).map(async (row: Record<string, unknown>) => {
+        const { data: authWrap } = await supabaseAdmin.auth.admin.getUserById(
+          String(row.id)
+        );
+        const authEmail = authWrap?.user?.email ?? "";
+        const rowEmail =
+          typeof row.email === "string" ? row.email : "";
+        return {
+          ...row,
+          email: rowEmail || authEmail || "",
+        } as Profile;
+      })
+    );
+
+    return NextResponse.json({ profiles: enriched });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Erro interno do servidor";
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -195,7 +314,6 @@ export async function POST(request: NextRequest) {
         company_id: companyId,
         role: roleVal,
         full_name: String(fullName ?? "").trim() || emailTrim,
-        email: emailTrim,
         is_active: true,
       },
       { onConflict: "id" }
@@ -387,9 +505,6 @@ export async function PATCH(request: NextRequest) {
       full_name: nameVal,
       role: roleVal,
     };
-    if (emailChanged) {
-      profileUpdate.email = emailVal.trim();
-    }
 
     const { error: profErr } = await supabaseAdmin
       .from("profiles")

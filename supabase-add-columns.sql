@@ -44,3 +44,6 @@ UPDATE production_lines SET is_active = true WHERE is_active IS NULL;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS orders_path text;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS import_path text;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_url text;
+
+-- Opcional: espelho do e-mail (o app também lê o e-mail no Auth)
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS email text;

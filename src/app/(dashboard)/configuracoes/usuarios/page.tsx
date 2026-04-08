@@ -106,11 +106,27 @@ export default function UsersSettingsPage() {
     if (!supabase) return;
     const client = supabase;
     async function load() {
-      const { data: profiles } = await client
-        .from("profiles")
-        .select("*")
-        .eq("company_id", companyId)
-        .order("full_name", { ascending: true });
+      let profiles: Profile[] | null = null;
+      try {
+        const res = await fetch(
+          `/api/users?companyId=${encodeURIComponent(companyId)}`,
+          { credentials: "include" }
+        );
+        if (res.ok) {
+          const json = (await res.json()) as { profiles?: Profile[] };
+          profiles = json.profiles ?? null;
+        }
+      } catch {
+        profiles = null;
+      }
+      if (!profiles) {
+        const { data } = await client
+          .from("profiles")
+          .select("*")
+          .eq("company_id", companyId)
+          .order("full_name", { ascending: true });
+        profiles = data ?? [];
+      }
 
       let allLines: ProductionLine[] | null = null;
       if (shouldUseLocalServiceApi(profile)) {
