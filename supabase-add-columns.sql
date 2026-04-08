@@ -45,5 +45,7 @@ ALTER TABLE companies ADD COLUMN IF NOT EXISTS orders_path text;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS import_path text;
 ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_url text;
 
--- Opcional: espelho do e-mail (o app também lê o e-mail no Auth)
+-- Perfis: alinhar com o app (ativar/desativar usuário na tela Usuários)
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS email text;
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
+UPDATE profiles SET is_active = true WHERE is_active IS NULL;

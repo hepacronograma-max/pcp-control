@@ -170,9 +170,13 @@ export async function GET(request: NextRequest) {
         const authEmail = authWrap?.user?.email ?? "";
         const rowEmail =
           typeof row.email === "string" ? row.email : "";
+        const rowActive = row.is_active;
+        const is_active =
+          typeof rowActive === "boolean" ? rowActive : true;
         return {
           ...row,
           email: rowEmail || authEmail || "",
+          is_active,
         } as Profile;
       })
     );
@@ -314,7 +318,6 @@ export async function POST(request: NextRequest) {
         company_id: companyId,
         role: roleVal,
         full_name: String(fullName ?? "").trim() || emailTrim,
-        is_active: true,
       },
       { onConflict: "id" }
     );
@@ -358,6 +361,7 @@ export async function POST(request: NextRequest) {
 /**
  * Atualiza usuário (perfil, senha opcional, linhas do operador).
  * Body: { userId, fullName, email?, password?, role, lineIds }
+ * ou só ativar/desativar: { userId, onlyActive: true, isActive: boolean }
  */
 export async function PATCH(request: NextRequest) {
   let supabaseAdmin: SupabaseClient;
@@ -383,6 +387,8 @@ export async function PATCH(request: NextRequest) {
       password,
       role,
       lineIds,
+      isActive,
+      onlyActive,
     } = body as {
       userId?: string;
       fullName?: string;
@@ -390,6 +396,8 @@ export async function PATCH(request: NextRequest) {
       password?: string;
       role?: string;
       lineIds?: string[];
+      isActive?: boolean;
+      onlyActive?: boolean;
     };
 
     if (!userId || typeof userId !== "string") {
@@ -452,6 +460,26 @@ export async function PATCH(request: NextRequest) {
         { success: false, error: "Usuário não encontrado nesta empresa" },
         { status: 403 }
       );
+    }
+
+    if (onlyActive === true && typeof isActive === "boolean") {
+      const { error: actErr } = await supabaseAdmin
+        .from("profiles")
+        .update({ is_active: isActive })
+        .eq("id", userId);
+      if (actErr) {
+        const needsSql = /is_active|schema cache/i.test(actErr.message);
+        return NextResponse.json(
+          {
+            success: false,
+            error: needsSql
+              ? "Falta a coluna is_active em profiles. No Supabase → SQL Editor, execute: ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;"
+              : actErr.message,
+          },
+          { status: 500 }
+        );
+      }
+      return NextResponse.json({ success: true });
     }
 
     const nameVal = String(fullName ?? "").trim();

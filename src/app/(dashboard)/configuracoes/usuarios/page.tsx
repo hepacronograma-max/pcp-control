@@ -165,6 +165,7 @@ export default function UsersSettingsPage() {
       setUsers(
         (profiles ?? []).map((p: Profile) => ({
           ...p,
+          is_active: p.is_active !== false,
           lines: linesByUser[p.id] ?? [],
         }))
       );
@@ -420,18 +421,32 @@ export default function UsersSettingsPage() {
       }
       return;
     }
-    if (!supabase) return;
-    const { error } = await supabase
-      .from("profiles")
-      .update({ is_active: active })
-      .eq("id", id);
-    if (error) {
-      toast.error("Erro ao atualizar usuário");
-    } else {
+    try {
+      const res = await fetch("/api/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          userId: id,
+          onlyActive: true,
+          isActive: active,
+        }),
+      });
+      let data: { success?: boolean; error?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        data = { error: `Erro ${res.status}` };
+      }
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Erro ao atualizar usuário");
+      }
       toast.success(active ? "Usuário ativado" : "Usuário desativado");
       setUsers((prev) =>
         prev.map((u) => (u.id === id ? { ...u, is_active: active } : u))
       );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao atualizar usuário");
     }
   }
 
