@@ -4,7 +4,8 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function middleware(request: NextRequest) {
   if (
     request.nextUrl.pathname === "/api/auth/local-login" ||
-    request.nextUrl.pathname === "/api/cleanup"
+    request.nextUrl.pathname === "/api/cleanup" ||
+    request.nextUrl.pathname === "/api/debug-operator"
   ) {
     return NextResponse.next({ request });
   }
