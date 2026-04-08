@@ -253,6 +253,8 @@ export async function getOperatorDashboardKpis(
     .select("line_id")
     .eq("user_id", userId);
 
+  console.log("opLines:", JSON.stringify(opLines));
+
   const lineIds = [
     ...new Set(
       (opLines ?? [])
@@ -269,6 +271,8 @@ export async function getOperatorDashboardKpis(
     .from("order_items")
     .select("id, status")
     .in("line_id", lineIds);
+
+  console.log("items count:", items?.length, "lineIds:", lineIds);
 
   const rows = items ?? [];
   let waiting = 0;
