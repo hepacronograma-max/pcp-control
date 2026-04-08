@@ -8,6 +8,8 @@ import { KPICard } from "@/components/dashboard/kpi-card";
 import { LineMetrics } from "@/components/dashboard/line-metrics";
 import { OnTimeChart } from "@/components/dashboard/on-time-chart";
 
+// force redeploy - cache bust
+
 export const dynamic = "force-dynamic";
 
 export default async function DashboardIndexPage() {
