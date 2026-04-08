@@ -233,6 +233,8 @@ export async function getDashboardData(companyId: string) {
   };
 }
 
+export type DashboardData = Awaited<ReturnType<typeof getDashboardData>>;
+
 export type OperatorDashboardKpis = {
   total: number;
   waiting: number;

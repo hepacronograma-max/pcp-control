@@ -18,7 +18,12 @@ export function OperatorDashboard() {
     fetch("/api/operator-dashboard", { credentials: "include" })
       .then(async (r) => {
         const data = (await r.json()) as OperatorKpis & { error?: string };
-        if (!r.ok) {
+        if (!r.ok || data.error) {
+          setKpis(null);
+          setLoading(false);
+          return;
+        }
+        if (data.total === undefined) {
           setKpis(null);
           setLoading(false);
           return;
@@ -31,7 +36,10 @@ export function OperatorDashboard() {
         });
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        setKpis(null);
+        setLoading(false);
+      });
   }, []);
 
   if (loading) {
@@ -41,11 +49,7 @@ export function OperatorDashboard() {
   }
 
   if (!kpis) {
-    return (
-      <p className="text-sm text-red-500 text-center py-8">
-        Erro ao carregar dados.
-      </p>
-    );
+    return null;
   }
 
   const now = new Date();

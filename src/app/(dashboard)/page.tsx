@@ -1,91 +1,82 @@
-import { getDashboardData } from "@/lib/queries/dashboard";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
-import { KPICard } from "@/components/dashboard/kpi-card";
-import { LineMetrics } from "@/components/dashboard/line-metrics";
-import { OnTimeChart } from "@/components/dashboard/on-time-chart";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { OperatorDashboard } from "@/components/dashboard/operator-dashboard";
+import { ManagerDashboard } from "@/components/dashboard/manager-dashboard";
 
-export const dynamic = "force-dynamic";
+export default function DashboardPage() {
+  const router = useRouter();
+  const [role, setRole] = useState<string | null>(null);
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-export default async function DashboardIndexPage() {
-  const supabase = await createServerSupabaseClient();
+  useEffect(() => {
+    const hasLocalAuth =
+      typeof document !== "undefined" &&
+      document.cookie.split("; ").some((c) => c.startsWith("pcp-local-auth=1"));
+    if (hasLocalAuth) {
+      try {
+        const raw = window.localStorage.getItem("pcp-local-profile");
+        if (raw) {
+          const p = JSON.parse(raw) as {
+            role?: string;
+            company_id?: string | null;
+          };
+          setRole(p.role ?? "manager");
+          setCompanyId(p.company_id ?? "local-company");
+        } else {
+          setRole("manager");
+          setCompanyId("local-company");
+        }
+      } catch {
+        setRole("manager");
+        setCompanyId("local-company");
+      }
+      setLoading(false);
+      return;
+    }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    fetch("/api/me", { credentials: "include" })
+      .then(async (r) => {
+        if (r.status === 401) {
+          router.replace("/login");
+          return null;
+        }
+        return r.json() as Promise<{
+          profile?: { role?: string; company_id?: string | null };
+        }>;
+      })
+      .then((data) => {
+        if (!data) return;
+        if (data.profile) {
+          setRole(data.profile.role ?? null);
+          setCompanyId(data.profile.company_id ?? null);
+        }
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [router]);
 
-  if (!user) {
-    redirect("/login");
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <p className="text-sm text-slate-500">Carregando dashboard...</p>
+      </div>
+    );
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("company_id, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile?.company_id) {
-    redirect("/login");
-  }
-
-  const now = new Date();
-  const monthYear = now.toLocaleDateString("pt-BR", {
-    month: "short",
-    year: "numeric",
-  });
-
-  if (profile.role === "operator") {
+  if (role === "operator") {
     return <OperatorDashboard />;
   }
 
-  const dashboard = await getDashboardData(profile.company_id);
-
-  return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-slate-900">Dashboard</h1>
-        <div className="flex items-center gap-2 text-xs text-slate-500">
-          <span>📅 {monthYear}</span>
-        </div>
+  if (!companyId) {
+    return (
+      <div className="text-sm text-amber-700 py-8 text-center">
+        Empresa não encontrada no perfil. Configure em Configurações → Empresa.
       </div>
+    );
+  }
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <KPICard
-          title="Pedidos em aberto"
-          value={dashboard.openOrders}
-          icon="📋"
-        />
-        <KPICard
-          title="Pedidos atrasados"
-          value={dashboard.delayedOrders}
-          icon="⏰"
-          variant={dashboard.delayedOrders > 0 ? "danger" : "default"}
-        />
-        <KPICard
-          title="Lead time médio"
-          value={
-            dashboard.avgLeadTime === "--"
-              ? "--"
-              : `${dashboard.avgLeadTime} dias`
-          }
-          icon="⏱️"
-        />
-        <KPICard
-          title="Entrega no prazo"
-          value={`${dashboard.onTimeRate}%`}
-          icon="✅"
-          variant={dashboard.onTimeRate >= 80 ? "success" : "warning"}
-        />
-      </div>
-
-      <LineMetrics
-        avgByLine={dashboard.avgByLine}
-        occupancyByLine={dashboard.occupancyByLine}
-        todayByLine={dashboard.todayByLine}
-      />
-
-      <OnTimeChart data={dashboard.weeklyOnTimeData} />
-    </section>
-  );
+  return <ManagerDashboard companyId={companyId} />;
 }
