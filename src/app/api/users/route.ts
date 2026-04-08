@@ -163,20 +163,49 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await supabaseAdmin
-      .from("profiles")
-      .update({ company_id: companyId, role, full_name: fullName })
-      .eq("id", authData.user.id);
+    const userId = authData.user.id;
+    const roleVal =
+      role === "pcp" || role === "operator" ? role : "operator";
 
-    if (role === "operator" && Array.isArray(lineIds) && lineIds.length > 0) {
-      const associations = lineIds.map((lineId: string) => ({
-        user_id: authData.user.id,
-        line_id: lineId,
-      }));
-      await supabaseAdmin.from("operator_lines").insert(associations);
+    const { error: profileErr } = await supabaseAdmin.from("profiles").upsert(
+      {
+        id: userId,
+        company_id: companyId,
+        role: roleVal,
+        full_name: String(fullName ?? "").trim() || emailTrim,
+        email: emailTrim,
+        is_active: true,
+      },
+      { onConflict: "id" }
+    );
+
+    if (profileErr) {
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+      return NextResponse.json(
+        { success: false, error: profileErr.message },
+        { status: 500 }
+      );
     }
 
-    return NextResponse.json({ success: true, userId: authData.user.id });
+    await supabaseAdmin.from("operator_lines").delete().eq("user_id", userId);
+
+    if (roleVal === "operator" && Array.isArray(lineIds) && lineIds.length > 0) {
+      const associations = lineIds.map((lineId: string) => ({
+        user_id: userId,
+        line_id: lineId,
+      }));
+      const { error: olErr } = await supabaseAdmin
+        .from("operator_lines")
+        .insert(associations);
+      if (olErr) {
+        return NextResponse.json(
+          { success: false, error: olErr.message },
+          { status: 500 }
+        );
+      }
+    }
+
+    return NextResponse.json({ success: true, userId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Erro interno do servidor";
     return NextResponse.json(
