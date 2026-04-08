@@ -388,12 +388,31 @@ export default function PedidosPage() {
         toast.error(error.message);
         return false;
       }
+
+      const { error: itemsError } = await supabase
+        .from("order_items")
+        .update({ status: "completed", completed_at: nowIso })
+        .eq("order_id", orderId)
+        .neq("status", "completed");
+      if (itemsError) {
+        toast.error(itemsError.message);
+        return false;
+      }
     } else return false;
 
     updateOrdersState((prev) =>
       prev.map((o) =>
         o.id === orderId
-          ? { ...o, status: "finished", finished_at: nowIso }
+          ? {
+              ...o,
+              status: "finished",
+              finished_at: nowIso,
+              items: o.items.map((it) =>
+                it.status === "completed"
+                  ? it
+                  : { ...it, status: "completed", completed_at: nowIso }
+              ),
+            }
           : o
       )
     );

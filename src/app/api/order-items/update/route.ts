@@ -110,6 +110,19 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
+
+      const { error: itemsErr } = await supabase
+        .from("order_items")
+        .update({ status: "completed", completed_at: nowIso })
+        .eq("order_id", orderId)
+        .neq("status", "completed");
+      if (itemsErr) {
+        return NextResponse.json(
+          { success: false, error: itemsErr.message },
+          { status: 500 }
+        );
+      }
+
       return NextResponse.json({ success: true });
     }
 

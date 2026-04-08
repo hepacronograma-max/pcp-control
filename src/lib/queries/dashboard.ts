@@ -233,3 +233,58 @@ export async function getDashboardData(companyId: string) {
   };
 }
 
+export type OperatorDashboardKpis = {
+  total: number;
+  waiting: number;
+  scheduled: number;
+  completed: number;
+};
+
+/**
+ * KPIs dos itens nas linhas vinculadas ao operador (`operator_lines`).
+ */
+export async function getOperatorDashboardKpis(
+  userId: string
+): Promise<OperatorDashboardKpis> {
+  const supabase = await createServerSupabaseClient();
+
+  const { data: opLines } = await supabase
+    .from("operator_lines")
+    .select("line_id")
+    .eq("user_id", userId);
+
+  const lineIds = [
+    ...new Set(
+      (opLines ?? [])
+        .map((r) => r.line_id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    ),
+  ];
+
+  if (lineIds.length === 0) {
+    return { total: 0, waiting: 0, scheduled: 0, completed: 0 };
+  }
+
+  const { data: items } = await supabase
+    .from("order_items")
+    .select("id, status")
+    .in("line_id", lineIds);
+
+  const rows = items ?? [];
+  let waiting = 0;
+  let scheduled = 0;
+  let completed = 0;
+  for (const row of rows) {
+    const s = row.status;
+    if (s === "waiting") waiting++;
+    else if (s === "scheduled") scheduled++;
+    else if (s === "completed") completed++;
+  }
+
+  return {
+    total: rows.length,
+    waiting,
+    scheduled,
+    completed,
+  };
+}
