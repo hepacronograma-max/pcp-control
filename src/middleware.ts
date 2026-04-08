@@ -5,7 +5,8 @@ export async function middleware(request: NextRequest) {
   if (
     request.nextUrl.pathname === "/api/auth/local-login" ||
     request.nextUrl.pathname === "/api/cleanup" ||
-    request.nextUrl.pathname === "/api/debug-operator"
+    request.nextUrl.pathname === "/api/debug-operator" ||
+    request.nextUrl.pathname === "/api/operator-dashboard"
   ) {
     return NextResponse.next({ request });
   }
