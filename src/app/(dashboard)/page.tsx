@@ -17,6 +17,8 @@ export default async function DashboardIndexPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  console.log("DASHBOARD - user:", user?.id, user?.email);
+
   if (!user) {
     redirect("/login");
   }
@@ -26,6 +28,8 @@ export default async function DashboardIndexPage() {
     .select("company_id, role")
     .eq("id", user.id)
     .single();
+
+  console.log("DASHBOARD - profile:", JSON.stringify(profile));
 
   if (!profile?.company_id) {
     redirect("/login");
@@ -38,7 +42,11 @@ export default async function DashboardIndexPage() {
   });
 
   if (profile.role === "operator") {
+    console.log("DASHBOARD - é operador, chamando KPIs para user:", user.id);
+
     const kpis = await getOperatorDashboardKpis(user.id);
+
+    console.log("DASHBOARD - kpis:", JSON.stringify(kpis));
 
     return (
       <section className="space-y-4">
