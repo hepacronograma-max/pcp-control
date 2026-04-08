@@ -39,3 +39,8 @@ ALTER TABLE production_lines ADD COLUMN IF NOT EXISTS is_almoxarifado boolean DE
 
 -- Registros antigos com is_active NULL não apareciam na UI (filtro .eq true).
 UPDATE production_lines SET is_active = true WHERE is_active IS NULL;
+
+-- Empresa: pasta matriz (PDFs) e logo — evita erro de schema cache se faltar coluna
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS orders_path text;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS import_path text;
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS logo_url text;

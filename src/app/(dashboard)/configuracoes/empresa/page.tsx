@@ -43,11 +43,30 @@ export default function CompanySettingsPage() {
 
     async function loadCompany() {
       try {
-        const { data } = await client
-          .from("companies")
-          .select("name, import_path, orders_path, logo_url")
-          .eq("id", companyId!)
-          .maybeSingle();
+        const selects = [
+          "name, logo_url, orders_path, import_path",
+          "name, logo_url, orders_path",
+          "name, logo_url, import_path",
+          "name, logo_url",
+        ];
+        type CompanyRow = {
+          name?: string | null;
+          orders_path?: string | null;
+          import_path?: string | null;
+          logo_url?: string | null;
+        };
+        let data: CompanyRow | null = null;
+        for (const sel of selects) {
+          const { data: row, error } = await client
+            .from("companies")
+            .select(sel)
+            .eq("id", companyId!)
+            .maybeSingle();
+          if (!error && row && typeof row === "object") {
+            data = row as CompanyRow;
+            break;
+          }
+        }
         if (data) {
           const f: CompanyForm = {
             name: data.name ?? "",

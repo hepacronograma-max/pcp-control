@@ -36,6 +36,7 @@ async function savePdfToFolder(
   const trimmed = (ordersPath || "").trim();
   if (!trimmed) return null;
   try {
+    /** Pasta do pedido = mesmo nome do pedido; `/` e caracteres inválidos viram `_` (ex.: 260184/4 → 260184_4). */
     const safeOrder = orderNumber.replace(/[<>:"/\\|?*]/g, "_");
     const folderPath = path.join(trimmed, safeOrder);
     if (!existsSync(folderPath)) {

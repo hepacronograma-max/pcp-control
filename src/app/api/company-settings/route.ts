@@ -99,26 +99,42 @@ export async function POST(request: NextRequest) {
 
     const supabase = createSupabaseAdminClient();
 
-    const payloadFull: Record<string, unknown> = {
-      name: name.slice(0, 255),
-      orders_path: ordersPath.slice(0, 2000),
-      import_path: ordersPath.slice(0, 2000),
-    };
+    const nameVal = name.slice(0, 255);
+    const pathVal = ordersPath.slice(0, 2000);
 
-    let { error } = await supabase.from("companies").update(payloadFull).eq("id", companyId);
+    /**
+     * Cada projeto Supabase pode ter só `orders_path`, só `import_path`, os dois ou nenhum.
+     * O fallback anterior pedia `import_path` quando faltava `orders_path` — quebrava se
+     * `import_path` não existisse no schema (erro de schema cache).
+     */
+    const variants: Record<string, unknown>[] = [
+      { name: nameVal, orders_path: pathVal },
+      { name: nameVal, import_path: pathVal },
+      { name: nameVal, orders_path: pathVal, import_path: pathVal },
+      { name: nameVal },
+    ];
 
-    if (error?.message?.includes("orders_path") || error?.message?.includes("column")) {
-      const payloadMin: Record<string, unknown> = {
-        name: name.slice(0, 255),
-        import_path: ordersPath.slice(0, 2000),
-      };
-      ({ error } = await supabase.from("companies").update(payloadMin).eq("id", companyId));
+    let lastError: string | null = null;
+    let ok = false;
+    for (const payload of variants) {
+      const { error } = await supabase
+        .from("companies")
+        .update(payload)
+        .eq("id", companyId);
+      if (!error) {
+        ok = true;
+        break;
+      }
+      lastError = error.message;
+      if (!/column|schema cache|does not exist|import_path|orders_path/i.test(lastError)) {
+        break;
+      }
     }
 
-    if (error) {
-      console.error("[company-settings]", error.message);
+    if (!ok && lastError) {
+      console.error("[company-settings]", lastError);
       return NextResponse.json(
-        { success: false, error: error.message },
+        { success: false, error: lastError },
         { status: 500 }
       );
     }
