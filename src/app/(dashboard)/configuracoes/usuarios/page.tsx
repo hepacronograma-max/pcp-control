@@ -65,10 +65,8 @@ export default function UsersSettingsPage() {
   const [formLineIds, setFormLineIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [repairEmail, setRepairEmail] = useState("");
-  const [repairName, setRepairName] = useState("");
-  const [repairRole, setRepairRole] = useState<"pcp" | "operator">("operator");
-  const [repairing, setRepairing] = useState(false);
+  const [deleteByEmail, setDeleteByEmail] = useState("");
+  const [deletingByEmail, setDeletingByEmail] = useState(false);
 
   /**
    * "Local" só quando não há Supabase ou é demo sem cookie de API.
@@ -325,32 +323,22 @@ export default function UsersSettingsPage() {
     }
   }
 
-  async function handleRepairProfile() {
-    if (!repairEmail.trim()) {
-      toast.error("Informe o e-mail do usuário");
+  async function handleDeleteByEmailAuth() {
+    const email = deleteByEmail.trim();
+    if (!email) {
+      toast.error("Informe o e-mail");
       return;
     }
-    const apiCompanyId = effectiveCompanyId ?? profile?.company_id;
-    if (
-      !isLocal &&
-      (!apiCompanyId || apiCompanyId === "local-company")
-    ) {
-      toast.error("Empresa não definida.");
+    if (!shouldUseLocalServiceApi(profile)) {
+      toast.error("Disponível apenas para administrador local.");
       return;
     }
-    setRepairing(true);
+    setDeletingByEmail(true);
     try {
-      const res = await fetch("/api/users/ensure-profile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({
-          email: repairEmail.trim(),
-          fullName: repairName.trim() || undefined,
-          role: repairRole,
-          companyId: apiCompanyId,
-        }),
-      });
+      const res = await fetch(
+        `/api/users?email=${encodeURIComponent(email)}`,
+        { method: "DELETE", credentials: "include" }
+      );
       let data: { success?: boolean; error?: string } = {};
       try {
         data = await res.json();
@@ -358,20 +346,19 @@ export default function UsersSettingsPage() {
         data = { error: `Erro ${res.status}` };
       }
       if (!res.ok || !data.success) {
-        throw new Error(data.error || "Não foi possível vincular o perfil");
+        throw new Error(data.error || "Erro ao excluir");
       }
-      toast.success("Perfil vinculado. Atualizando a lista…");
-      setRepairEmail("");
-      setRepairName("");
+      toast.success("Usuário removido. Cadastre de novo com o mesmo e-mail.");
+      setDeleteByEmail("");
       window.location.reload();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao vincular");
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
     } finally {
-      setRepairing(false);
+      setDeletingByEmail(false);
     }
   }
 
-  function handleDelete(userId: string) {
+  async function handleDelete(userId: string) {
     if (isLocal) {
       const ok = deleteLocalUser(userId);
       if (ok) {
@@ -380,8 +367,30 @@ export default function UsersSettingsPage() {
       } else {
         toast.error("Erro ao excluir usuário");
       }
+      setConfirmDeleteId(null);
+      return;
     }
-    setConfirmDeleteId(null);
+    try {
+      const res = await fetch(
+        `/api/users?userId=${encodeURIComponent(userId)}`,
+        { method: "DELETE", credentials: "include" }
+      );
+      let data: { success?: boolean; error?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        data = { error: `Erro ${res.status}` };
+      }
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Erro ao excluir usuário");
+      }
+      toast.success("Usuário excluído. Você pode cadastrar de novo com o mesmo e-mail.");
+      setConfirmDeleteId(null);
+      window.location.reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao excluir");
+      setConfirmDeleteId(null);
+    }
   }
 
   async function handleToggleActive(id: string, active: boolean) {
@@ -450,55 +459,30 @@ export default function UsersSettingsPage() {
         </div>
       </div>
 
-      {!isLocal && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-950 space-y-2">
-          <p className="font-medium text-amber-900">
-            E-mail já existe, mas o usuário não aparece na lista?
+      {!isLocal && shouldUseLocalServiceApi(profile) && (
+        <div className="rounded-md border border-slate-200 bg-slate-50/80 px-3 py-2 text-xs text-slate-700 space-y-2">
+          <p className="font-medium text-slate-800">
+            E-mail já existe no sistema mas não aparece na tabela?
           </p>
-          <p className="text-amber-800/90">
-            Isso pode ocorrer quando o cadastro no Auth ficou sem linha em{" "}
-            <code className="rounded bg-white/80 px-1">profiles</code>. Informe o
-            mesmo e-mail e clique em vincular — não apaga dados.
+          <p className="text-slate-600">
+            Remova o cadastro pelo e-mail (Auth + perfil) e crie o usuário de novo em{" "}
+            <strong>+ Novo Usuário</strong>.
           </p>
-          <div className="flex flex-wrap items-end gap-2">
-            <div className="space-y-0.5">
-              <Label className="text-[10px]">E-mail</Label>
-              <Input
-                className="h-8 text-xs min-w-[200px]"
-                placeholder="nome@empresa.com.br"
-                value={repairEmail}
-                onChange={(e) => setRepairEmail(e.target.value)}
-              />
-            </div>
-            <div className="space-y-0.5">
-              <Label className="text-[10px]">Nome (opcional)</Label>
-              <Input
-                className="h-8 text-xs min-w-[140px]"
-                placeholder="Nome completo"
-                value={repairName}
-                onChange={(e) => setRepairName(e.target.value)}
-              />
-            </div>
-            <div className="space-y-0.5">
-              <Label className="text-[10px]">Perfil</Label>
-              <select
-                className="rounded-md border border-slate-300 px-2 py-1 text-xs h-8"
-                value={repairRole}
-                onChange={(e) =>
-                  setRepairRole(e.target.value as "pcp" | "operator")
-                }
-              >
-                <option value="operator">Operador</option>
-                <option value="pcp">PCP</option>
-              </select>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              className="h-8 text-xs max-w-xs"
+              type="email"
+              placeholder="mesmo@email.com"
+              value={deleteByEmail}
+              onChange={(e) => setDeleteByEmail(e.target.value)}
+            />
             <Button
               type="button"
-              className="h-8 text-xs shrink-0 bg-white text-slate-800 border border-slate-300 hover:bg-slate-50"
-              disabled={repairing}
-              onClick={() => void handleRepairProfile()}
+              className="h-8 text-xs bg-white text-slate-800 border border-slate-300 hover:bg-slate-100"
+              disabled={deletingByEmail}
+              onClick={() => void handleDeleteByEmailAuth()}
             >
-              {repairing ? "Vinculando…" : "Vincular perfil"}
+              {deletingByEmail ? "Excluindo…" : "Excluir por e-mail"}
             </Button>
           </div>
         </div>

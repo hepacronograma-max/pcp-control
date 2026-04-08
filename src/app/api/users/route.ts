@@ -25,6 +25,28 @@ function isValidAuthEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
 
+async function findAuthUserIdByEmail(
+  admin: SupabaseClient,
+  email: string
+): Promise<string | null> {
+  const target = email.trim().toLowerCase();
+  let page = 1;
+  for (;;) {
+    const { data, error } = await admin.auth.admin.listUsers({
+      page,
+      perPage: 200,
+    });
+    if (error || !data?.users?.length) break;
+    const found = data.users.find(
+      (u) => (u.email ?? "").toLowerCase() === target
+    );
+    if (found) return found.id;
+    if (data.users.length < 200) break;
+    page += 1;
+  }
+  return null;
+}
+
 function getSupabaseAdmin(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -407,3 +429,171 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
+/**
+ * Remove usuário: operator_lines, perfil e conta no Auth.
+ * Query: ?userId=<uuid>
+ */
+export async function DELETE(request: NextRequest) {
+  let supabaseAdmin: SupabaseClient;
+  try {
+    supabaseAdmin = getSupabaseAdmin();
+  } catch (configError) {
+    const msg =
+      configError instanceof Error
+        ? configError.message
+        : "Supabase não configurado corretamente";
+    return NextResponse.json(
+      { success: false, error: msg },
+      { status: 500 }
+    );
+  }
+
+  try {
+    const { searchParams } = new URL(request.url);
+    let userId = String(searchParams.get("userId") ?? "").trim();
+    const emailParam = String(searchParams.get("email") ?? "").trim();
+
+    const cookieStore = await cookies();
+    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+
+    if ((!userId || !isUuid(userId)) && emailParam && hasLocalAuth) {
+      const foundId = await findAuthUserIdByEmail(supabaseAdmin, emailParam);
+      if (!foundId) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Nenhum usuário com este e-mail no Auth.",
+          },
+          { status: 404 }
+        );
+      }
+      userId = foundId;
+    }
+
+    if (!userId || !isUuid(userId)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Informe userId na URL ou, como administrador local, ?email= para remover alguém que não aparece na lista.",
+        },
+        { status: 400 }
+      );
+    }
+
+    let callerCompanyId: string | null = null;
+    let callerUserId: string | null = null;
+
+    if (hasLocalAuth) {
+      callerCompanyId = await resolvePrimaryCompanyId(supabaseAdmin);
+      if (!callerCompanyId) {
+        const { data: anyCompany } = await supabaseAdmin
+          .from("companies")
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+        callerCompanyId = anyCompany?.id ?? null;
+      }
+    } else {
+      const supabase = await createServerSupabaseClient();
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json(
+          { success: false, error: "Não autenticado" },
+          { status: 401 }
+        );
+      }
+      callerUserId = user.id;
+
+      const { data: caller } = await supabase
+        .from("profiles")
+        .select("role, company_id")
+        .eq("id", user.id)
+        .single();
+
+      if (!caller || !canManageUsers(caller.role)) {
+        return NextResponse.json(
+          { success: false, error: "Sem permissão" },
+          { status: 403 }
+        );
+      }
+
+      callerCompanyId = caller.company_id as string;
+    }
+
+    if (callerUserId && userId === callerUserId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Não é possível excluir o próprio usuário.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const { data: targetProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("company_id, role")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (targetProfile) {
+      if (!callerCompanyId || targetProfile.company_id !== callerCompanyId) {
+        return NextResponse.json(
+          { success: false, error: "Usuário não encontrado nesta empresa" },
+          { status: 403 }
+        );
+      }
+      if (targetProfile.role === "super_admin") {
+        return NextResponse.json(
+          { success: false, error: "Não é permitido excluir este perfil." },
+          { status: 403 }
+        );
+      }
+    } else if (!hasLocalAuth) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Este e-mail existe no Auth sem perfil. Exclua em Supabase → Authentication → Users ou use o login administrador local.",
+        },
+        { status: 404 }
+      );
+    }
+
+    await supabaseAdmin.from("operator_lines").delete().eq("user_id", userId);
+
+    const { error: delProfileErr } = await supabaseAdmin
+      .from("profiles")
+      .delete()
+      .eq("id", userId);
+
+    if (delProfileErr) {
+      return NextResponse.json(
+        { success: false, error: delProfileErr.message },
+        { status: 500 }
+      );
+    }
+
+    const { error: authDelErr } =
+      await supabaseAdmin.auth.admin.deleteUser(userId);
+
+    if (authDelErr) {
+      return NextResponse.json(
+        { success: false, error: authDelErr.message },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Erro interno do servidor";
+    return NextResponse.json(
+      { success: false, error: msg },
+      { status: 500 }
+    );
+  }
+}
