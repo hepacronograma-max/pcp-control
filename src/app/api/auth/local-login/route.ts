@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (email !== "admin@local" || password !== "123456") {
-    return NextResponse.redirect(`${origin}/login.html?error=credenciais`, 302);
+    return NextResponse.redirect(`${origin}/login?error=credenciais`, 302);
   }
 
   const response = NextResponse.redirect(`${origin}/dashboard`, 302);

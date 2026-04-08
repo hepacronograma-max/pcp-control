@@ -250,7 +250,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     if (isLocalUser) {
       window.localStorage.removeItem("pcp-local-profile");
       document.cookie = "pcp-local-auth=; path=/; max-age=0";
-      router.push("/login.html");
+      router.push("/login");
       router.refresh();
       return;
     }

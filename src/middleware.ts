@@ -9,6 +9,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next({ request });
   }
 
+  if (request.nextUrl.pathname === "/login.html") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    return NextResponse.redirect(url);
+  }
+
   const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
   const rawAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
   const url = rawUrl.trim();
@@ -31,7 +37,7 @@ export async function middleware(request: NextRequest) {
     if (isLoginPage) {
       return NextResponse.next({ request });
     }
-    return NextResponse.redirect(`${origin}/login.html`);
+    return NextResponse.redirect(`${origin}/login`);
   }
 
   let supabaseResponse = NextResponse.next({ request });
@@ -66,7 +72,7 @@ export async function middleware(request: NextRequest) {
     if (hasLocalAuth) {
       return NextResponse.next({ request });
     }
-    return NextResponse.redirect(`${origin}/login.html`);
+    return NextResponse.redirect(`${origin}/login`);
   }
 
   if (user && request.nextUrl.pathname.startsWith("/login")) {
