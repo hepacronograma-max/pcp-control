@@ -53,3 +53,13 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS full_name text;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS email text;
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
 UPDATE profiles SET is_active = true WHERE is_active IS NULL;
+
+-- operator_lines: vínculo operador ↔ linha (tela Usuários / linhas do operador)
+-- Se a tabela não existir, o CREATE abaixo cria; se existir sem colunas, o ALTER completa.
+CREATE TABLE IF NOT EXISTS public.operator_lines (
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  line_id uuid NOT NULL REFERENCES public.production_lines(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, line_id)
+);
+ALTER TABLE public.operator_lines ADD COLUMN IF NOT EXISTS user_id uuid;
+ALTER TABLE public.operator_lines ADD COLUMN IF NOT EXISTS line_id uuid;

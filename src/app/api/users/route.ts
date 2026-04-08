@@ -151,6 +151,36 @@ async function updateProfileNameAndRole(
   return { error: lastErr };
 }
 
+/** Junção user ↔ linha: projetos podem usar `line_id` ou `production_line_id`. */
+async function insertOperatorLineAssociations(
+  admin: SupabaseClient,
+  userId: string,
+  lineIds: string[]
+): Promise<{ error: { message: string } | null }> {
+  if (lineIds.length === 0) return { error: null };
+
+  const rows = lineIds.map((lineId) => ({
+    user_id: userId,
+    line_id: lineId,
+  }));
+  const altRows = lineIds.map((lineId) => ({
+    user_id: userId,
+    production_line_id: lineId,
+  }));
+
+  let { error } = await admin.from("operator_lines").insert(rows);
+  if (!error) return { error: null };
+  if (isMissingColumnOrSchemaError(error.message)) {
+    ({ error } = await admin.from("operator_lines").insert(altRows));
+    if (!error) return { error: null };
+  }
+  const hint =
+    /line_id|user_id|column|schema cache/i.test(error?.message ?? "")
+      ? " No SQL Editor: ALTER TABLE operator_lines ADD COLUMN IF NOT EXISTS line_id uuid; ALTER TABLE operator_lines ADD COLUMN IF NOT EXISTS user_id uuid; (veja supabase-add-columns.sql)"
+      : "";
+  return { error: { message: (error?.message ?? "insert operator_lines") + hint } };
+}
+
 async function findAuthUserIdByEmail(
   admin: SupabaseClient,
   email: string
@@ -505,13 +535,11 @@ export async function POST(request: NextRequest) {
       await supabaseAdmin.from("operator_lines").delete().eq("user_id", existingId);
 
       if (roleVal === "operator" && Array.isArray(lineIds) && lineIds.length > 0) {
-        const associations = lineIds.map((lineId: string) => ({
-          user_id: existingId,
-          line_id: lineId,
-        }));
-        const { error: olErr } = await supabaseAdmin
-          .from("operator_lines")
-          .insert(associations);
+        const { error: olErr } = await insertOperatorLineAssociations(
+          supabaseAdmin,
+          existingId,
+          lineIds
+        );
         if (olErr) {
           return NextResponse.json(
             { success: false, error: olErr.message },
@@ -563,13 +591,11 @@ export async function POST(request: NextRequest) {
     await supabaseAdmin.from("operator_lines").delete().eq("user_id", userId);
 
     if (roleVal === "operator" && Array.isArray(lineIds) && lineIds.length > 0) {
-      const associations = lineIds.map((lineId: string) => ({
-        user_id: userId,
-        line_id: lineId,
-      }));
-      const { error: olErr } = await supabaseAdmin
-        .from("operator_lines")
-        .insert(associations);
+      const { error: olErr } = await insertOperatorLineAssociations(
+        supabaseAdmin,
+        userId,
+        lineIds
+      );
       if (olErr) {
         return NextResponse.json(
           { success: false, error: olErr.message },
@@ -776,11 +802,11 @@ export async function PATCH(request: NextRequest) {
     await supabaseAdmin.from("operator_lines").delete().eq("user_id", userId);
 
     if (roleVal === "operator" && Array.isArray(lineIds) && lineIds.length > 0) {
-      const associations = lineIds.map((lineId: string) => ({
-        user_id: userId,
-        line_id: lineId,
-      }));
-      const { error: insErr } = await supabaseAdmin.from("operator_lines").insert(associations);
+      const { error: insErr } = await insertOperatorLineAssociations(
+        supabaseAdmin,
+        userId,
+        lineIds
+      );
       if (insErr) {
         return NextResponse.json(
           { success: false, error: insErr.message },
