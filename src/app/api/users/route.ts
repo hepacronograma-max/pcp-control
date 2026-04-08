@@ -18,6 +18,13 @@ function canManageUsers(role: string | null | undefined): boolean {
   );
 }
 
+/** Supabase Auth exige email com domínio válido (ex.: falta de .com / .com.br falha). */
+function isValidAuthEmail(email: string): boolean {
+  const e = email.trim();
+  if (e.length < 5) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
 function getSupabaseAdmin(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -129,9 +136,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const emailTrim = String(email ?? "").trim();
+    if (!emailTrim || !isValidAuthEmail(emailTrim)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Email inválido. Use um formato completo com domínio (ex.: nome@empresa.com.br).",
+        },
+        { status: 400 }
+      );
+    }
+
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
-        email,
+        email: emailTrim,
         password,
         email_confirm: true,
         user_metadata: { full_name: fullName, role },
@@ -270,8 +289,33 @@ export async function PATCH(request: NextRequest) {
     const emailVal = String(email ?? "").trim();
     const roleVal = role === "pcp" || role === "operator" ? role : "operator";
 
+    const { data: authUserWrap, error: authGetErr } =
+      await supabaseAdmin.auth.admin.getUserById(userId);
+    if (authGetErr || !authUserWrap?.user) {
+      return NextResponse.json(
+        { success: false, error: "Usuário não encontrado no Auth" },
+        { status: 404 }
+      );
+    }
+
+    const currentAuthEmail = (authUserWrap.user.email ?? "").trim().toLowerCase();
+    const emailNorm = emailVal.toLowerCase();
+    const emailChanged =
+      emailVal.length > 0 && emailNorm !== currentAuthEmail;
+
+    if (emailChanged && !isValidAuthEmail(emailVal)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Email inválido. Use um formato completo com domínio (ex.: nome@empresa.com.br).",
+        },
+        { status: 400 }
+      );
+    }
+
     const authUpdates: { email?: string; password?: string } = {};
-    if (emailVal) authUpdates.email = emailVal;
+    if (emailChanged) authUpdates.email = emailVal.trim();
     if (password != null && String(password).length > 0) {
       authUpdates.password = String(password);
     }
@@ -292,7 +336,9 @@ export async function PATCH(request: NextRequest) {
       full_name: nameVal,
       role: roleVal,
     };
-    if (emailVal) profileUpdate.email = emailVal;
+    if (emailChanged) {
+      profileUpdate.email = emailVal.trim();
+    }
 
     const { error: profErr } = await supabaseAdmin
       .from("profiles")

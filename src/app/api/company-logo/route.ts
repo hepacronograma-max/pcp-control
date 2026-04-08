@@ -124,8 +124,12 @@ export async function POST(request: NextRequest) {
 
     if (uploadError) {
       console.error("[company-logo] upload:", uploadError.message);
+      const raw = uploadError.message ?? "";
+      const friendly = /bucket not found/i.test(raw)
+        ? 'Bucket "company-logos" não existe no Storage. No Supabase: Storage → criar bucket público "company-logos", ou rode o script supabase-storage-company-logos.sql no SQL Editor.'
+        : raw;
       return NextResponse.json(
-        { success: false, error: uploadError.message },
+        { success: false, error: friendly },
         { status: 500 }
       );
     }

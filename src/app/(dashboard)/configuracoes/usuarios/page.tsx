@@ -22,6 +22,13 @@ import { toast } from "sonner";
 
 const LOCAL_LINES_KEY = "pcp-local-lines";
 
+/** Alinhado à API: domínio com ponto (Supabase Auth rejeita ex.: @hepaf sem .com). */
+function isValidAuthEmail(email: string): boolean {
+  const e = email.trim();
+  if (e.length < 5) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
 function loadLocalLines(companyId: string): ProductionLine[] {
   if (typeof window === "undefined") return [];
   try {
@@ -191,6 +198,16 @@ export default function UsersSettingsPage() {
     }
     if (modalMode === "create" && !formPassword) {
       toast.error("Preencha a senha");
+      return;
+    }
+    if (
+      !isLocal &&
+      modalMode === "create" &&
+      !isValidAuthEmail(formEmail)
+    ) {
+      toast.error(
+        "Email inválido. Use um formato completo com domínio (ex.: nome@empresa.com.br)."
+      );
       return;
     }
     const apiCompanyId = effectiveCompanyId ?? profile.company_id;
