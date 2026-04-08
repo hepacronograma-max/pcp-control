@@ -299,10 +299,24 @@ export default function UsersSettingsPage() {
             lineIds: formRole === "operator" ? formLineIds : [],
           }),
         });
-        let data: { success?: boolean; error?: string } = {};
-        try { data = await res.json(); } catch { data = { error: `Erro ${res.status}` }; }
-        if (!res.ok || !data.success) throw new Error(data.error || "Erro ao criar usuário");
-        toast.success("Usuário criado com sucesso");
+        let data: {
+          success?: boolean;
+          error?: string;
+          reusedExistingAuth?: boolean;
+        } = {};
+        try {
+          data = await res.json();
+        } catch {
+          data = { error: `Erro ${res.status}` };
+        }
+        if (!res.ok || !data.success) {
+          throw new Error(data.error || "Erro ao criar usuário");
+        }
+        toast.success(
+          data.reusedExistingAuth
+            ? "E-mail já existia no login; perfil e linhas foram atualizados."
+            : "Usuário criado com sucesso"
+        );
         closeModal();
         window.location.reload();
       } else if (modalMode === "edit" && editUserId) {

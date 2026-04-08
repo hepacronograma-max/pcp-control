@@ -26,6 +26,18 @@ function isValidAuthEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
 
+function isDuplicateAuthEmailError(message: string | undefined): boolean {
+  if (!message) return false;
+  const m = message.toLowerCase();
+  return (
+    m.includes("already been registered") ||
+    m.includes("already registered") ||
+    m.includes("user already registered") ||
+    m.includes("email address has already been registered") ||
+    m.includes("duplicate")
+  );
+}
+
 async function findAuthUserIdByEmail(
   admin: SupabaseClient,
   email: string
@@ -301,9 +313,108 @@ export async function POST(request: NextRequest) {
         user_metadata: { full_name: fullName, role },
       });
 
+    if (authError && isDuplicateAuthEmailError(authError.message)) {
+      const existingId = await findAuthUserIdByEmail(
+        supabaseAdmin,
+        emailTrim
+      );
+      if (!existingId) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Este e-mail já existe no Auth, mas não foi possível localizar o usuário. Exclua em Supabase → Authentication ou use «Excluir por e-mail».",
+          },
+          { status: 500 }
+        );
+      }
+
+      const { data: existingProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("company_id")
+        .eq("id", existingId)
+        .maybeSingle();
+
+      if (
+        existingProfile?.company_id &&
+        existingProfile.company_id !== companyId
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Este e-mail já está vinculado a outra empresa. Use outro e-mail.",
+          },
+          { status: 403 }
+        );
+      }
+
+      const roleVal =
+        role === "pcp" || role === "operator" ? role : "operator";
+
+      if (password != null && String(password).length > 0) {
+        const { error: pwdErr } =
+          await supabaseAdmin.auth.admin.updateUserById(existingId, {
+            password: String(password),
+          });
+        if (pwdErr) {
+          return NextResponse.json(
+            { success: false, error: pwdErr.message },
+            { status: 500 }
+          );
+        }
+      }
+
+      const { error: profileErr } = await supabaseAdmin.from("profiles").upsert(
+        {
+          id: existingId,
+          company_id: companyId,
+          role: roleVal,
+          full_name: String(fullName ?? "").trim() || emailTrim,
+        },
+        { onConflict: "id" }
+      );
+
+      if (profileErr) {
+        return NextResponse.json(
+          { success: false, error: profileErr.message },
+          { status: 500 }
+        );
+      }
+
+      await supabaseAdmin.from("operator_lines").delete().eq("user_id", existingId);
+
+      if (roleVal === "operator" && Array.isArray(lineIds) && lineIds.length > 0) {
+        const associations = lineIds.map((lineId: string) => ({
+          user_id: existingId,
+          line_id: lineId,
+        }));
+        const { error: olErr } = await supabaseAdmin
+          .from("operator_lines")
+          .insert(associations);
+        if (olErr) {
+          return NextResponse.json(
+            { success: false, error: olErr.message },
+            { status: 500 }
+          );
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        userId: existingId,
+        reusedExistingAuth: true,
+      });
+    }
+
     if (authError || !authData.user) {
       return NextResponse.json(
-        { success: false, error: authError?.message ?? "Erro ao criar usuário" },
+        {
+          success: false,
+          error:
+            authError?.message ??
+            "Erro ao criar usuário",
+        },
         { status: 500 }
       );
     }
