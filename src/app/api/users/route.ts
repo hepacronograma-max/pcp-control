@@ -38,6 +38,119 @@ function isDuplicateAuthEmailError(message: string | undefined): boolean {
   );
 }
 
+/** PostgREST / cache: coluna inexistente ou nome diferente no projeto. */
+function isMissingColumnOrSchemaError(message: string | undefined): boolean {
+  if (!message) return false;
+  return /could not find|schema cache|column|does not exist|PGRST204|undefined column/i.test(
+    message
+  );
+}
+
+/**
+ * `profiles` varia entre projetos (full_name vs name, colunas opcionais).
+ * Tenta payloads do mais completo ao mínimo só em erro de schema/coluna.
+ */
+async function upsertProfileForCompany(
+  admin: SupabaseClient,
+  userId: string,
+  companyId: string,
+  roleVal: string,
+  displayName: string,
+  emailTrim: string
+): Promise<{ error: { message: string } | null }> {
+  const display = String(displayName ?? "").trim() || emailTrim;
+
+  const attempts: Record<string, unknown>[] = [
+    {
+      id: userId,
+      company_id: companyId,
+      role: roleVal,
+      full_name: display,
+      email: emailTrim,
+      is_active: true,
+    },
+    {
+      id: userId,
+      company_id: companyId,
+      role: roleVal,
+      full_name: display,
+      email: emailTrim,
+    },
+    {
+      id: userId,
+      company_id: companyId,
+      role: roleVal,
+      full_name: display,
+      is_active: true,
+    },
+    {
+      id: userId,
+      company_id: companyId,
+      role: roleVal,
+      full_name: display,
+    },
+    {
+      id: userId,
+      company_id: companyId,
+      role: roleVal,
+      name: display,
+    },
+    {
+      id: userId,
+      company_id: companyId,
+      role: roleVal,
+      username: display,
+    },
+    { id: userId, company_id: companyId, role: roleVal },
+    { id: userId, company_id: companyId },
+  ];
+
+  let lastErr: { message: string } | null = null;
+  for (const payload of attempts) {
+    const { error } = await admin
+      .from("profiles")
+      .upsert(payload, { onConflict: "id" });
+    if (!error) return { error: null };
+    lastErr = error;
+    if (!isMissingColumnOrSchemaError(error.message)) {
+      return { error };
+    }
+  }
+  return {
+    error:
+      lastErr ?? {
+        message:
+          "Não foi possível gravar em profiles. Execute no Supabase o bloco SQL da tabela profiles em supabase-add-columns.sql.",
+      },
+  };
+}
+
+async function updateProfileNameAndRole(
+  admin: SupabaseClient,
+  userId: string,
+  nameVal: string,
+  roleVal: string
+): Promise<{ error: { message: string } | null }> {
+  const attempts: Record<string, unknown>[] = [
+    { full_name: nameVal, role: roleVal },
+    { name: nameVal, role: roleVal },
+    { full_name: nameVal },
+    { role: roleVal },
+    { name: nameVal },
+  ];
+
+  let lastErr: { message: string } | null = null;
+  for (const payload of attempts) {
+    const { error } = await admin.from("profiles").update(payload).eq("id", userId);
+    if (!error) return { error: null };
+    lastErr = error;
+    if (!isMissingColumnOrSchemaError(error.message)) {
+      return { error };
+    }
+  }
+  return { error: lastErr };
+}
+
 async function findAuthUserIdByEmail(
   admin: SupabaseClient,
   email: string
@@ -293,6 +406,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const companyIdResolved = String(companyId ?? "").trim();
+    if (!companyIdResolved || !isUuid(companyIdResolved)) {
+      return NextResponse.json(
+        { success: false, error: "companyId inválido" },
+        { status: 400 }
+      );
+    }
+
     const emailTrim = String(email ?? "").trim();
     if (!emailTrim || !isValidAuthEmail(emailTrim)) {
       return NextResponse.json(
@@ -337,7 +458,7 @@ export async function POST(request: NextRequest) {
 
       if (
         existingProfile?.company_id &&
-        existingProfile.company_id !== companyId
+        existingProfile.company_id !== companyIdResolved
       ) {
         return NextResponse.json(
           {
@@ -365,14 +486,13 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      const { error: profileErr } = await supabaseAdmin.from("profiles").upsert(
-        {
-          id: existingId,
-          company_id: companyId,
-          role: roleVal,
-          full_name: String(fullName ?? "").trim() || emailTrim,
-        },
-        { onConflict: "id" }
+      const { error: profileErr } = await upsertProfileForCompany(
+        supabaseAdmin,
+        existingId,
+        companyIdResolved,
+        roleVal,
+        String(fullName ?? "").trim() || emailTrim,
+        emailTrim
       );
 
       if (profileErr) {
@@ -423,14 +543,13 @@ export async function POST(request: NextRequest) {
     const roleVal =
       role === "pcp" || role === "operator" ? role : "operator";
 
-    const { error: profileErr } = await supabaseAdmin.from("profiles").upsert(
-      {
-        id: userId,
-        company_id: companyId,
-        role: roleVal,
-        full_name: String(fullName ?? "").trim() || emailTrim,
-      },
-      { onConflict: "id" }
+    const { error: profileErr } = await upsertProfileForCompany(
+      supabaseAdmin,
+      userId,
+      companyIdResolved,
+      roleVal,
+      String(fullName ?? "").trim() || emailTrim,
+      emailTrim
     );
 
     if (profileErr) {
@@ -640,15 +759,12 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    const profileUpdate: Record<string, unknown> = {
-      full_name: nameVal,
-      role: roleVal,
-    };
-
-    const { error: profErr } = await supabaseAdmin
-      .from("profiles")
-      .update(profileUpdate)
-      .eq("id", userId);
+    const { error: profErr } = await updateProfileNameAndRole(
+      supabaseAdmin,
+      userId,
+      nameVal,
+      roleVal
+    );
 
     if (profErr) {
       return NextResponse.json(
