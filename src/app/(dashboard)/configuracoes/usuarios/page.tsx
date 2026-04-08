@@ -193,6 +193,20 @@ export default function UsersSettingsPage() {
       toast.error("Preencha a senha");
       return;
     }
+    const apiCompanyId = effectiveCompanyId ?? profile.company_id;
+    if (
+      !isLocal &&
+      profile.company_id === "local-company" &&
+      !effectiveLoaded
+    ) {
+      toast.error("Aguarde o carregamento da empresa.");
+      return;
+    }
+    if (!isLocal && (!apiCompanyId || apiCompanyId === "local-company")) {
+      toast.error("Empresa não definida. Atualize a página ou configure a empresa.");
+      setSaving(false);
+      return;
+    }
     setSaving(true);
     try {
       if (isLocal) {
@@ -239,12 +253,13 @@ export default function UsersSettingsPage() {
         const res = await fetch("/api/users", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({
             email: formEmail.trim(),
             password: formPassword,
             fullName: formName.trim(),
             role: formRole,
-            companyId: profile.company_id,
+            companyId: apiCompanyId,
             lineIds: formRole === "operator" ? formLineIds : [],
           }),
         });
@@ -258,6 +273,7 @@ export default function UsersSettingsPage() {
         const res = await fetch("/api/users", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
+          credentials: "include",
           body: JSON.stringify({
             userId: editUserId,
             fullName: formName.trim(),

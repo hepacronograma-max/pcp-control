@@ -1,6 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
+
+function isUuid(s: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    s.trim()
+  );
+}
+
+function canManageUsers(role: string | null | undefined): boolean {
+  return (
+    role === "manager" ||
+    role === "admin" ||
+    role === "super_admin"
+  );
+}
 
 function getSupabaseAdmin(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -36,27 +52,82 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const supabase = await createServerSupabaseClient();
+    const body = await request.json();
+    const { email, password, fullName, role, companyId, lineIds } = body as {
+      email?: string;
+      password?: string;
+      fullName?: string;
+      role?: string;
+      companyId?: string;
+      lineIds?: string[];
+    };
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+    const cookieStore = await cookies();
+    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+
+    if (hasLocalAuth) {
+      const cid = String(companyId ?? "").trim();
+      if (!cid || !isUuid(cid)) {
+        return NextResponse.json(
+          { success: false, error: "companyId inválido" },
+          { status: 400 }
+        );
+      }
+      let primary = await resolvePrimaryCompanyId(supabaseAdmin);
+      if (!primary) {
+        const { data: anyCompany } = await supabaseAdmin
+          .from("companies")
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+        primary = anyCompany?.id ?? null;
+      }
+      if (primary && cid !== primary) {
+        return NextResponse.json(
+          { success: false, error: "Não permitido para esta empresa" },
+          { status: 403 }
+        );
+      }
+      if (!primary) {
+        const { data: row } = await supabaseAdmin
+          .from("companies")
+          .select("id")
+          .eq("id", cid)
+          .maybeSingle();
+        if (!row?.id) {
+          return NextResponse.json(
+            { success: false, error: "Empresa não encontrada" },
+            { status: 400 }
+          );
+        }
+      }
+    } else {
+      const supabase = await createServerSupabaseClient();
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+      }
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, company_id")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile || !canManageUsers(profile.role)) {
+        return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
+      }
+
+      if (String(companyId ?? "").trim() !== String(profile.company_id ?? "").trim()) {
+        return NextResponse.json(
+          { success: false, error: "Empresa inválida" },
+          { status: 403 }
+        );
+      }
     }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("role, company_id")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile || profile.role !== "manager") {
-      return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
-    }
-
-    const { email, password, fullName, role, companyId, lineIds } =
-      await request.json();
 
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
@@ -116,25 +187,6 @@ export async function PATCH(request: NextRequest) {
   }
 
   try {
-    const supabase = await createServerSupabaseClient();
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
-    }
-
-    const { data: caller } = await supabase
-      .from("profiles")
-      .select("role, company_id")
-      .eq("id", user.id)
-      .single();
-
-    if (!caller || caller.role !== "manager") {
-      return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
-    }
-
     const body = await request.json();
     const {
       userId,
@@ -159,13 +211,55 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    const cookieStore = await cookies();
+    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+
+    let callerCompanyId: string | null = null;
+
+    if (hasLocalAuth) {
+      callerCompanyId = await resolvePrimaryCompanyId(supabaseAdmin);
+      if (!callerCompanyId) {
+        const { data: anyCompany } = await supabaseAdmin
+          .from("companies")
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+        callerCompanyId = anyCompany?.id ?? null;
+      }
+    } else {
+      const supabase = await createServerSupabaseClient();
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+      }
+
+      const { data: caller } = await supabase
+        .from("profiles")
+        .select("role, company_id")
+        .eq("id", user.id)
+        .single();
+
+      if (!caller || !canManageUsers(caller.role)) {
+        return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
+      }
+
+      callerCompanyId = caller.company_id as string;
+    }
+
     const { data: targetProfile } = await supabaseAdmin
       .from("profiles")
       .select("company_id")
       .eq("id", userId)
       .maybeSingle();
 
-    if (!targetProfile || targetProfile.company_id !== caller.company_id) {
+    if (
+      !targetProfile ||
+      !callerCompanyId ||
+      targetProfile.company_id !== callerCompanyId
+    ) {
       return NextResponse.json(
         { success: false, error: "Usuário não encontrado nesta empresa" },
         { status: 403 }
