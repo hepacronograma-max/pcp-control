@@ -39,7 +39,7 @@ interface OrdersTableProps {
 }
 
 export function OrdersTable({
-  orders,
+  orders: _orders,
   visibleOrders,
   lines,
   userRole,
@@ -71,8 +71,7 @@ export function OrdersTable({
 
   const filteredAndSorted = useMemo(() => {
     const query = search.trim().toLowerCase();
-    // Quando há busca, pesquisa em TODOS os pedidos (abertos e finalizados)
-    const listToSearch = query ? orders : visibleOrders;
+    const listToSearch = visibleOrders;
     let list = listToSearch;
     if (query) {
       const statusLabels: Record<string, string> = {
@@ -112,7 +111,7 @@ export function OrdersTable({
       if (av > bv) return sortAsc ? 1 : -1;
       return 0;
     });
-  }, [orders, visibleOrders, search, sortKey, sortAsc]);
+  }, [visibleOrders, search, sortKey, sortAsc]);
 
   const allVisibleSelected =
     filteredAndSorted.length > 0 &&
