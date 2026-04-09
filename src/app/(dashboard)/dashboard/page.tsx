@@ -13,15 +13,41 @@ export default function DashboardPage() {
     // Verificar admin local
     const hasLocalAuth = document.cookie.includes("pcp-local-auth=1");
     if (hasLocalAuth) {
+      let cid: string | null = null;
+
+      // Tentar pegar do perfil local
       const localProfile = localStorage.getItem("pcp-local-profile");
       if (localProfile) {
         try {
           const parsed = JSON.parse(localProfile);
-          setCompanyId(parsed.company_id || null);
+          cid = parsed.company_id || null;
         } catch {
           /* ignore */
         }
       }
+
+      // Se não tem companyId ou não parece UUID, resolver via API
+      const isUuid =
+        cid &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+          cid
+        );
+      if (!isUuid) {
+        fetch("/api/effective-company", { credentials: "include" })
+          .then((r) => r.json())
+          .then((data: { companyId?: string | null }) => {
+            setCompanyId(data.companyId || null);
+            setRole("manager");
+            setLoading(false);
+          })
+          .catch(() => {
+            setRole("manager");
+            setLoading(false);
+          });
+        return;
+      }
+
+      setCompanyId(cid);
       setRole("manager");
       setLoading(false);
       return;
