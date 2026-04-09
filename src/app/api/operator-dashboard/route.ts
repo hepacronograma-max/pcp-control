@@ -30,22 +30,46 @@ export async function GET() {
       waiting: 0,
       scheduled: 0,
       completed: 0,
+      delayed: 0,
+      totalOrders: 0,
+      delayedOrders: 0,
     });
   }
 
   const { data: items } = await supabase
     .from("order_items")
-    .select("id, status")
+    .select("id, status, line_id, order_id, pcp_deadline, production_end")
     .in("line_id", lineIds);
 
   const rows = items ?? [];
+  const today = new Date().toISOString().split("T")[0];
+
   let waiting = 0;
   let scheduled = 0;
   let completed = 0;
+  let delayed = 0;
+  const orderIds = new Set<string>();
+  const delayedOrderIds = new Set<string>();
+
   for (const row of rows) {
+    if (row.order_id) orderIds.add(row.order_id);
+
     if (row.status === "waiting") waiting++;
     else if (row.status === "scheduled") scheduled++;
-    else if (row.status === "completed") completed++;
+    else if (row.status === "completed") {
+      completed++;
+      continue;
+    }
+
+    if (row.status !== "completed") {
+      const isDelayed =
+        (row.pcp_deadline && row.pcp_deadline < today) ||
+        (row.production_end && row.production_end < today);
+      if (isDelayed) {
+        delayed++;
+        if (row.order_id) delayedOrderIds.add(row.order_id);
+      }
+    }
   }
 
   return NextResponse.json({
@@ -53,5 +77,8 @@ export async function GET() {
     waiting,
     scheduled,
     completed,
+    delayed,
+    totalOrders: orderIds.size,
+    delayedOrders: delayedOrderIds.size,
   });
 }

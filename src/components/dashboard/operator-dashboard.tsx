@@ -8,6 +8,9 @@ interface OperatorKpis {
   waiting: number;
   scheduled: number;
   completed: number;
+  delayed: number;
+  totalOrders: number;
+  delayedOrders: number;
 }
 
 export function OperatorDashboard() {
@@ -33,6 +36,9 @@ export function OperatorDashboard() {
           waiting: data.waiting,
           scheduled: data.scheduled,
           completed: data.completed,
+          delayed: data.delayed ?? 0,
+          totalOrders: data.totalOrders ?? 0,
+          delayedOrders: data.delayedOrders ?? 0,
         });
         setLoading(false);
       })
@@ -71,8 +77,21 @@ export function OperatorDashboard() {
           <span>📅 {monthYear}</span>
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
+        <KPICard title="Total de pedidos" value={kpis.totalOrders} icon="📋" />
+        <KPICard
+          title="Pedidos em atraso"
+          value={kpis.delayedOrders}
+          icon="⏰"
+          variant={kpis.delayedOrders > 0 ? "danger" : "default"}
+        />
         <KPICard title="Total de itens" value={kpis.total} icon="📦" />
+        <KPICard
+          title="Itens em atraso"
+          value={kpis.delayed}
+          icon="🔴"
+          variant={kpis.delayed > 0 ? "danger" : "default"}
+        />
         <KPICard title="Aguardando" value={kpis.waiting} icon="⏳" />
         <KPICard title="Programados" value={kpis.scheduled} icon="📅" />
         <KPICard
