@@ -13,11 +13,11 @@ export default function DashboardPage() {
     // Verificar admin local
     const hasLocalAuth = document.cookie.includes("pcp-local-auth=1");
     if (hasLocalAuth) {
-      const localCompany = localStorage.getItem("local-company");
-      if (localCompany) {
+      const localProfile = localStorage.getItem("pcp-local-profile");
+      if (localProfile) {
         try {
-          const parsed = JSON.parse(localCompany);
-          setCompanyId(parsed.id || null);
+          const parsed = JSON.parse(localProfile);
+          setCompanyId(parsed.company_id || null);
         } catch {
           /* ignore */
         }
