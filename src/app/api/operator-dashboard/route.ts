@@ -33,7 +33,24 @@ export async function GET() {
       delayed: 0,
       totalOrders: 0,
       delayedOrders: 0,
+      chartByLine: [],
+      chartByStatus: [
+        { name: "Aguardando", value: 0 },
+        { name: "Programados", value: 0 },
+        { name: "Concluídos", value: 0 },
+        { name: "Em atraso", value: 0 },
+      ],
     });
+  }
+
+  const { data: lines } = await supabase
+    .from("production_lines")
+    .select("id, name")
+    .in("id", lineIds);
+
+  const lineNameMap: Record<string, string> = {};
+  for (const line of lines ?? []) {
+    lineNameMap[line.id] = line.name;
   }
 
   const { data: items } = await supabase
@@ -51,13 +68,31 @@ export async function GET() {
   const orderIds = new Set<string>();
   const delayedOrderIds = new Set<string>();
 
+  const byLine: Record<
+    string,
+    { total: number; completed: number; delayed: number }
+  > = {};
+
   for (const row of rows) {
     if (row.order_id) orderIds.add(row.order_id);
+
+    if (row.line_id) {
+      if (!byLine[row.line_id]) {
+        byLine[row.line_id] = { total: 0, completed: 0, delayed: 0 };
+      }
+      byLine[row.line_id].total++;
+    }
 
     if (row.status === "waiting") waiting++;
     else if (row.status === "scheduled") scheduled++;
     else if (row.status === "completed") {
       completed++;
+      if (row.line_id) {
+        if (!byLine[row.line_id]) {
+          byLine[row.line_id] = { total: 0, completed: 0, delayed: 0 };
+        }
+        byLine[row.line_id].completed++;
+      }
       continue;
     }
 
@@ -68,9 +103,22 @@ export async function GET() {
       if (isDelayed) {
         delayed++;
         if (row.order_id) delayedOrderIds.add(row.order_id);
+        if (row.line_id) {
+          if (!byLine[row.line_id]) {
+            byLine[row.line_id] = { total: 0, completed: 0, delayed: 0 };
+          }
+          byLine[row.line_id].delayed++;
+        }
       }
     }
   }
+
+  const chartByLine = Object.entries(byLine).map(([lineId, counts]) => ({
+    name: lineNameMap[lineId] || lineId.slice(0, 8),
+    total: counts.total,
+    concluidos: counts.completed,
+    atrasados: counts.delayed,
+  }));
 
   return NextResponse.json({
     total: rows.length,
@@ -80,5 +128,12 @@ export async function GET() {
     delayed,
     totalOrders: orderIds.size,
     delayedOrders: delayedOrderIds.size,
+    chartByLine,
+    chartByStatus: [
+      { name: "Aguardando", value: waiting },
+      { name: "Programados", value: scheduled },
+      { name: "Concluídos", value: completed },
+      { name: "Em atraso", value: delayed },
+    ],
   });
 }
