@@ -1,11 +1,17 @@
-// Placeholder de Service Worker para PWA.
-// Será refinado nas próximas fases conforme regras de cache do app.
-
-self.addEventListener("install", () => {
+self.addEventListener('install', function() {
   self.skipWaiting();
 });
 
-self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+self.addEventListener('activate', function(event) {
+  event.waitUntil(
+    caches.keys().then(function(cacheNames) {
+      return Promise.all(
+        cacheNames.map(function(cacheName) {
+          return caches.delete(cacheName);
+        })
+      );
+    }).then(function() {
+      return self.clients.claim();
+    })
+  );
 });
-
