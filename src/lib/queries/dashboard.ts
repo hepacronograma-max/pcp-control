@@ -14,15 +14,13 @@ export async function getDashboardData(companyId: string) {
   const openCount =
     allOrders?.filter((o) => o.status !== "finished").length ?? 0;
 
+  const todayStr = new Date().toISOString().split("T")[0];
   const delayedCount =
     allOrders?.filter((o) => {
-      if (o.status === "finished" || !o.production_deadline) return false;
-      const prod = new Date(o.production_deadline);
-      const delivery = o.delivery_deadline
-        ? new Date(o.delivery_deadline)
-        : null;
-      const pcp = o.pcp_deadline ? new Date(o.pcp_deadline) : null;
-      return (delivery && prod > delivery) || (pcp && prod > pcp);
+      if (o.status === "finished") return false;
+      if (o.delivery_deadline && o.delivery_deadline < todayStr) return true;
+      if (o.pcp_deadline && o.pcp_deadline < todayStr) return true;
+      return false;
     }).length ?? 0;
 
   const ninetyDaysAgo = new Date();
