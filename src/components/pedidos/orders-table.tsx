@@ -183,27 +183,11 @@ export function OrdersTable({
       <div
         className={`grid gap-2 px-4 py-2 min-h-[42px] items-center border-b border-slate-200 text-[11px] font-semibold text-slate-500 ${
           showBulk
-            ? "grid-cols-[28px_32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
+            ? "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_28px_minmax(0,1.5fr)_minmax(0,1.2fr)]"
             : "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
         }`}
       >
-        {showBulk ? (
-          <>
-            <div className="flex items-center justify-center">
-              <input
-                ref={selectAllRef}
-                type="checkbox"
-                checked={allVisibleSelected}
-                onChange={toggleSelectAllVisible}
-                title="Selecionar pedidos visíveis"
-                className="h-3.5 w-3.5 accent-slate-700 cursor-pointer"
-              />
-            </div>
-            <div />
-          </>
-        ) : (
-          <div />
-        )}
+        <div />
         <HeaderCell active={sortKey === "order_number"} onClick={() => toggleSort("order_number")}>
           Nº Pedido
         </HeaderCell>
@@ -228,6 +212,18 @@ export function OrdersTable({
         >
           Prazo Produção
         </HeaderCell>
+        {showBulk ? (
+          <div className="flex items-center justify-center">
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={toggleSelectAllVisible}
+              title="Selecionar pedidos visíveis"
+              className="h-3.5 w-3.5 accent-slate-700 cursor-pointer"
+            />
+          </div>
+        ) : null}
         <div className="col-span-2 text-right">Status</div>
       </div>
 
