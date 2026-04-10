@@ -18,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
-import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 
 type TabKey = "open" | "finished";
 
@@ -101,12 +100,19 @@ export default function PedidosPage() {
     async function loadData() {
       setLoadingData(true);
 
-      if (useApi) {
+      /** Login Supabase: mesmo endpoint que o modo local — service role evita RLS a bloquear pedidos (ex.: role PCP). */
+      if (useApi || supabase) {
         try {
           const res = await fetch(
             `/api/company-data?companyId=${encodeURIComponent(companyId)}`,
             { credentials: "include" }
           );
+          if (!res.ok) {
+            setOrders([]);
+            setLines([]);
+            setLoadingData(false);
+            return;
+          }
           const json = await res.json();
           setOrders((json.orders ?? []) as OrderWithItems[]);
           const raw = (json.lines ?? []) as ProductionLine[];
@@ -119,38 +125,8 @@ export default function PedidosPage() {
         return;
       }
 
-      if (!supabase) {
-        setOrders([]);
-        setLines([]);
-        setLoadingData(false);
-        return;
-      }
-
-      const { data: ordersData } = await supabase
-        .from("orders")
-        .select(
-          `
-          *,
-          items:order_items(
-            *,
-            production_line:production_lines(id, name)
-          )
-        `
-        )
-        .eq("company_id", companyId)
-        .order("delivery_deadline", { ascending: true });
-      setOrders((ordersData as OrderWithItems[]) ?? []);
-
-      const { data: linesData } = await supabase
-        .from("production_lines")
-        .select(
-          "id, name, company_id, is_active, sort_order, created_at, updated_at"
-        )
-        .eq("company_id", companyId)
-        .or(PRODUCTION_LINES_ACTIVE_OR)
-        .order("sort_order");
-      setLines((linesData as ProductionLine[]) ?? []);
-
+      setOrders([]);
+      setLines([]);
       setLoadingData(false);
     }
 

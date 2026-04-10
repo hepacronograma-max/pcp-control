@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import { itemNeedsProductionProgram } from "@/lib/utils/line-program-indicator";
 
@@ -105,29 +107,86 @@ async function unprogrammedByLineFromDb(
 export async function GET(request: NextRequest) {
   try {
     const supabase = createSupabaseAdminClient();
-
     const param = request.nextUrl.searchParams.get("companyId")?.trim() ?? "";
 
-    let companyId: string | null = null;
-    if (param && isUuid(param)) {
-      const { data: row } = await supabase
-        .from("companies")
-        .select("id")
-        .eq("id", param)
-        .maybeSingle();
-      if (row?.id) companyId = row.id;
-    }
+    const cookieStore = await cookies();
+    const isLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
 
-    if (!companyId) {
-      companyId = await resolvePrimaryCompanyId(supabase);
-    }
-    if (!companyId) {
-      const { data: anyCompany } = await supabase
-        .from("companies")
-        .select("id")
-        .limit(1)
-        .maybeSingle();
-      companyId = anyCompany?.id ?? null;
+    let companyId: string | null = null;
+
+    if (!isLocalAuth) {
+      const supabaseAuth = await createServerSupabaseClient();
+      const {
+        data: { user },
+      } = await supabaseAuth.auth.getUser();
+      if (!user) {
+        return NextResponse.json(
+          { error: "not authenticated" },
+          { status: 401 }
+        );
+      }
+
+      const { data: profile } = await supabaseAuth
+        .from("profiles")
+        .select("company_id, role")
+        .eq("id", user.id)
+        .single();
+
+      if (param && isUuid(param)) {
+        const { data: row } = await supabase
+          .from("companies")
+          .select("id")
+          .eq("id", param)
+          .maybeSingle();
+        if (row?.id) {
+          if (
+            profile?.role !== "super_admin" &&
+            param !== profile?.company_id
+          ) {
+            return NextResponse.json({ error: "forbidden" }, { status: 403 });
+          }
+          companyId = row.id;
+        }
+      }
+
+      if (!companyId) {
+        if (profile?.company_id) {
+          companyId = profile.company_id;
+        } else if (profile?.role === "super_admin") {
+          companyId = await resolvePrimaryCompanyId(supabase);
+          if (!companyId) {
+            const { data: anyCompany } = await supabase
+              .from("companies")
+              .select("id")
+              .limit(1)
+              .maybeSingle();
+            companyId = anyCompany?.id ?? null;
+          }
+        } else {
+          return NextResponse.json({ error: "no company" }, { status: 403 });
+        }
+      }
+    } else {
+      if (param && isUuid(param)) {
+        const { data: row } = await supabase
+          .from("companies")
+          .select("id")
+          .eq("id", param)
+          .maybeSingle();
+        if (row?.id) companyId = row.id;
+      }
+
+      if (!companyId) {
+        companyId = await resolvePrimaryCompanyId(supabase);
+      }
+      if (!companyId) {
+        const { data: anyCompany } = await supabase
+          .from("companies")
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+        companyId = anyCompany?.id ?? null;
+      }
     }
     if (!companyId) {
       return NextResponse.json({
