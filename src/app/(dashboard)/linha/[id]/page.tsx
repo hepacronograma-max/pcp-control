@@ -26,8 +26,14 @@ import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 import { productionLineIsAlmoxarifado } from "@/lib/supabase/sync-almoxarifado-on-program";
 import { toast } from "sonner";
+import { useUserPreferences } from "@/hooks/use-user-preferences";
 
 type TabKey = "all" | "in_progress" | "finished";
+
+interface LinePreferences {
+  sortKeys: LineSortKey[];
+  columnWidths: number[];
+}
 
 export default function LinePage() {
   const params = useParams<{ id: string }>();
@@ -49,11 +55,19 @@ export default function LinePage() {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loadingData, setLoadingData] = useState(false);
-  const [sortKeys, setSortKeys] = useState<LineSortKey[]>([
-    "production_start",
-    "production_end",
-    "order_number",
-  ]);
+
+  const defaultLinePrefs: LinePreferences = {
+    sortKeys: ["production_start", "production_end", "order_number"],
+    columnWidths: [],
+  };
+
+  const { preferences: linePrefs, setPreferences: setLinePrefs } =
+    useUserPreferences<LinePreferences>(`linha-${lineId}`, defaultLinePrefs);
+
+  const sortKeys = linePrefs.sortKeys;
+  const setSortKeys = (next: LineSortKey[]) => {
+    setLinePrefs((prev) => ({ ...prev, sortKeys: next }));
+  };
 
   /** Linha do menu Almoxarifado (UUID) — enviada na API para gravar o espelho no lugar certo. */
   const preferredAlmoxLineId = useMemo(() => {
@@ -586,6 +600,14 @@ export default function LinePage() {
                 isAlmoxarifado={isAlmoxarifado}
                 allLines={allLines}
                 onSupply={handleSupply}
+                columnWidths={
+                  linePrefs.columnWidths.length > 0
+                    ? linePrefs.columnWidths
+                    : undefined
+                }
+                onColumnWidthsChange={(widths) => {
+                  setLinePrefs((prev) => ({ ...prev, columnWidths: widths }));
+                }}
                 selectedItemIds={selectedIds}
                 onToggleItemSelected={
                   isAlmoxarifado

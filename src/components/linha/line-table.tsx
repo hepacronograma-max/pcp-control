@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { CompactDateCell } from "@/components/ui/compact-date-cell";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LineItemWithOrder } from "./gantt-calendar";
 import type { Profile, ProductionLine } from "@/lib/types/database";
 import { parseLocalDate } from "@/lib/utils/date";
@@ -126,6 +126,8 @@ interface LineTableProps {
   selectedItemIds?: Set<string>;
   onToggleItemSelected?: (itemId: string) => void;
   onToggleSelectAllVisible?: () => void;
+  columnWidths?: number[];
+  onColumnWidthsChange?: (widths: number[]) => void;
 }
 
 export function LineTable({
@@ -142,6 +144,8 @@ export function LineTable({
   selectedItemIds,
   onToggleItemSelected,
   onToggleSelectAllVisible,
+  columnWidths: columnWidthsProp,
+  onColumnWidthsChange,
 }: LineTableProps) {
   /**
    * Início/Fim precisam de ~104–116px: o seletor de data usa área mínima ~96px;
@@ -154,7 +158,21 @@ export function LineTable({
       ? [32, 54, 118, 158, 42, 76, 76, 116, 116, 40, 96]
       : [54, 118, 158, 42, 76, 76, 116, 116, 40, 96];
 
-  const [columnWidths, setColumnWidths] = useState<number[]>(defaultWidths);
+  const [internalWidths, setInternalWidths] = useState<number[]>(defaultWidths);
+  const columnWidths = columnWidthsProp ?? internalWidths;
+  const setColumnWidths = useCallback(
+    (updater: number[] | ((prev: number[]) => number[])) => {
+      if (onColumnWidthsChange) {
+        const current = columnWidthsProp ?? internalWidths;
+        const next =
+          typeof updater === "function" ? updater(current) : updater;
+        onColumnWidthsChange(next);
+      } else {
+        setInternalWidths(updater);
+      }
+    },
+    [onColumnWidthsChange, columnWidthsProp, internalWidths]
+  );
   const resizingIndexRef = useRef<number | null>(null);
   const startXRef = useRef(0);
   const startWidthsRef = useRef<number[]>([]);
@@ -218,7 +236,7 @@ export function LineTable({
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [columnWidths, columnMinWidths]);
+  }, [setColumnWidths, columnMinWidths]);
   function toggleSort(key: LineSortKey) {
     onChangeSort(getNextSortKeys(sortKeys, key));
   }
