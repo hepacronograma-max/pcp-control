@@ -8,7 +8,8 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname === "/api/debug-operator" ||
     request.nextUrl.pathname === "/api/operator-dashboard" ||
     request.nextUrl.pathname === "/api/me" ||
-    request.nextUrl.pathname === "/api/manager-dashboard"
+    request.nextUrl.pathname === "/api/manager-dashboard" ||
+    request.nextUrl.pathname === "/api/user-preferences"
   ) {
     return NextResponse.next({ request });
   }
