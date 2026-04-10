@@ -171,7 +171,7 @@ export function OrderRow({
   return (
     <>
       <div
-        className={`grid gap-2 px-4 py-1.5 border-b border-slate-200 text-xs items-center transition-colors ${
+        className={`grid gap-2 px-3 sm:px-4 py-1.5 border-b border-slate-200 text-xs items-center transition-colors ${
           showSelect
             ? "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_28px_minmax(0,1.5fr)_minmax(0,1.2fr)]"
             : "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"

@@ -14,6 +14,11 @@
   --line-gantt-row-h: 2.125rem; /* 34px — linhas (inalterado) */
 }
 
+html {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   background-color: var(--pcp-background);
 }

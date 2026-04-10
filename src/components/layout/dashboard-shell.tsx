@@ -280,7 +280,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     !profile || hasPermission(profile.role, "viewSettings");
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen min-h-[100dvh] flex w-full max-w-[100vw] overflow-x-hidden">
       {/* Sidebar desktop */}
       <aside className="hidden md:flex w-64 flex-col border-r bg-white">
         <div className="h-14 flex items-center px-4 border-b gap-2">
@@ -352,46 +352,50 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
       {/* Conteúdo principal com header */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <header className="h-14 shrink-0 border-b bg-white flex items-center px-4 justify-between sticky top-0 z-20">
-          <div className="flex items-center gap-2">
+        <header className="min-h-14 shrink-0 border-b bg-white flex flex-wrap items-center gap-x-2 gap-y-1 px-2 sm:px-4 py-2 justify-between sticky top-0 z-20 pt-[max(0.5rem,env(safe-area-inset-top))]">
+          <div className="flex items-center gap-1 sm:gap-2 min-w-0 flex-1">
             <button
-              className="md:hidden mr-2 rounded-md border p-1.5"
+              type="button"
+              className="md:hidden shrink-0 rounded-md border border-slate-200 p-2 min-h-[44px] min-w-[44px] flex flex-col items-center justify-center gap-0.5 active:bg-slate-50"
               onClick={() => setSidebarOpen(true)}
             >
               <span className="sr-only">Abrir menu</span>
-              <div className="w-4 h-0.5 bg-slate-800 mb-0.5" />
-              <div className="w-4 h-0.5 bg-slate-800 mb-0.5" />
+              <div className="w-4 h-0.5 bg-slate-800" />
+              <div className="w-4 h-0.5 bg-slate-800" />
               <div className="w-4 h-0.5 bg-slate-800" />
             </button>
-            <h1 className="text-sm font-medium text-slate-800">{pageTitle}</h1>
+            <h1 className="text-sm font-medium text-slate-800 truncate">
+              {pageTitle}
+            </h1>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 shrink-0">
             {profile && (
               <>
-                <div className="flex flex-col items-end">
-                  <span className="text-xs font-medium text-slate-800">
+                <div className="hidden sm:flex flex-col items-end min-w-0 max-w-[220px] md:max-w-none">
+                  <span className="text-xs font-medium text-slate-800 truncate max-w-full">
                     {profile.full_name}
                   </span>
-                  <span className="text-[11px] text-slate-500">
+                  <span className="text-[11px] text-slate-500 truncate max-w-full hidden sm:block">
                     {company?.name}
                   </span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700">
+                <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold bg-slate-100 text-slate-700 whitespace-nowrap">
                   {roleLabel}
                 </span>
               </>
             )}
             <button
+              type="button"
               onClick={handleLogout}
-              className="text-xs text-red-600 border border-red-200 rounded-md px-2 py-1 hover:bg-red-50"
+              className="text-xs text-red-600 border border-red-200 rounded-md px-2 py-1.5 min-h-[36px] sm:min-h-0 hover:bg-red-50 whitespace-nowrap"
             >
               Sair
             </button>
           </div>
         </header>
 
-        <main className="flex-1 min-h-0 flex flex-col overflow-y-auto p-4 lg:p-6 bg-slate-50">
+        <main className="flex-1 min-h-0 flex flex-col overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-6 pb-[max(1rem,env(safe-area-inset-bottom))] bg-slate-50">
           {loading ? (
             <div className="flex h-full items-center justify-center text-sm text-slate-500">
               Carregando...
@@ -402,20 +406,17 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         </main>
       </div>
 
-      {/* Sidebar mobile overlay */}
+      {/* Sidebar mobile: gaveta à esquerda + área de toque para fechar */}
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 flex md:hidden">
-          <div
-            className="flex-1 bg-black/40"
-            onClick={() => setSidebarOpen(false)}
-          />
-          <aside className="w-64 flex flex-col border-l bg-white">
-            <div className="h-14 flex items-center px-4 border-b justify-between">
-              <span className="text-sm font-semibold">
+          <aside className="w-[min(18rem,88vw)] flex flex-col border-r border-slate-200 bg-white shadow-xl pt-[env(safe-area-inset-top)]">
+            <div className="h-14 flex items-center px-4 border-b justify-between gap-2 min-w-0">
+              <span className="text-sm font-semibold truncate">
                 {company?.name ?? "PCP Control"}
               </span>
               <button
-                className="text-xs text-slate-500"
+                type="button"
+                className="text-xs text-slate-500 shrink-0 py-2 px-2 min-h-[44px]"
                 onClick={() => setSidebarOpen(false)}
               >
                 Fechar
@@ -457,18 +458,24 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                 />
               )}
             </nav>
-            <div className="border-t p-3">
+            <div className="border-t p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
               <button
+                type="button"
                 onClick={() => {
                   setSidebarOpen(false);
                   handleLogout();
                 }}
-                className="w-full rounded-md border border-red-200 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
+                className="w-full rounded-md border border-red-200 px-3 py-2.5 text-xs font-medium text-red-600 hover:bg-red-50 min-h-[44px]"
               >
                 Sair
               </button>
             </div>
           </aside>
+          <div
+            className="flex-1 bg-black/40 min-w-0"
+            onClick={() => setSidebarOpen(false)}
+            aria-hidden
+          />
         </div>
       )}
     </div>

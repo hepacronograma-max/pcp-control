@@ -565,11 +565,12 @@ export default function PedidosPage() {
       : orders.filter((o) => o.status !== "finished");
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+    <div className="space-y-4 w-full max-w-[100vw] min-w-0">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
-            className={`px-3 py-1.5 rounded-md text-xs font-medium border ${
+            type="button"
+            className={`px-3 py-2 min-h-[40px] rounded-md text-xs font-medium border ${
               tab === "open"
                 ? "bg-white border-slate-300 text-slate-900"
                 : "bg-slate-100 border-transparent text-slate-600"
@@ -579,7 +580,8 @@ export default function PedidosPage() {
             Em Aberto ({openCount})
           </button>
           <button
-            className={`px-3 py-1.5 rounded-md text-xs font-medium border ${
+            type="button"
+            className={`px-3 py-2 min-h-[40px] rounded-md text-xs font-medium border ${
               tab === "finished"
                 ? "bg-white border-slate-300 text-slate-900"
                 : "bg-slate-100 border-transparent text-slate-600"
@@ -589,7 +591,7 @@ export default function PedidosPage() {
             Finalizados ({finishedCount})
           </button>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+        <div className="flex items-center gap-2 flex-wrap sm:justify-end">
           <PageExportMenu
             fileNameBase={`pedidos-${tab === "open" ? "abertos" : "finalizados"}`}
             sheetTitle="Pedidos"

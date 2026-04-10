@@ -143,20 +143,22 @@ export function OrdersTable({
   }
 
   return (
-    <div className="bg-white rounded-lg border border-slate-200 shadow-sm">
-      <div className="px-4 py-2 border-b border-slate-200 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-800">Pedidos</h2>
+    <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+      <div className="px-3 sm:px-4 py-2 border-b border-slate-200 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <h2 className="text-sm font-semibold text-slate-800 shrink-0">Pedidos</h2>
         <input
-          type="text"
-          className="w-64 max-w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-xs"
-          placeholder="Buscar por pedido, cliente ou descrição do item..."
+          type="search"
+          enterKeyHint="search"
+          autoComplete="off"
+          className="w-full sm:w-64 sm:max-w-full min-h-[40px] rounded-md border border-slate-300 bg-white px-3 py-2 text-xs"
+          placeholder="Buscar pedido, cliente ou item..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
       {showBulk && selectedIds.size > 0 && (
-        <div className="px-4 py-2 border-b border-amber-200 bg-amber-50 flex flex-wrap items-center gap-2 text-xs">
+        <div className="px-3 sm:px-4 py-2 border-b border-amber-200 bg-amber-50 flex flex-wrap items-center gap-2 text-xs">
           <span className="font-medium text-slate-800">
             {selectedIds.size} pedido(s) selecionado(s)
           </span>
@@ -180,13 +182,14 @@ export function OrdersTable({
         </div>
       )}
 
-      <div
-        className={`grid gap-2 px-4 py-2 min-h-[42px] items-center border-b border-slate-200 text-[11px] font-semibold text-slate-500 ${
-          showBulk
-            ? "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_28px_minmax(0,1.5fr)_minmax(0,1.2fr)]"
-            : "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
-        }`}
-      >
+      <div className="overflow-x-auto border-b border-slate-200">
+        <div
+          className={`grid gap-2 px-3 sm:px-4 py-2 min-h-[42px] items-center text-[11px] font-semibold text-slate-500 min-w-[680px] ${
+            showBulk
+              ? "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_28px_minmax(0,1.5fr)_minmax(0,1.2fr)]"
+              : "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
+          }`}
+        >
         <div />
         <HeaderCell active={sortKey === "order_number"} onClick={() => toggleSort("order_number")}>
           Nº Pedido
@@ -225,31 +228,36 @@ export function OrdersTable({
           </div>
         ) : null}
         <div className="col-span-2 text-right">Status</div>
+        </div>
       </div>
 
       {filteredAndSorted.length === 0 ? (
-        <div className="px-4 py-6 text-center text-xs text-slate-500">
+        <div className="px-3 sm:px-4 py-6 text-center text-xs text-slate-500">
           Nenhum pedido encontrado.
         </div>
       ) : (
-        filteredAndSorted.map((order) => (
-          <OrderRow
-            key={order.id}
-            order={order}
-            lines={lines}
-            userRole={userRole}
-            onUpdateOrderPcpDate={onUpdateOrderPcpDate}
-            onUpdateItemLine={onUpdateItemLine}
-            onUpdateItemQuantity={onUpdateItemQuantity}
-            onUpdateItemPc={onUpdateItemPc}
-            onUpdateOrder={onUpdateOrder}
-            onDeleteOrder={onDeleteOrder}
-            onFinishOrder={onFinishOrder}
-            showSelect={showBulk}
-            selected={selectedIds.has(order.id)}
-            onToggleSelect={() => toggleOrder(order.id)}
-          />
-        ))
+        <div className="overflow-x-auto">
+          <div className="min-w-[680px]">
+            {filteredAndSorted.map((order) => (
+              <OrderRow
+                key={order.id}
+                order={order}
+                lines={lines}
+                userRole={userRole}
+                onUpdateOrderPcpDate={onUpdateOrderPcpDate}
+                onUpdateItemLine={onUpdateItemLine}
+                onUpdateItemQuantity={onUpdateItemQuantity}
+                onUpdateItemPc={onUpdateItemPc}
+                onUpdateOrder={onUpdateOrder}
+                onDeleteOrder={onDeleteOrder}
+                onFinishOrder={onFinishOrder}
+                showSelect={showBulk}
+                selected={selectedIds.has(order.id)}
+                onToggleSelect={() => toggleOrder(order.id)}
+              />
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

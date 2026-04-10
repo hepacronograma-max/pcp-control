@@ -101,8 +101,8 @@ export default function LinePage() {
     prevPathnameRef.current = path;
   }, [pathname]);
 
-  const fixedRef = useRef<HTMLDivElement | null>(null);
-  const ganttRef = useRef<HTMLDivElement | null>(null);
+  /** Um único scroll (X+Y) para tabela + Gantt — evita o Gantt com largura 0 em telemóveis. */
+  const lineGanttScrollRef = useRef<HTMLDivElement | null>(null);
 
   const useApi = shouldUseLocalServiceApi(profile);
 
@@ -207,15 +207,6 @@ export default function LinePage() {
 
     checkAccessAndLoad();
   }, [profile, effectiveCompanyId, lineId, tab, supabase, router, refreshKey, useApi]);
-
-  function syncScroll(source: "fixed" | "gantt") {
-    if (source === "fixed" && fixedRef.current && ganttRef.current) {
-      ganttRef.current.scrollTop = fixedRef.current.scrollTop;
-    }
-    if (source === "gantt" && fixedRef.current && ganttRef.current) {
-      fixedRef.current.scrollTop = ganttRef.current.scrollTop;
-    }
-  }
 
   async function handleChangeDate(
     itemId: string,
@@ -583,65 +574,65 @@ export default function LinePage() {
               Itens finalizados nesta linha.
             </p>
           )}
-          <div className="flex flex-1 min-h-0 overflow-hidden border border-slate-200 rounded-md bg-white">
+          <div className="flex flex-1 min-h-0 min-w-0 flex-col border border-slate-200 rounded-md bg-white">
             <div
-              ref={fixedRef}
-              onScroll={() => syncScroll("fixed")}
-              className="flex-shrink-0 overflow-y-auto sticky left-0 z-10 bg-white shadow-[4px_0_6px_-1px_rgba(0,0,0,0.1)]"
+              ref={lineGanttScrollRef}
+              className="flex-1 min-h-0 min-w-0 overflow-auto overscroll-x-contain [touch-action:pan-x_pan-y] [-webkit-overflow-scrolling:touch]"
             >
-              <LineTable
-                items={filteredItems}
-                profile={profile}
-                sortKeys={sortKeys}
-                onChangeSort={setSortKeys}
-                onChangeDate={handleChangeDate}
-                onChangeNotes={handleChangeNotes}
-                onComplete={handleComplete}
-                isAlmoxarifado={isAlmoxarifado}
-                allLines={allLines}
-                onSupply={handleSupply}
-                columnWidths={
-                  linePrefs.columnWidths.length > 0
-                    ? linePrefs.columnWidths
-                    : undefined
-                }
-                onColumnWidthsChange={(widths) => {
-                  setLinePrefs((prev) => ({ ...prev, columnWidths: widths }));
-                }}
-                selectedItemIds={selectedIds}
-                onToggleItemSelected={
-                  isAlmoxarifado
-                    ? undefined
-                    : (id) => {
-                        setSelectedIds((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(id)) next.delete(id);
-                          else next.add(id);
-                          return next;
-                        });
-                      }
-                }
-                onToggleSelectAllVisible={
-                  isAlmoxarifado
-                    ? undefined
-                    : () => {
-                        const ids = filteredItems.map((i) => i.id);
-                        setSelectedIds((prev) => {
-                          const allSel = ids.length > 0 && ids.every((id) => prev.has(id));
-                          if (allSel) return new Set();
-                          return new Set(ids);
-                        });
-                      }
-                }
-              />
-            </div>
-
-            <div
-              ref={ganttRef}
-              onScroll={() => syncScroll("gantt")}
-              className="flex-1 overflow-x-auto overflow-y-auto min-w-0"
-            >
-              <GanttCalendar items={filteredItems} holidays={holidays} />
+              <div className="flex w-max min-h-full flex-row items-stretch">
+                <div className="sticky left-0 z-20 flex-shrink-0 self-stretch bg-white shadow-[4px_0_6px_-1px_rgba(0,0,0,0.1)]">
+                  <LineTable
+                    items={filteredItems}
+                    profile={profile}
+                    sortKeys={sortKeys}
+                    onChangeSort={setSortKeys}
+                    onChangeDate={handleChangeDate}
+                    onChangeNotes={handleChangeNotes}
+                    onComplete={handleComplete}
+                    isAlmoxarifado={isAlmoxarifado}
+                    allLines={allLines}
+                    onSupply={handleSupply}
+                    columnWidths={
+                      linePrefs.columnWidths.length > 0
+                        ? linePrefs.columnWidths
+                        : undefined
+                    }
+                    onColumnWidthsChange={(widths) => {
+                      setLinePrefs((prev) => ({ ...prev, columnWidths: widths }));
+                    }}
+                    selectedItemIds={selectedIds}
+                    onToggleItemSelected={
+                      isAlmoxarifado
+                        ? undefined
+                        : (id) => {
+                            setSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(id)) next.delete(id);
+                              else next.add(id);
+                              return next;
+                            });
+                          }
+                    }
+                    onToggleSelectAllVisible={
+                      isAlmoxarifado
+                        ? undefined
+                        : () => {
+                            const ids = filteredItems.map((i) => i.id);
+                            setSelectedIds((prev) => {
+                              const allSel =
+                                ids.length > 0 &&
+                                ids.every((id) => prev.has(id));
+                              if (allSel) return new Set();
+                              return new Set(ids);
+                            });
+                          }
+                    }
+                  />
+                </div>
+                <div className="flex-shrink-0">
+                  <GanttCalendar items={filteredItems} holidays={holidays} />
+                </div>
+              </div>
             </div>
           </div>
         </div>
