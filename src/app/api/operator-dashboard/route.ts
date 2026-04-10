@@ -1,6 +1,15 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+type DelayedOrderRow = {
+  id: string;
+  order_number: string;
+  client_name: string | null;
+  delivery_deadline: string | null;
+  pcp_deadline: string | null;
+  status: string;
+};
+
 export async function GET() {
   const supabase = await createServerSupabaseClient();
   const {
@@ -33,6 +42,7 @@ export async function GET() {
       delayed: 0,
       totalOrders: 0,
       delayedOrders: 0,
+      delayedOrdersList: [] as DelayedOrderRow[],
       chartByLine: [],
       chartByStatus: [
         { name: "Aguardando", value: 0 },
@@ -120,6 +130,23 @@ export async function GET() {
     atrasados: counts.delayed,
   }));
 
+  let delayedOrdersList: DelayedOrderRow[] = [];
+  if (delayedOrderIds.size > 0) {
+    const { data: orderRows } = await supabase
+      .from("orders")
+      .select(
+        "id, order_number, client_name, delivery_deadline, pcp_deadline, status"
+      )
+      .in("id", [...delayedOrderIds])
+      .neq("status", "finished");
+
+    delayedOrdersList = (orderRows ?? []).sort((a, b) => {
+      const dateA = a.delivery_deadline || a.pcp_deadline || "";
+      const dateB = b.delivery_deadline || b.pcp_deadline || "";
+      return dateA.localeCompare(dateB);
+    }) as DelayedOrderRow[];
+  }
+
   return NextResponse.json({
     total: rows.length,
     waiting,
@@ -128,6 +155,7 @@ export async function GET() {
     delayed,
     totalOrders: orderIds.size,
     delayedOrders: delayedOrderIds.size,
+    delayedOrdersList,
     chartByLine,
     chartByStatus: [
       { name: "Aguardando", value: waiting },
