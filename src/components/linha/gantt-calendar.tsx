@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   addDays,
   eachDayOfInterval,
@@ -80,10 +81,12 @@ interface GanttCalendarProps {
 }
 
 export function GanttCalendar({ items, holidays }: GanttCalendarProps) {
-  const today = new Date();
-  const startDate = subDays(today, 2);
-  /** Mais dias no horizonte (antes 60); células mais finas cabem mais na tela */
-  const days = generateDays(startDate, 90, holidays);
+  /** Recalcula só quando feriados mudam — evita recriar ~91 colunas a cada render da página. */
+  const days = useMemo(() => {
+    const today = new Date();
+    const startDate = subDays(today, 2);
+    return generateDays(startDate, 90, holidays);
+  }, [holidays]);
 
   /** Alturas fixas iguais ao LineTable (--line-gantt-header-h / --line-gantt-row-h). */
   return (
@@ -112,49 +115,56 @@ export function GanttCalendar({ items, holidays }: GanttCalendarProps) {
       </div>
 
       <div>
-        {items.map((item) => (
-          <div
-            key={item.id}
-            className="flex h-[var(--line-gantt-row-h)] box-border border-b border-slate-200 overflow-hidden"
-          >
-            {days.map((day, idx) => {
-              const cellsWithBar = days.filter((d) => {
-                const start = item.production_start
-                  ? parseLocalDate(item.production_start)
-                  : null;
-                const end = item.production_end
-                  ? parseLocalDate(item.production_end)
-                  : null;
-                return !!start && !!end && d.date >= start && d.date <= end;
-              });
-              const isFirst =
-                cellsWithBar.length > 0 &&
-                cellsWithBar[0].date.getTime() === day.date.getTime();
-              const isLast =
-                cellsWithBar.length > 0 &&
-                cellsWithBar[cellsWithBar.length - 1].date.getTime() ===
-                  day.date.getTime();
+        {items.map((item) => {
+          const prodStart = item.production_start
+            ? parseLocalDate(item.production_start)
+            : null;
+          const prodEnd = item.production_end
+            ? parseLocalDate(item.production_end)
+            : null;
+          const cellsWithBar =
+            prodStart && prodEnd
+              ? days.filter(
+                  (d) => d.date >= prodStart && d.date <= prodEnd
+                )
+              : [];
+          const firstBarTime = cellsWithBar[0]?.date.getTime();
+          const lastBarTime =
+            cellsWithBar[cellsWithBar.length - 1]?.date.getTime();
 
-              return (
-                <div
-                  key={day.date.toISOString() + "-" + idx}
-                  className={`${GANTT_CELL} h-full flex items-center justify-center border-r border-slate-200 box-border ${getDayBackground(
-                    day
-                  )}`}
-                >
-                  <GanttBar
-                    day={day}
-                    productionStart={item.production_start}
-                    productionEnd={item.production_end}
-                    status={item.status}
-                    isFirst={isFirst}
-                    isLast={isLast}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        ))}
+          return (
+            <div
+              key={item.id}
+              className="flex h-[var(--line-gantt-row-h)] box-border border-b border-slate-200 overflow-hidden"
+            >
+              {days.map((day, idx) => {
+                const t = day.date.getTime();
+                const isFirst =
+                  cellsWithBar.length > 0 && firstBarTime === t;
+                const isLast =
+                  cellsWithBar.length > 0 && lastBarTime === t;
+
+                return (
+                  <div
+                    key={day.date.toISOString() + "-" + idx}
+                    className={`${GANTT_CELL} h-full flex items-center justify-center border-r border-slate-200 box-border ${getDayBackground(
+                      day
+                    )}`}
+                  >
+                    <GanttBar
+                      day={day}
+                      productionStart={item.production_start}
+                      productionEnd={item.production_end}
+                      status={item.status}
+                      isFirst={isFirst}
+                      isLast={isLast}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

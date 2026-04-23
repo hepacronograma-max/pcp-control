@@ -104,6 +104,12 @@ export default function LinePage() {
   /** Um único scroll (X+Y) para tabela + Gantt — evita o Gantt com largura 0 em telemóveis. */
   const lineGanttScrollRef = useRef<HTMLDivElement | null>(null);
 
+  /** Debounce de gravação de observações (evita request por tecla + corrige input controlado). */
+  const notesDebounceTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
+    {}
+  );
+  const pendingNotesRef = useRef<Record<string, string>>({});
+
   const useApi = shouldUseLocalServiceApi(profile);
 
   useEffect(() => {
@@ -285,8 +291,25 @@ export default function LinePage() {
     );
   }
 
-  async function handleChangeNotes(itemId: string, value: string) {
-    const notesVal = value.trim().slice(0, 2000);
+  function handleChangeNotes(itemId: string, value: string) {
+    const notesVal = value.slice(0, 2000);
+    pendingNotesRef.current[itemId] = notesVal;
+    setItems((prev) =>
+      prev.map((item) => (item.id === itemId ? { ...item, notes: notesVal } : item))
+    );
+
+    const prevTimer = notesDebounceTimersRef.current[itemId];
+    if (prevTimer) clearTimeout(prevTimer);
+    notesDebounceTimersRef.current[itemId] = setTimeout(() => {
+      delete notesDebounceTimersRef.current[itemId];
+      void persistNotes(itemId);
+    }, 450);
+  }
+
+  async function persistNotes(itemId: string) {
+    const rawAtSave = pendingNotesRef.current[itemId];
+    if (rawAtSave === undefined) return;
+    const notesVal = rawAtSave.trim().slice(0, 2000);
     if (useApi) {
       const res = await fetch("/api/order-items/update", {
         method: "POST",
@@ -294,13 +317,27 @@ export default function LinePage() {
         credentials: "include",
         body: JSON.stringify({ action: "notes", itemId, notes: notesVal }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        toast.error("Não foi possível salvar as observações.");
+        return;
+      }
     } else if (supabase) {
-      await supabase.from("order_items").update({ notes: notesVal }).eq("id", itemId);
+      const { error } = await supabase
+        .from("order_items")
+        .update({ notes: notesVal })
+        .eq("id", itemId);
+      if (error) {
+        toast.error(error.message || "Não foi possível salvar as observações.");
+        return;
+      }
     } else return;
-    setItems((prev) =>
-      prev.map((item) => (item.id === itemId ? { ...item, notes: notesVal } : item))
-    );
+    if (pendingNotesRef.current[itemId] === rawAtSave) {
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === itemId ? { ...item, notes: notesVal } : item
+        )
+      );
+    }
   }
 
   async function runCompleteItems(itemIds: string[]) {
