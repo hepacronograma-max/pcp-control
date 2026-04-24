@@ -13,6 +13,7 @@ import { hasPermission } from "@/lib/utils/permissions";
 type SortKey =
   | "order_number"
   | "client_name"
+  | "created_at"
   | "delivery_deadline"
   | "pcp_deadline"
   | "production_deadline";
@@ -184,10 +185,10 @@ export function OrdersTable({
 
       <div className="overflow-x-auto border-b border-slate-200">
         <div
-          className={`grid gap-2 px-3 sm:px-4 py-2 min-h-[42px] items-center text-[11px] font-semibold text-slate-500 min-w-[680px] ${
+          className={`grid gap-2 px-3 sm:px-4 py-2 min-h-[42px] items-center text-[11px] font-semibold text-slate-500 min-w-[780px] ${
             showBulk
-              ? "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_28px_minmax(0,1.5fr)_minmax(0,1.2fr)]"
-              : "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
+              ? "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.4fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,1.1fr)_minmax(0,0.95fr)_28px_minmax(0,1.5fr)_minmax(0,1.2fr)]"
+              : "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.4fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,1.1fr)_minmax(0,0.95fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
           }`}
         >
         <div />
@@ -196,6 +197,12 @@ export function OrdersTable({
         </HeaderCell>
         <HeaderCell active={sortKey === "client_name"} onClick={() => toggleSort("client_name")}>
           Cliente
+        </HeaderCell>
+        <HeaderCell
+          active={sortKey === "created_at"}
+          onClick={() => toggleSort("created_at")}
+        >
+          Data Início
         </HeaderCell>
         <HeaderCell
           active={sortKey === "delivery_deadline"}
@@ -237,7 +244,7 @@ export function OrdersTable({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <div className="min-w-[680px]">
+          <div className="min-w-[780px]">
             {filteredAndSorted.map((order) => (
               <OrderRow
                 key={order.id}

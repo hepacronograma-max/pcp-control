@@ -173,8 +173,8 @@ export function OrderRow({
       <div
         className={`grid gap-2 px-3 sm:px-4 py-1.5 border-b border-slate-200 text-xs items-center transition-colors ${
           showSelect
-            ? "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_28px_minmax(0,1.5fr)_minmax(0,1.2fr)]"
-            : "grid-cols-[32px_minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
+            ? "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.4fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,1.1fr)_minmax(0,0.95fr)_28px_minmax(0,1.5fr)_minmax(0,1.2fr)]"
+            : "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.4fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,1.1fr)_minmax(0,0.95fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
         } ${rowTrafficClass}`}
         title={
           traffic === "white"
@@ -196,6 +196,9 @@ export function OrderRow({
         </button>
         <div className="font-medium text-slate-800">{order.order_number}</div>
         <div className="truncate">{order.client_name}</div>
+        <div className="text-center text-slate-600">
+          {formatShortDate(order.created_at)}
+        </div>
         <div className="text-center">
           {formatShortDate(order.delivery_deadline)}
         </div>

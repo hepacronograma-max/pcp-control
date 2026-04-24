@@ -4,6 +4,8 @@ interface KPICardProps {
   title: string;
   value: string | number;
   icon: ReactNode;
+  /** Texto de ajuda (tooltip) ao passar o mouse. */
+  hint?: string;
   trend?: "up" | "down" | "neutral";
   trendValue?: string;
   variant?: "default" | "danger" | "success" | "warning";
@@ -13,6 +15,7 @@ export function KPICard({
   title,
   value,
   icon,
+  hint,
   trend,
   trendValue,
   variant = "default",
@@ -32,6 +35,7 @@ export function KPICard({
   return (
     <div
       className={`flex items-center gap-3 rounded-lg border px-4 py-3 shadow-sm ${variantClasses}`}
+      title={hint}
     >
       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-lg">
         {icon}

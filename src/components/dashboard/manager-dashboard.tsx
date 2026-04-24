@@ -63,6 +63,8 @@ export function ManagerDashboard({ companyId }: ManagerDashboardProps) {
     null
   );
   const [loading, setLoading] = useState(true);
+  const [includeCompletedInStatusDonut, setIncludeCompletedInStatusDonut] =
+    useState(false);
 
   useEffect(() => {
     fetch(
@@ -101,7 +103,12 @@ export function ManagerDashboard({ companyId }: ManagerDashboardProps) {
     year: "numeric",
   });
 
-  const pieData = (dashboard.chartByStatus ?? []).filter((s) => s.value > 0);
+  const pieDataRaw = (dashboard.chartByStatus ?? []).filter(
+    (s) => s.value > 0
+  );
+  const pieData = includeCompletedInStatusDonut
+    ? pieDataRaw
+    : pieDataRaw.filter((s) => s.name !== "Concluídos");
 
   return (
     <section className="space-y-4">
@@ -125,6 +132,7 @@ export function ManagerDashboard({ companyId }: ManagerDashboardProps) {
         />
         <KPICard
           title="Lead time médio"
+          hint="Média de dias (criado → finalizado) dos pedidos concluídos nos últimos 90 dias, na empresa."
           value={
             dashboard.avgLeadTime === "--"
               ? "--"
@@ -179,9 +187,28 @@ export function ManagerDashboard({ companyId }: ManagerDashboardProps) {
           </div>
 
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-3">
-              Distribuição por Status
-            </h3>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700">
+                  Distribuição de Itens por Status
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Itens (não pedidos). “Em atraso” = produção atrasada ou
+                  pedido com prazo vencido (cada item em aberto conta).
+                </p>
+              </div>
+              <label className="flex items-center gap-2 shrink-0 text-xs text-slate-600 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="rounded border-slate-300"
+                  checked={includeCompletedInStatusDonut}
+                  onChange={(e) =>
+                    setIncludeCompletedInStatusDonut(e.target.checked)
+                  }
+                />
+                <span>Incluir concluídos</span>
+              </label>
+            </div>
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
                 <Pie
@@ -214,6 +241,8 @@ export function ManagerDashboard({ companyId }: ManagerDashboardProps) {
 
       <LineMetrics
         avgByLine={dashboard.avgByLine}
+        orderLeadTimeByLine={dashboard.orderLeadTimeByLine ?? []}
+        suggestedPrazoNovosItensByLine={dashboard.suggestedPrazoNovosItensByLine ?? []}
         occupancyByLine={dashboard.occupancyByLine}
         todayByLine={dashboard.todayByLine}
       />

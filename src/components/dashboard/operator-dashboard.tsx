@@ -176,9 +176,15 @@ export function OperatorDashboard() {
           </div>
 
           <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <h3 className="text-sm font-semibold text-slate-700 mb-3">
-              Distribuição por Status
-            </h3>
+            <div className="mb-3">
+              <h3 className="text-sm font-semibold text-slate-700">
+                Distribuição de Itens por Status
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Itens (não pedidos). “Em atraso” = produção atrasada ou prazo do
+                pedido vencido (cada item em aberto conta).
+              </p>
+            </div>
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
                 <Pie

@@ -49,14 +49,18 @@ export async function reconcileAlmoxMirrorsForCompany(
     )
     .in("line_id", sourceLineIds)
     .not("production_start", "is", null)
-    .not("production_end", "is", null);
+    .not("production_end", "is", null)
+    .neq("status", "completed");
 
   if (qe) {
     console.error("[reconcile-almox]", qe);
     return { touched: 0, error: qe.message };
   }
 
-  const orderIds = [...new Set((items ?? []).map((it) => it.order_id))];
+  const itemList = items ?? [];
+  console.log(`[reconcile-almox] start: ${itemList.length} items`);
+
+  const orderIds = [...new Set(itemList.map((it) => it.order_id))];
   const orderPcpMap = new Map<string, string | null>();
   const CHUNK = 120;
   for (let i = 0; i < orderIds.length; i += CHUNK) {
@@ -72,7 +76,7 @@ export async function reconcileAlmoxMirrorsForCompany(
 
   let touched = 0;
 
-  for (const it of items ?? []) {
+  for (const it of itemList) {
     const orderPcp = orderPcpMap.get(it.order_id) ?? null;
 
     const changed = await syncAlmoxarifadoOnProgram({
@@ -91,6 +95,10 @@ export async function reconcileAlmoxMirrorsForCompany(
     });
     if (changed) touched += 1;
   }
+
+  console.log(
+    `[reconcile-almox] end: ${touched} espelhos criados/atualizados`
+  );
 
   return { touched };
 }

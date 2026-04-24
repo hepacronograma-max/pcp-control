@@ -3,6 +3,10 @@ import { getDashboardData } from "@/lib/queries/dashboard";
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  orderAppliesToDashboardDelayKpi,
+  orderItemInDashboardAtrasoStatusPiece,
+} from "@/lib/utils/order-aggregates";
 
 type ChartByLineRow = {
   name: string;
@@ -30,100 +34,143 @@ async function getManagerDashboardExtras(
   chartByStatus: ChartByStatusRow[];
   delayedOrdersList: DelayedOrderRow[];
 }> {
-  let chartByLine: ChartByLineRow[] = [];
-  let chartByStatus: ChartByStatusRow[] = [];
-
   const { data: lines } = await supabase
     .from("production_lines")
     .select("id, name")
     .eq("company_id", companyId);
 
-  const lineIds = (lines ?? []).map((l) => l.id);
   const lineNameMap: Record<string, string> = {};
   for (const line of lines ?? []) {
     lineNameMap[line.id] = line.name;
   }
 
-  if (lineIds.length > 0) {
+  // Busca todos os pedidos da empresa (inclui finalizados para referência do
+  // `chartByStatus` de itens; itens de pedidos finalizados entram como
+  // "Concluídos" se estiverem completos).
+  const { data: orders } = await supabase
+    .from("orders")
+    .select(
+      "id, order_number, client_name, delivery_deadline, pcp_deadline, status"
+    )
+    .eq("company_id", companyId);
+
+  const orderList = orders ?? [];
+  const orderIds = orderList.map((o) => o.id);
+  type OrderRow = (typeof orderList)[number];
+  const orderMap = new Map<string, OrderRow>();
+  for (const o of orderList) orderMap.set(o.id, o);
+
+  let waiting = 0;
+  let scheduled = 0;
+  let completed = 0;
+  let delayed = 0;
+
+  const byLine: Record<
+    string,
+    { total: number; completed: number; delayed: number }
+  > = {};
+
+  const delayedOrderIds = new Set<string>();
+
+  if (orderIds.length > 0) {
     const { data: items } = await supabase
       .from("order_items")
-      .select("id, status, line_id, pcp_deadline, production_end")
-      .in("line_id", lineIds);
+      .select("id, status, line_id, order_id, production_end")
+      .in("order_id", orderIds);
 
-    const todayStr = new Date().toISOString().split("T")[0];
-    const byLine: Record<
-      string,
-      { total: number; completed: number; delayed: number }
-    > = {};
-    let waiting = 0;
-    let scheduled = 0;
-    let completed = 0;
-    let delayed = 0;
+    const byOrder: Record<string, { status: string; production_end: string | null }[]> = {};
+    for (const it of items ?? []) {
+      if (!it.order_id) continue;
+      if (!byOrder[it.order_id]) byOrder[it.order_id] = [];
+      byOrder[it.order_id]!.push({
+        status: it.status,
+        production_end: it.production_end,
+      });
+    }
+
+    for (const o of orderList) {
+      if (o.status === "finished") continue;
+      const list = byOrder[o.id] ?? [];
+      if (
+        orderAppliesToDashboardDelayKpi(
+          {
+            status: o.status,
+            delivery_deadline: o.delivery_deadline,
+            pcp_deadline: o.pcp_deadline,
+          },
+          list
+        )
+      ) {
+        delayedOrderIds.add(o.id);
+      }
+    }
 
     for (const row of items ?? []) {
+      const ord = row.order_id ? orderMap.get(row.order_id) : undefined;
+      const isDelayed =
+        !!ord &&
+        orderItemInDashboardAtrasoStatusPiece(
+          { status: row.status, production_end: row.production_end },
+          {
+            status: ord.status,
+            delivery_deadline: ord.delivery_deadline,
+            pcp_deadline: ord.pcp_deadline,
+          }
+        );
+
+      // Categorias mutuamente exclusivas:
+      let bucket: "waiting" | "scheduled" | "completed" | "delayed";
+      if (row.status === "completed") bucket = "completed";
+      else if (isDelayed) bucket = "delayed";
+      else if (row.status === "scheduled") bucket = "scheduled";
+      else bucket = "waiting";
+
+      if (bucket === "waiting") waiting++;
+      else if (bucket === "scheduled") scheduled++;
+      else if (bucket === "completed") completed++;
+      else delayed++;
+
       if (row.line_id) {
         if (!byLine[row.line_id]) {
           byLine[row.line_id] = { total: 0, completed: 0, delayed: 0 };
         }
         byLine[row.line_id].total++;
-      }
-
-      if (row.status === "waiting") waiting++;
-      else if (row.status === "scheduled") scheduled++;
-      else if (row.status === "completed") {
-        completed++;
-        if (row.line_id) byLine[row.line_id].completed++;
-        continue;
-      }
-
-      if (row.status !== "completed") {
-        const isDelayed =
-          (row.pcp_deadline && row.pcp_deadline < todayStr) ||
-          (row.production_end && row.production_end < todayStr);
-        if (isDelayed) {
-          delayed++;
-          if (row.line_id) byLine[row.line_id].delayed++;
-        }
+        if (bucket === "completed") byLine[row.line_id].completed++;
+        else if (bucket === "delayed") byLine[row.line_id].delayed++;
       }
     }
+  }
 
-    chartByLine = Object.entries(byLine).map(([lineId, counts]) => ({
+  const chartByLine: ChartByLineRow[] = Object.entries(byLine).map(
+    ([lineId, counts]) => ({
       name: lineNameMap[lineId] || lineId.slice(0, 8),
       total: counts.total,
       concluidos: counts.completed,
       atrasados: counts.delayed,
-    }));
-
-    chartByStatus = [
-      { name: "Aguardando", value: waiting },
-      { name: "Programados", value: scheduled },
-      { name: "Concluídos", value: completed },
-      { name: "Em atraso", value: delayed },
-    ];
-  }
-
-  const todayStr2 = new Date().toISOString().split("T")[0];
-  const { data: allOrders } = await supabase
-    .from("orders")
-    .select(
-      "id, order_number, client_name, delivery_deadline, pcp_deadline, status"
-    )
-    .eq("company_id", companyId)
-    .neq("status", "finished");
-
-  const delayedOrdersList = (allOrders ?? [])
-    .filter((o) => {
-      if (o.delivery_deadline && o.delivery_deadline < todayStr2) return true;
-      if (o.pcp_deadline && o.pcp_deadline < todayStr2) return true;
-      return false;
     })
+  );
+
+  const chartByStatus: ChartByStatusRow[] = [
+    { name: "Aguardando", value: waiting },
+    { name: "Programados", value: scheduled },
+    { name: "Concluídos", value: completed },
+    { name: "Em atraso", value: delayed },
+  ];
+
+  const delayedOrdersList = [...delayedOrderIds]
+    .map((id) => orderMap.get(id))
+    .filter((o): o is NonNullable<typeof o> => !!o)
     .sort((a, b) => {
       const dateA = a.delivery_deadline || a.pcp_deadline || "";
       const dateB = b.delivery_deadline || b.pcp_deadline || "";
       return dateA.localeCompare(dateB);
     }) as DelayedOrderRow[];
 
-  return { chartByLine, chartByStatus, delayedOrdersList };
+  return {
+    chartByLine,
+    chartByStatus,
+    delayedOrdersList,
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -160,8 +207,10 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const data = await getDashboardData(companyId);
   const supabase = await createServerSupabaseClient();
-  const extras = await getManagerDashboardExtras(supabase, companyId);
+  const [data, extras] = await Promise.all([
+    getDashboardData(companyId),
+    getManagerDashboardExtras(supabase, companyId),
+  ]);
   return NextResponse.json({ ...data, ...extras });
 }

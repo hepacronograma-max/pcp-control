@@ -166,13 +166,7 @@ export default function LinePage() {
 
       setLoadingData(true);
 
-      const { data: lineData } = await supabase
-        .from("production_lines")
-        .select("*")
-        .eq("id", lineId)
-        .single();
-      setLine((lineData as ProductionLine) ?? null);
-
+      const cid = companyId ?? currentProfile.company_id;
       const baseItemsQuery = supabase
         .from("order_items")
         .select(
@@ -184,29 +178,36 @@ export default function LinePage() {
         .eq("line_id", lineId)
         .order("production_start", { ascending: true, nullsFirst: false })
         .order("production_end", { ascending: true });
-
       let itemsQuery = baseItemsQuery;
       if (tab === "in_progress") {
         itemsQuery = baseItemsQuery.neq("status", "completed");
       } else if (tab === "finished") {
         itemsQuery = baseItemsQuery.eq("status", "completed");
       }
-      const { data: itemsData } = await itemsQuery;
-      setItems((itemsData as unknown as LineItemWithOrder[]) ?? []);
 
-      const { data: holidaysData } = await supabase
-        .from("holidays")
-        .select("id, company_id, date, description, is_recurring, created_at")
-        .eq("company_id", companyId ?? currentProfile.company_id);
-      setHolidays((holidaysData as Holiday[]) ?? []);
+      const [lineRes, itemsRes, holidaysRes, allLinesRes] = await Promise.all([
+        supabase
+          .from("production_lines")
+          .select("*")
+          .eq("id", lineId)
+          .single(),
+        itemsQuery,
+        supabase
+          .from("holidays")
+          .select("id, company_id, date, description, is_recurring, created_at")
+          .eq("company_id", cid),
+        supabase
+          .from("production_lines")
+          .select("id, name, company_id, is_active, sort_order")
+          .eq("company_id", cid)
+          .or(PRODUCTION_LINES_ACTIVE_OR)
+          .order("sort_order"),
+      ]);
 
-      const { data: allLinesData } = await supabase
-        .from("production_lines")
-        .select("id, name, company_id, is_active, sort_order")
-        .eq("company_id", companyId ?? currentProfile.company_id)
-        .or(PRODUCTION_LINES_ACTIVE_OR)
-        .order("sort_order");
-      setAllLines((allLinesData as ProductionLine[]) ?? []);
+      setLine((lineRes.data as ProductionLine) ?? null);
+      setItems((itemsRes.data as unknown as LineItemWithOrder[]) ?? []);
+      setHolidays((holidaysRes.data as Holiday[]) ?? []);
+      setAllLines((allLinesRes.data as ProductionLine[]) ?? []);
 
       setLoadingData(false);
     }
@@ -519,6 +520,7 @@ export default function LinePage() {
                 "Início prod.",
                 "Fim prod.",
                 "Status",
+                "Obs.",
               ],
               rows: sortedItems.map((it) => {
                 const pcp =
@@ -537,6 +539,7 @@ export default function LinePage() {
                   it.production_start ?? "",
                   it.production_end ?? "",
                   it.status,
+                  it.notes ?? "",
                 ];
               }),
             })}

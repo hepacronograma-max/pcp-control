@@ -118,7 +118,13 @@ export async function syncAlmoxarifadoOnProgram(params: {
     targetAlmoxLineId,
   } = params;
 
-  if (!sourceLineId) return false;
+  if (!sourceLineId) {
+    console.warn("[sync-almox] skip: sourceLineId ausente", {
+      orderId,
+      itemId: sourceItemId,
+    });
+    return false;
+  }
 
   const { data: sourceLine } = await supabase
     .from("production_lines")
@@ -126,9 +132,21 @@ export async function syncAlmoxarifadoOnProgram(params: {
     .eq("id", sourceLineId)
     .maybeSingle();
 
-  if (!sourceLine) return false;
+  if (!sourceLine) {
+    console.warn("[sync-almox] skip: linha de origem não encontrada", {
+      orderId,
+      itemId: sourceItemId,
+    });
+    return false;
+  }
 
-  if (productionLineIsAlmoxarifado(sourceLine)) return false;
+  if (productionLineIsAlmoxarifado(sourceLine)) {
+    console.warn("[sync-almox] skip: linha de origem é almoxarifado", {
+      orderId,
+      itemId: sourceItemId,
+    });
+    return false;
+  }
 
   const companyId = sourceLine.company_id as string;
   const almoxLineId = await pickAlmoxLineId(
@@ -136,7 +154,13 @@ export async function syncAlmoxarifadoOnProgram(params: {
     companyId,
     targetAlmoxLineId
   );
-  if (!almoxLineId) return false;
+  if (!almoxLineId) {
+    console.warn(
+      "[sync-almox] skip: nenhum line_id almox (pickAlmoxLineId/resolve vazio)",
+      { orderId, itemId: sourceItemId }
+    );
+    return false;
+  }
 
   const ref = almoxRefNote(sourceItemId);
   const likePattern = `%${ref}%`;
@@ -155,9 +179,6 @@ export async function syncAlmoxarifadoOnProgram(params: {
   const day = productionStart ? toDateOnly(productionStart) : null;
   const endDay = productionEnd ? toDateOnly(productionEnd) : null;
   const pcDelivery = pcDeliveryDate ? toDateOnly(pcDeliveryDate) : null;
-  if (day && pcDelivery && day < pcDelivery) {
-    return false;
-  }
 
   const pcp =
     toDateOnly(itemPcpDeadline) ?? toDateOnly(orderPcpDeadline) ?? null;
@@ -169,7 +190,13 @@ export async function syncAlmoxarifadoOnProgram(params: {
         .select("production_start, production_end")
         .eq("id", existing.id)
         .maybeSingle();
-      if (!cur?.production_start && !cur?.production_end) return false;
+      if (!cur?.production_start && !cur?.production_end) {
+        console.warn(
+          "[sync-almox] skip: espelho existente sem datas para limpar",
+          { orderId, itemId: sourceItemId }
+        );
+        return false;
+      }
       const { error } = await supabase
         .from("order_items")
         .update({
@@ -180,10 +207,18 @@ export async function syncAlmoxarifadoOnProgram(params: {
         .eq("id", existing.id);
       if (error) {
         console.error("[sync-almox] clear mirror:", error.message);
+        console.warn(
+          "[sync-almox] skip: falha ao limpar espelho (erro de update)",
+          { orderId, itemId: sourceItemId }
+        );
         return false;
       }
       return true;
     }
+    console.warn(
+      "[sync-almox] skip: production_start/fim ausentes e sem espelho a limpar",
+      { orderId, itemId: sourceItemId }
+    );
     return false;
   }
 
@@ -216,6 +251,10 @@ export async function syncAlmoxarifadoOnProgram(params: {
       .eq("id", existing.id);
     if (error) {
       console.error("[sync-almox] update mirror:", error.message);
+      console.warn(
+        "[sync-almox] skip: falha ao atualizar espelho (erro de update)",
+        { orderId, itemId: sourceItemId }
+      );
       return false;
     }
     return true;
@@ -241,6 +280,10 @@ export async function syncAlmoxarifadoOnProgram(params: {
   });
   if (insErr) {
     console.error("[sync-almox] insert mirror:", insErr.message);
+    console.warn(
+      "[sync-almox] skip: falha ao inserir espelho (erro de insert)",
+      { orderId, itemId: sourceItemId }
+    );
     return false;
   }
   return true;

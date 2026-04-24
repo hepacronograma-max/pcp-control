@@ -12,14 +12,39 @@ function isUuid(s: string): boolean {
   );
 }
 
+// Cache em memória por instância do servidor para o modo `lite`.
+// O menu lateral é atualizado a cada 60s + no focus; o TTL curto evita
+// uma nova ida ao banco quando o usuário navega entre páginas ou quando
+// múltiplos componentes fazem o fetch ao mesmo tempo.
+type LiteCacheEntry = {
+  expiresAt: number;
+  payload: {
+    companyId: string;
+    company: { id: string; name: string; logo_url: string | null };
+    orders: [];
+    lines: Record<string, unknown>[];
+    unprogrammedByLine: Record<string, number>;
+  };
+};
+const LITE_CACHE_TTL_MS = 5_000;
+const liteCache = new Map<string, LiteCacheEntry>();
+
+/** Limpa a entrada do cache para um companyId — usado por endpoints que alteram dados. */
+export function invalidateCompanyLiteCache(companyId: string) {
+  liteCache.delete(companyId);
+}
+
 async function loadNormalizedProductionLines(
   supabase: SupabaseClient,
   companyId: string
 ): Promise<Record<string, unknown>[]> {
+  // Não pede `created_at`/`updated_at` porque essas colunas não existem na
+  // tabela `production_lines` do cliente — antes cada chamada gastava 2
+  // round-trips falhando até cair no fallback mínimo.
   const linesFull = await supabase
     .from("production_lines")
     .select(
-      "id, name, company_id, is_active, sort_order, is_almoxarifado, created_at, updated_at"
+      "id, name, company_id, is_active, sort_order, is_almoxarifado"
     )
     .eq("company_id", companyId)
     .order("sort_order", { ascending: true });
@@ -32,7 +57,7 @@ async function loadNormalizedProductionLines(
     console.warn("[company-data] linhas (completo):", linesFull.error.message);
     const linesMid = await supabase
       .from("production_lines")
-      .select("id, name, company_id, is_active, sort_order, created_at, updated_at")
+      .select("id, name, company_id, is_active, sort_order")
       .eq("company_id", companyId)
       .order("sort_order", { ascending: true });
     if (!linesMid.error && linesMid.data) {
@@ -67,32 +92,28 @@ async function loadNormalizedProductionLines(
   return lines;
 }
 
-/** Contagem leve para o menu lateral (sem carregar todos os pedidos). */
+/** Contagem leve para o menu lateral (sem carregar todos os pedidos).
+ *  Filtra por company_id via join com orders numa única query, evitando
+ *  o round-trip para buscar ids + N queries chunked.
+ */
 async function unprogrammedByLineFromDb(
   supabase: SupabaseClient,
   companyId: string
 ): Promise<Record<string, number>> {
-  const { data: orderRows } = await supabase
-    .from("orders")
-    .select("id")
-    .eq("company_id", companyId);
-  const ids = (orderRows ?? []).map((r) => r.id);
-  if (ids.length === 0) return {};
+  const { data: items } = await supabase
+    .from("order_items")
+    .select(
+      "line_id, status, production_start, production_end, orders!inner(company_id)"
+    )
+    .eq("orders.company_id", companyId)
+    .not("line_id", "is", null);
 
   const unprogrammedByLine: Record<string, number> = {};
-  const CHUNK = 200;
-  for (let i = 0; i < ids.length; i += CHUNK) {
-    const chunk = ids.slice(i, i + CHUNK);
-    const { data: items } = await supabase
-      .from("order_items")
-      .select("line_id, status, production_start, production_end")
-      .in("order_id", chunk);
-    for (const it of items ?? []) {
-      if (!itemNeedsProductionProgram(it)) continue;
-      const lid = it.line_id;
-      if (!lid) continue;
-      unprogrammedByLine[lid] = (unprogrammedByLine[lid] ?? 0) + 1;
-    }
+  for (const it of items ?? []) {
+    if (!itemNeedsProductionProgram(it)) continue;
+    const lid = it.line_id as string | null;
+    if (!lid) continue;
+    unprogrammedByLine[lid] = (unprogrammedByLine[lid] ?? 0) + 1;
   }
   return unprogrammedByLine;
 }
@@ -214,33 +235,34 @@ export async function GET(request: NextRequest) {
 
     const lite = request.nextUrl.searchParams.get("lite") === "1";
     if (lite) {
-      const lines = await loadNormalizedProductionLines(supabase, companyId);
-      const unprogrammedByLine = await unprogrammedByLineFromDb(supabase, companyId);
-      return NextResponse.json({
+      const cached = liteCache.get(companyId);
+      const now = Date.now();
+      if (cached && cached.expiresAt > now) {
+        return NextResponse.json(cached.payload);
+      }
+
+      // Queries independentes em paralelo reduzem o tempo de resposta pela metade.
+      const [lines, unprogrammedByLine] = await Promise.all([
+        loadNormalizedProductionLines(supabase, companyId),
+        unprogrammedByLineFromDb(supabase, companyId),
+      ]);
+      const payload = {
         companyId,
         company: companyPayload,
-        orders: [],
+        orders: [] as [],
         lines,
         unprogrammedByLine,
+      };
+      liteCache.set(companyId, {
+        expiresAt: now + LITE_CACHE_TTL_MS,
+        payload,
       });
+      return NextResponse.json(payload);
     }
 
-    let ordersRes = await supabase
-      .from("orders")
-      .select(
-        `
-        *,
-        items:order_items(
-          *,
-          production_line:production_lines(id, name)
-        )
-      `
-      )
-      .eq("company_id", companyId)
-      .order("delivery_deadline", { ascending: true });
-
-    if (ordersRes.error?.message?.includes("delivery_deadline")) {
-      ordersRes = await supabase
+    // Modo completo: roda em paralelo a query de pedidos (com itens) e a de linhas.
+    const ordersPromise = (async () => {
+      let res = await supabase
         .from("orders")
         .select(
           `
@@ -252,43 +274,66 @@ export async function GET(request: NextRequest) {
         `
         )
         .eq("company_id", companyId)
-        .order("id", { ascending: true });
-    }
-
-    // Se a query com embed production_line falhar (schema cache, FK, coluna nova), não retornar lista vazia: tentar só order_items(*)
-    if (ordersRes.error) {
-      console.warn("[company-data] select com production_line falhou:", ordersRes.error.message);
-      ordersRes = await supabase
-        .from("orders")
-        .select(
-          `
-          *,
-          items:order_items(*)
-        `
-        )
-        .eq("company_id", companyId)
         .order("delivery_deadline", { ascending: true });
-    }
-    if (ordersRes.error?.message?.includes("delivery_deadline")) {
-      ordersRes = await supabase
-        .from("orders")
-        .select(
+
+      if (res.error?.message?.includes("delivery_deadline")) {
+        res = await supabase
+          .from("orders")
+          .select(
+            `
+            *,
+            items:order_items(
+              *,
+              production_line:production_lines(id, name)
+            )
           `
-          *,
-          items:order_items(*)
-        `
-        )
-        .eq("company_id", companyId)
-        .order("id", { ascending: true });
-    }
-    if (ordersRes.error) {
-      console.error(
-        "[company-data] falha ao carregar pedidos após fallbacks:",
-        ordersRes.error.message
-      );
-    }
-    const orders = ordersRes.data ?? [];
-    const lines = await loadNormalizedProductionLines(supabase, companyId);
+          )
+          .eq("company_id", companyId)
+          .order("id", { ascending: true });
+      }
+
+      // Se a query com embed production_line falhar (schema cache, FK, coluna nova), tenta sem o embed.
+      if (res.error) {
+        console.warn(
+          "[company-data] select com production_line falhou:",
+          res.error.message
+        );
+        res = await supabase
+          .from("orders")
+          .select(
+            `
+            *,
+            items:order_items(*)
+          `
+          )
+          .eq("company_id", companyId)
+          .order("delivery_deadline", { ascending: true });
+      }
+      if (res.error?.message?.includes("delivery_deadline")) {
+        res = await supabase
+          .from("orders")
+          .select(
+            `
+            *,
+            items:order_items(*)
+          `
+          )
+          .eq("company_id", companyId)
+          .order("id", { ascending: true });
+      }
+      if (res.error) {
+        console.error(
+          "[company-data] falha ao carregar pedidos após fallbacks:",
+          res.error.message
+        );
+      }
+      return res.data ?? [];
+    })();
+
+    const [orders, lines] = await Promise.all([
+      ordersPromise,
+      loadNormalizedProductionLines(supabase, companyId),
+    ]);
 
     const unprogrammedByLine: Record<string, number> = {};
     for (const o of orders) {
