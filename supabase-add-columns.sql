@@ -1,6 +1,10 @@
 -- Adiciona colunas para prazo de entrega e PCP (se não existirem)
 -- Execute no SQL Editor do Supabase: https://supabase.com/dashboard/project/kmlhjhaimfverxwdiwhn/sql
 
+-- Datas de auditoria no pedido (o app espera; projetos antigos podem não ter)
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+
 -- Prazo de entrega no pedido
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_deadline date;
 

@@ -3,6 +3,12 @@ export type UserRole =
   | "manager"
   | "pcp"
   | "operator"
+  /** Acompanhamento de prazos de venda (somente área Comercial) */
+  | "comercial"
+  /** Pedidos de compras e vínculos com itens (somente Compras) */
+  | "compras"
+  /** Logística + almoxarifado (linhas em `operator_lines`) */
+  | "logistica"
   /** Valor comum em `profiles.role` no Supabase; tratado como manager nas permissões */
   | "admin";
 export type OrderStatus =

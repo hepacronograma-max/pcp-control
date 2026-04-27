@@ -11,6 +11,20 @@ function isUuid(s: string): boolean {
   );
 }
 
+const STAFF_ROLES = new Set(["pcp", "operator", "comercial", "compras", "logistica"]);
+
+function parseStaffRole(
+  role: string | null | undefined
+): "pcp" | "operator" | "comercial" | "compras" | "logistica" {
+  const s = String(role ?? "").trim();
+  if (STAFF_ROLES.has(s)) return s as "pcp" | "operator" | "comercial" | "compras" | "logistica";
+  return "operator";
+}
+
+function roleUsesOperatorLines(role: string): boolean {
+  return role === "operator" || role === "logistica";
+}
+
 function canManageUsers(role: string | null | undefined): boolean {
   return (
     role === "manager" ||
@@ -500,8 +514,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const roleVal =
-        role === "pcp" || role === "operator" ? role : "operator";
+      const roleVal = parseStaffRole(role);
 
       if (password != null && String(password).length > 0) {
         const { error: pwdErr } =
@@ -534,7 +547,7 @@ export async function POST(request: NextRequest) {
 
       await supabaseAdmin.from("operator_lines").delete().eq("user_id", existingId);
 
-      if (roleVal === "operator" && Array.isArray(lineIds) && lineIds.length > 0) {
+      if (roleUsesOperatorLines(roleVal) && Array.isArray(lineIds) && lineIds.length > 0) {
         const { error: olErr } = await insertOperatorLineAssociations(
           supabaseAdmin,
           existingId,
@@ -568,8 +581,7 @@ export async function POST(request: NextRequest) {
     }
 
     const userId = authData.user.id;
-    const roleVal =
-      role === "pcp" || role === "operator" ? role : "operator";
+    const roleVal = parseStaffRole(role);
 
     const { error: profileErr } = await upsertProfileForCompany(
       supabaseAdmin,
@@ -590,7 +602,7 @@ export async function POST(request: NextRequest) {
 
     await supabaseAdmin.from("operator_lines").delete().eq("user_id", userId);
 
-    if (roleVal === "operator" && Array.isArray(lineIds) && lineIds.length > 0) {
+    if (roleUsesOperatorLines(roleVal) && Array.isArray(lineIds) && lineIds.length > 0) {
       const { error: olErr } = await insertOperatorLineAssociations(
         supabaseAdmin,
         userId,
@@ -740,7 +752,7 @@ export async function PATCH(request: NextRequest) {
 
     const nameVal = String(fullName ?? "").trim();
     const emailVal = String(email ?? "").trim();
-    const roleVal = role === "pcp" || role === "operator" ? role : "operator";
+    const roleVal = parseStaffRole(role);
 
     const { data: authUserWrap, error: authGetErr } =
       await supabaseAdmin.auth.admin.getUserById(userId);
@@ -801,7 +813,7 @@ export async function PATCH(request: NextRequest) {
 
     await supabaseAdmin.from("operator_lines").delete().eq("user_id", userId);
 
-    if (roleVal === "operator" && Array.isArray(lineIds) && lineIds.length > 0) {
+    if (roleUsesOperatorLines(roleVal) && Array.isArray(lineIds) && lineIds.length > 0) {
       const { error: insErr } = await insertOperatorLineAssociations(
         supabaseAdmin,
         userId,

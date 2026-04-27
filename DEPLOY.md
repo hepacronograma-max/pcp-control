@@ -1,5 +1,9 @@
 # Publicar o PCP Control na internet
 
+**Deploy único e seguro (backup, SQL, build, push):** use o guia [`DEPLOY-UNICO.md`](./DEPLOY-UNICO.md) antes de subir para produção.
+
+---
+
 ## 1. Variáveis de ambiente (no servidor / Vercel)
 
 Copie do seu `.env.local` (não commite secrets):

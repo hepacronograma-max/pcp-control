@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 import { reconcileAlmoxMirrorsForCompany } from "@/lib/supabase/reconcile-almoxarifado";
+import { attachPoDatesToLineItems } from "@/lib/utils/pc-purchase-dates";
 import {
   productionLineIsAlmoxarifado,
   resolveAlmoxLineId,
@@ -143,9 +144,15 @@ export async function GET(request: NextRequest) {
       allLinesPromise,
     ]);
 
+    const itemsWithPo = await attachPoDatesToLineItems(
+      supabase,
+      companyId,
+      (itemsData ?? []) as { id: string }[]
+    );
+
     return NextResponse.json({
       line: lineData,
-      items: itemsData,
+      items: itemsWithPo,
       holidays: holidaysData,
       allLines: allLinesData,
     });

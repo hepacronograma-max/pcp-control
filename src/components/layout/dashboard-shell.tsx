@@ -8,7 +8,10 @@ import { useUser } from "@/lib/hooks/use-user";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { getOperatorLineIdsForLocalUser } from "@/lib/local-users";
 import type { ProductionLine, Profile } from "@/lib/types/database";
-import { hasPermission } from "@/lib/utils/permissions";
+import {
+  canViewProductionLineMenu,
+  hasPermission,
+} from "@/lib/utils/permissions";
 import { itemNeedsProductionProgram } from "@/lib/utils/line-program-indicator";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
@@ -106,7 +109,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           const rawLines = (json.lines ?? []) as ProductionLine[];
           setLines(rawLines.filter((l) => l.is_active !== false));
           setUnprogrammedByLine(json.unprogrammedByLine ?? {});
-          if (profile?.role === "operator") {
+          if (profile?.role === "operator" || profile?.role === "logistica") {
             const lineIds = getOperatorLineIdsForLocalUser(profile.id);
             setOperatorLines(lineIds.map((line_id) => ({ line_id })));
           }
@@ -134,7 +137,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       setCompany({ id: companyId, name: "Empresa Local", logo_url: null });
       setLines([]);
       setUnprogrammedByLine({});
-      if (profile.role === "operator") {
+      if (profile.role === "operator" || profile.role === "logistica") {
         const lineIds = getOperatorLineIdsForLocalUser(profile.id);
         setOperatorLines(lineIds.map((line_id) => ({ line_id })));
       }
@@ -158,7 +161,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         .order("sort_order", { ascending: true });
       setLines(linesData ?? []);
 
-      if (profile?.role === "operator") {
+      if (profile?.role === "operator" || profile?.role === "logistica") {
         const { data: opLines } = await client
           .from("operator_lines")
           .select("line_id")
@@ -229,12 +232,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     if (pathname?.startsWith("/linha")) return "Linha de Produção";
     if (pathname?.startsWith("/configuracoes")) return "Configurações";
     if (pathname?.startsWith("/importar")) return "Importar PDFs";
+    if (pathname?.startsWith("/comercial")) return "Comercial";
+    if (pathname?.startsWith("/compras")) return "Compras";
     return "Dashboard";
   }, [pathname]);
 
   const visibleLines = useMemo(() => {
     if (!profile) return [];
-    if (profile.role === "operator") {
+    if (profile.role === "operator" || profile.role === "logistica") {
       const allowedIds = new Set(operatorLines.map((ol) => ol.line_id));
       return lines.filter((l) => allowedIds.has(l.id));
     }
@@ -267,6 +272,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       ? "Manager"
       : profile.role === "pcp"
       ? "PCP"
+      : profile.role === "comercial"
+      ? "Comercial"
+      : profile.role === "compras"
+      ? "Compras"
+      : profile.role === "logistica"
+      ? "Logística"
       : "Operador"
     : "";
 
@@ -278,6 +289,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     !profile || hasPermission(profile.role, "viewOrders");
   const canViewSettings =
     !profile || hasPermission(profile.role, "viewSettings");
+  const canViewComercial =
+    !profile || hasPermission(profile.role, "viewComercial");
+  const canViewCompras =
+    !profile || hasPermission(profile.role, "viewCompras");
+  const showProductionLines =
+    profile && canViewProductionLineMenu(profile.role);
 
   return (
     <div className="min-h-screen min-h-[100dvh] flex w-full max-w-[100vw] overflow-x-hidden">
@@ -319,15 +336,30 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               active={pathname?.startsWith("/pedidos")}
             />
           )}
-          {visibleLines.map((line) => (
+          {canViewComercial && (
             <SidebarItem
-              key={line.id}
-              label={line.name}
-              href={`/linha/${line.id}`}
-              active={pathname?.startsWith(`/linha/${line.id}`)}
-              hasUnprogrammed={(unprogrammedByLine[line.id] ?? 0) > 0}
+              label="Comercial"
+              href="/comercial"
+              active={pathname?.startsWith("/comercial")}
             />
-          ))}
+          )}
+          {canViewCompras && (
+            <SidebarItem
+              label="Compras"
+              href="/compras"
+              active={pathname?.startsWith("/compras")}
+            />
+          )}
+          {showProductionLines &&
+            visibleLines.map((line) => (
+              <SidebarItem
+                key={line.id}
+                label={line.name}
+                href={`/linha/${line.id}`}
+                active={pathname?.startsWith(`/linha/${line.id}`)}
+                hasUnprogrammed={(unprogrammedByLine[line.id] ?? 0) > 0}
+              />
+            ))}
           {canViewSettings && (
             <SidebarItem
               label="Configurações"
@@ -439,16 +471,33 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   onClick={() => setSidebarOpen(false)}
                 />
               )}
-              {visibleLines.map((line) => (
+              {canViewComercial && (
                 <SidebarItem
-                  key={line.id}
-                  label={line.name}
-                  href={`/linha/${line.id}`}
-                  active={pathname?.startsWith(`/linha/${line.id}`)}
-                  hasUnprogrammed={(unprogrammedByLine[line.id] ?? 0) > 0}
+                  label="Comercial"
+                  href="/comercial"
+                  active={pathname?.startsWith("/comercial")}
                   onClick={() => setSidebarOpen(false)}
                 />
-              ))}
+              )}
+              {canViewCompras && (
+                <SidebarItem
+                  label="Compras"
+                  href="/compras"
+                  active={pathname?.startsWith("/compras")}
+                  onClick={() => setSidebarOpen(false)}
+                />
+              )}
+              {showProductionLines &&
+                visibleLines.map((line) => (
+                  <SidebarItem
+                    key={line.id}
+                    label={line.name}
+                    href={`/linha/${line.id}`}
+                    active={pathname?.startsWith(`/linha/${line.id}`)}
+                    hasUnprogrammed={(unprogrammedByLine[line.id] ?? 0) > 0}
+                    onClick={() => setSidebarOpen(false)}
+                  />
+                ))}
               {canViewSettings && (
                 <SidebarItem
                   label="Configurações"

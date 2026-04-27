@@ -13,6 +13,10 @@ import type {
 } from "@/lib/types/database";
 import { toDateOnly } from "@/lib/utils/supabase-data";
 import {
+  attachPoDatesToLineItems,
+  itemPcArrivalForProduction,
+} from "@/lib/utils/pc-purchase-dates";
+import {
   LineTable,
   sortLineItemsByKeys,
   type LineSortKey,
@@ -27,6 +31,10 @@ import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filte
 import { productionLineIsAlmoxarifado } from "@/lib/supabase/sync-almoxarifado-on-program";
 import { toast } from "sonner";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
+import {
+  canViewProductionLineMenu,
+  defaultAppPathForRole,
+} from "@/lib/utils/permissions";
 
 type TabKey = "all" | "in_progress" | "finished";
 
@@ -46,6 +54,13 @@ export default function LinePage() {
   const pathname = usePathname();
   /** Ao sair da tela da linha e voltar (ou trocar de linha), sempre reabre em "Em Produção". */
   const prevPathnameRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (loading) return;
+    if (profile && !canViewProductionLineMenu(profile.role)) {
+      router.replace(defaultAppPathForRole(profile.role));
+    }
+  }, [loading, profile, router]);
 
   const [line, setLine] = useState<ProductionLine | null>(null);
   const [items, setItems] = useState<LineItemWithOrder[]>([]);
@@ -150,7 +165,7 @@ export default function LinePage() {
         return;
       }
 
-      if (currentProfile.role === "operator") {
+      if (currentProfile.role === "operator" || currentProfile.role === "logistica") {
         const { data: access } = await supabase
           .from("operator_lines")
           .select("id")
@@ -205,7 +220,15 @@ export default function LinePage() {
       ]);
 
       setLine((lineRes.data as ProductionLine) ?? null);
-      setItems((itemsRes.data as unknown as LineItemWithOrder[]) ?? []);
+      let nextItems = (itemsRes.data as unknown as LineItemWithOrder[]) ?? [];
+      if (cid && nextItems.length > 0) {
+        nextItems = await attachPoDatesToLineItems(
+          supabase,
+          cid,
+          nextItems
+        );
+      }
+      setItems(nextItems);
       setHolidays((holidaysRes.data as Holiday[]) ?? []);
       setAllLines((allLinesRes.data as ProductionLine[]) ?? []);
 
@@ -223,9 +246,12 @@ export default function LinePage() {
     const targetItem = items.find((i) => i.id === itemId);
     if (!targetItem) return;
 
-    const pcDelivery = targetItem.pc_delivery_date
-      ? toDateOnly(targetItem.pc_delivery_date)
-      : null;
+    const pcArrivalMin = itemPcArrivalForProduction(
+      targetItem.po_expected_delivery,
+      targetItem.po_follow_up_date,
+      targetItem.pc_delivery_date
+    );
+    const pcDelivery = pcArrivalMin ? toDateOnly(pcArrivalMin) : null;
     const valueNorm = toDateOnly(value);
     if (pcDelivery && valueNorm && valueNorm < pcDelivery) {
       alert(
@@ -528,6 +554,11 @@ export default function LinePage() {
                   it.order.pcp_deadline ??
                   it.order.delivery_deadline ??
                   "";
+                const pcEntrega = itemPcArrivalForProduction(
+                  it.po_expected_delivery,
+                  it.po_follow_up_date,
+                  it.pc_delivery_date
+                );
                 return [
                   it.order.order_number,
                   it.order.client_name,
@@ -535,7 +566,7 @@ export default function LinePage() {
                   it.quantity,
                   pcp,
                   it.pc_number ?? "",
-                  it.pc_delivery_date ?? "",
+                  pcEntrega ?? "",
                   it.production_start ?? "",
                   it.production_end ?? "",
                   it.status,

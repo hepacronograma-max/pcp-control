@@ -30,6 +30,9 @@ export interface LineItemWithOrder extends OrderItem {
     delivery_deadline: string | null;
     pcp_deadline: string | null;
   };
+  /** Preenchido na carga: datas do `purchase_orders` vinculado (Compras). */
+  po_expected_delivery?: string | null;
+  po_follow_up_date?: string | null;
 }
 
 function generateDays(startDate: Date, numDays: number, holidays: Holiday[]): GanttDay[] {
@@ -40,7 +43,7 @@ function generateDays(startDate: Date, numDays: number, holidays: Holiday[]): Ga
 
   return days.map((date) => ({
     date,
-    label: format(date, "d/M"),
+    label: format(date, "d/M/yy"),
     dayOfWeek: weekAbbr[getDay(date)],
     isWeekend: isWeekend(date),
     isHoliday: holidays.some((h) => {

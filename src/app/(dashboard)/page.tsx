@@ -66,7 +66,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (role === "operator") {
+  if (role === "operator" || role === "logistica") {
     return <OperatorDashboard />;
   }
 

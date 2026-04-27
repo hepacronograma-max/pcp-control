@@ -1,5 +1,6 @@
 "use client";
 
+import { format } from "date-fns";
 import { useEffect, useState } from "react";
 import {
   Bar,
@@ -92,10 +93,7 @@ export function OperatorDashboard() {
   }
 
   const now = new Date();
-  const monthYear = now.toLocaleDateString("pt-BR", {
-    month: "short",
-    year: "numeric",
-  });
+  const monthYear = format(now, "d/M/yy");
 
   const pieData = kpis.chartByStatus.filter((s) => s.value > 0);
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { OrderWithItems, ProductionLine, UserRole } from "@/lib/types/database";
-import { formatShortDate, isPastDeadline, parseLocalDate } from "@/lib/utils/date";
+import { formatShortDate } from "@/lib/utils/date";
 import { CompactDateCell } from "@/components/ui/compact-date-cell";
 import { OrderStatusBadge } from "./order-status-badge";
 import { OrderItems } from "./order-items";
@@ -9,6 +9,7 @@ import {
   areAllOrderDeadlinesSameDay,
   effectiveOrderProductionDeadline,
   getOrderDeadlineTrafficLight,
+  getOrderPrincipalStatus,
 } from "@/lib/utils/order-aggregates";
 
 export interface OrderRowProps {
@@ -31,79 +32,6 @@ export interface OrderRowProps {
   showSelect?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
-}
-
-type PrincipalStatus =
-  | "atrasado"
-  | "vai_atrasar"
-  | "falta_linha"
-  | "aguardando_programacao"
-  | "programado"
-  | "produzindo"
-  | "finalizado"
-  | null;
-
-function getPrincipalStatus(order: OrderWithItems): PrincipalStatus {
-  const items = order.items;
-  if (items.length === 0) return null;
-
-  const hasDelayed = items.some(
-    (it) =>
-      it.status !== "completed" &&
-      it.production_end &&
-      isPastDeadline(it.production_end)
-  );
-  if (hasDelayed) return "atrasado";
-
-  const pcpDeadline = order.pcp_deadline;
-  const hasWillDelay = items.some(
-    (it) =>
-      it.status !== "completed" &&
-      it.production_end &&
-      pcpDeadline &&
-      it.production_end > pcpDeadline
-  );
-  if (hasWillDelay) return "vai_atrasar";
-
-  const hasWithoutLine = items.some((it) => !it.line_id);
-  if (hasWithoutLine) return "falta_linha";
-
-  const allCompleted = items.every((it) => it.status === "completed");
-  if (allCompleted) return "finalizado";
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  let hasScheduled = false;
-  let hasProducing = false;
-  let hasAwaiting = false;
-
-  for (const it of items) {
-    if (it.status === "completed") continue;
-    if (!it.production_start) {
-      hasAwaiting = true;
-      continue;
-    }
-    const start = it.production_start!.includes("-")
-      ? parseLocalDate(it.production_start!)
-      : new Date(it.production_start);
-    start.setHours(0, 0, 0, 0);
-    const end = it.production_end
-      ? it.production_end.includes("-")
-        ? parseLocalDate(it.production_end)
-        : new Date(it.production_end)
-      : null;
-    if (end) end.setHours(0, 0, 0, 0);
-
-    if (today < start) hasScheduled = true;
-    else if (!end || today <= end) hasProducing = true;
-  }
-
-  if (hasAwaiting) return "aguardando_programacao";
-  if (hasScheduled) return "programado";
-  if (hasProducing) return "produzindo";
-
-  return "aguardando_programacao";
 }
 
 export function OrderRow({
@@ -133,7 +61,7 @@ export function OrderRow({
   const canFinish = hasPermission(userRole, "finishOrders") && allItemsCompleted;
   const canEdit = hasPermission(userRole, "viewOrders");
 
-  const principalStatus = getPrincipalStatus(order);
+  const principalStatus = getOrderPrincipalStatus(order);
   const displayProductionDeadline = effectiveOrderProductionDeadline(order);
   const traffic = getOrderDeadlineTrafficLight(order);
   const sameDayAllDeadlines = areAllOrderDeadlinesSameDay(order);

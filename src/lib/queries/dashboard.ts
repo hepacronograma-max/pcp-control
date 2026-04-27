@@ -406,10 +406,7 @@ export async function getDashboardData(companyId: string) {
   const weeklyOnTimeData = Object.values(weeklyBuckets)
     .sort((a, b) => a.weekStart.getTime() - b.weekStart.getTime())
     .map((bucket) => {
-      const label = bucket.weekStart.toLocaleDateString("pt-BR", {
-        day: "2-digit",
-        month: "2-digit",
-      });
+      const label = format(bucket.weekStart, "d/M/yy");
       const rate =
         bucket.total > 0
           ? Math.round((bucket.onTime / bucket.total) * 100)

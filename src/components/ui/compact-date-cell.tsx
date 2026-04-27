@@ -1,8 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { format } from "date-fns";
-import { parseLocalDate } from "@/lib/utils/date";
+import { formatShortDate } from "@/lib/utils/date";
 import { toDateOnly } from "@/lib/utils/supabase-data";
 
 interface CompactDateCellProps {
@@ -22,7 +21,7 @@ export function CompactDateCell({
 }: CompactDateCellProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const normalized = value ? toDateOnly(value) ?? "" : "";
-  const label = normalized ? format(parseLocalDate(normalized), "d/M/yy") : "--";
+  const label = normalized ? formatShortDate(normalized) : "--";
 
   function openPicker() {
     if (disabled) return;

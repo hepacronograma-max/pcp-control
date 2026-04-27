@@ -29,21 +29,53 @@ export function isPastDeadline(dateStr: string | null): boolean {
   }
 }
 
-/** Formata data no padrão d/M/yy (ex: 5/3/26). Aceita yyyy-MM-dd ou ISO. */
-export function formatShortDate(value: string | null): string {
-  if (!value) return "--";
+/**
+ * Padrão brasileiro de exibição no app: **d/M/yy** (ex.: 27/4/26), sem zero à esquerda em dia/mês.
+ * Use em toda tela, export, PDF, etc. — evite `toLocaleDateString` solto.
+ */
+export const BRAZIL_DATE_DISPLAY_FORMAT = "d/M/yy" as const;
+
+/**
+ * Data curta (BR): aceita `yyyy-MM-dd`, ISO com hora, ou `Date`.
+ * Valores vazios → `--`.
+ */
+export function formatShortDate(
+  value: string | Date | null | undefined
+): string {
+  if (value === null || value === undefined || value === "") return "--";
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? "--" : format(value, BRAZIL_DATE_DISPLAY_FORMAT);
+  }
   try {
     if (value.includes("-")) {
-      const parts = value.split("-").map(Number);
-      if (parts.length >= 3 && !parts.some(isNaN)) {
-        return format(new Date(parts[0], parts[1] - 1, parts[2]), "d/M/yy");
+      const ymd =
+        value.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(value)
+          ? value.slice(0, 10)
+          : value;
+      const partStr = ymd.split("T")[0] ?? ymd;
+      const parts = partStr.split("-").map(Number);
+      if (parts.length >= 3 && !parts.slice(0, 3).some((n) => Number.isNaN(n))) {
+        return format(
+          new Date(parts[0], parts[1] - 1, parts[2]),
+          BRAZIL_DATE_DISPLAY_FORMAT
+        );
       }
     }
     const d = new Date(value);
-    return isNaN(d.getTime()) ? value : format(d, "d/M/yy");
+    return Number.isNaN(d.getTime()) ? value : format(d, BRAZIL_DATE_DISPLAY_FORMAT);
   } catch {
-    return value;
+    return typeof value === "string" ? value : "--";
   }
+}
+
+/** Data e hora no padrão BR: `27/4/26 14:35` (24h). */
+export function formatBrazilianDateTime(
+  value: string | Date | null | undefined
+): string {
+  if (value === null || value === undefined) return "—";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return `${format(d, BRAZIL_DATE_DISPLAY_FORMAT)} ${format(d, "HH:mm")}`;
 }
 
 /** Feriado da empresa: data `yyyy-MM-dd` e, se recorrente, aplica a cada ano (mês/dia). */

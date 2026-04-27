@@ -1,6 +1,83 @@
 import type { OrderItem, OrderWithItems } from "@/lib/types/database";
-import { isPastDeadline } from "@/lib/utils/date";
+import { isPastDeadline, parseLocalDate } from "@/lib/utils/date";
 import { toDateOnly } from "@/lib/utils/supabase-data";
+
+/**
+ * Estado “principal” da linha do pedido (mesma lógica da lista de Pedidos).
+ * Exportado para a aba Comercial (somente leitura).
+ */
+export type OrderPrincipalStatus =
+  | "atrasado"
+  | "vai_atrasar"
+  | "falta_linha"
+  | "aguardando_programacao"
+  | "programado"
+  | "produzindo"
+  | "finalizado"
+  | null;
+
+export function getOrderPrincipalStatus(order: OrderWithItems): OrderPrincipalStatus {
+  const items = order.items;
+  if (items.length === 0) return null;
+
+  const hasDelayed = items.some(
+    (it) =>
+      it.status !== "completed" &&
+      it.production_end &&
+      isPastDeadline(it.production_end)
+  );
+  if (hasDelayed) return "atrasado";
+
+  const pcpDeadline = order.pcp_deadline;
+  const hasWillDelay = items.some(
+    (it) =>
+      it.status !== "completed" &&
+      it.production_end &&
+      pcpDeadline &&
+      it.production_end > pcpDeadline
+  );
+  if (hasWillDelay) return "vai_atrasar";
+
+  const hasWithoutLine = items.some((it) => !it.line_id);
+  if (hasWithoutLine) return "falta_linha";
+
+  const allCompleted = items.every((it) => it.status === "completed");
+  if (allCompleted) return "finalizado";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  let hasScheduled = false;
+  let hasProducing = false;
+  let hasAwaiting = false;
+
+  for (const it of items) {
+    if (it.status === "completed") continue;
+    if (!it.production_start) {
+      hasAwaiting = true;
+      continue;
+    }
+    const start = it.production_start!.includes("-")
+      ? parseLocalDate(it.production_start!)
+      : new Date(it.production_start);
+    start.setHours(0, 0, 0, 0);
+    const end = it.production_end
+      ? it.production_end.includes("-")
+        ? parseLocalDate(it.production_end)
+        : new Date(it.production_end)
+      : null;
+    if (end) end.setHours(0, 0, 0, 0);
+
+    if (today < start) hasScheduled = true;
+    else if (!end || today <= end) hasProducing = true;
+  }
+
+  if (hasAwaiting) return "aguardando_programacao";
+  if (hasScheduled) return "programado";
+  if (hasProducing) return "produzindo";
+
+  return "aguardando_programacao";
+}
 
 /** Mínimo para avaliar atraso no dashboard (KPI, gráficos) — basta bater com o pedido. */
 type OrderDelayOrderShape = {

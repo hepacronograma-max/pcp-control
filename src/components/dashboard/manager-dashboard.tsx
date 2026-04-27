@@ -1,5 +1,6 @@
 "use client";
 
+import { format } from "date-fns";
 import { useEffect, useState } from "react";
 import type { DashboardData } from "@/lib/queries/dashboard";
 import {
@@ -98,10 +99,7 @@ export function ManagerDashboard({ companyId }: ManagerDashboardProps) {
   }
 
   const now = new Date();
-  const monthYear = now.toLocaleDateString("pt-BR", {
-    month: "short",
-    year: "numeric",
-  });
+  const monthYear = format(now, "d/M/yy");
 
   const pieDataRaw = (dashboard.chartByStatus ?? []).filter(
     (s) => s.value > 0

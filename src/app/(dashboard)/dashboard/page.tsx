@@ -14,19 +14,22 @@ export default function DashboardPage() {
     const hasLocalAuth = document.cookie.includes("pcp-local-auth=1");
     if (hasLocalAuth) {
       let cid: string | null = null;
+      let localRole: string | null = null;
 
-      // Tentar pegar do perfil local
       const localProfile = localStorage.getItem("pcp-local-profile");
       if (localProfile) {
         try {
-          const parsed = JSON.parse(localProfile);
+          const parsed = JSON.parse(localProfile) as {
+            company_id?: string;
+            role?: string;
+          };
           cid = parsed.company_id || null;
+          localRole = parsed.role ?? null;
         } catch {
           /* ignore */
         }
       }
 
-      // Se não tem companyId ou não parece UUID, resolver via API
       const isUuid =
         cid &&
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -37,18 +40,18 @@ export default function DashboardPage() {
           .then((r) => r.json())
           .then((data: { companyId?: string | null }) => {
             setCompanyId(data.companyId || null);
-            setRole("manager");
+            setRole(localRole ?? "manager");
             setLoading(false);
           })
           .catch(() => {
-            setRole("manager");
+            setRole(localRole ?? "manager");
             setLoading(false);
           });
         return;
       }
 
       setCompanyId(cid);
-      setRole("manager");
+      setRole(localRole ?? "manager");
       setLoading(false);
       return;
     }
@@ -78,7 +81,8 @@ export default function DashboardPage() {
     );
   }
 
-  if (role === "operator") {
+  /** Operador e Logística: KPIs só das linhas atribuídas (`operator_lines`). */
+  if (role === "operator" || role === "logistica") {
     return <OperatorDashboard />;
   }
 

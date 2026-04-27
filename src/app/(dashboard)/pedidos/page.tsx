@@ -12,7 +12,7 @@ import type {
   UserRole,
 } from "@/lib/types/database";
 import { OrdersTable } from "@/components/pedidos/orders-table";
-import { hasPermission } from "@/lib/utils/permissions";
+import { defaultAppPathForRole, hasPermission } from "@/lib/utils/permissions";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 import { Button } from "@/components/ui/button";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
@@ -68,13 +68,25 @@ export default function PedidosPage() {
   const isLocal = !supabase;
 
   useEffect(() => {
-    if (!loading && profile && profile.role === "operator") {
+    if (!loading && profile && (profile.role === "operator" || profile.role === "logistica")) {
       const lineIds = getOperatorLineIdsForLocalUser(profile.id);
       if (lineIds.length > 0) {
         router.replace(`/linha/${lineIds[0]}`);
       } else {
         router.replace("/");
       }
+    }
+  }, [loading, profile, router]);
+
+  useEffect(() => {
+    if (
+      !loading &&
+      profile &&
+      profile.role !== "operator" &&
+      profile.role !== "logistica" &&
+      !hasPermission(profile.role, "viewOrders")
+    ) {
+      router.replace(defaultAppPathForRole(profile.role));
     }
   }, [loading, profile, router]);
   const [orders, setOrders] = useState<OrderWithItems[]>([]);

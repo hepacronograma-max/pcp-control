@@ -1,9 +1,9 @@
-import { format } from "date-fns";
 import { CompactDateCell } from "@/components/ui/compact-date-cell";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LineItemWithOrder } from "./gantt-calendar";
 import type { Profile, ProductionLine } from "@/lib/types/database";
-import { parseLocalDate } from "@/lib/utils/date";
+import { formatShortDate, parseLocalDate } from "@/lib/utils/date";
+import { itemPcArrivalForProduction } from "@/lib/utils/pc-purchase-dates";
 import { toDateOnly } from "@/lib/utils/supabase-data";
 
 function safeParse(d: string): Date {
@@ -341,7 +341,7 @@ export function LineTable({
                 </Cell>
                 <Cell className="text-center flex justify-center items-center">
                   {item.production_start
-                    ? format(safeParse(item.production_start), "d/M/yy")
+                    ? formatShortDate(safeParse(item.production_start))
                     : "--"}
                 </Cell>
                 <Cell className="text-center flex justify-center items-center">
@@ -461,7 +461,7 @@ export function LineTable({
         {items.map((item, idx) => {
           const pcpDeadline = item.pcp_deadline ?? item.order.pcp_deadline ?? item.order.delivery_deadline;
           const pcpDisplay =
-            pcpDeadline && format(safeParse(pcpDeadline), "d/M/yy");
+            pcpDeadline && formatShortDate(safeParse(pcpDeadline));
 
           const willDelay =
             item.production_end &&
@@ -470,7 +470,12 @@ export function LineTable({
             item.status !== "completed";
 
           const dayPcp = pcpDeadline ? toDateOnly(pcpDeadline) : null;
-          const dayPc = item.pc_delivery_date ? toDateOnly(item.pc_delivery_date) : null;
+          const pcArrival = itemPcArrivalForProduction(
+            item.po_expected_delivery,
+            item.po_follow_up_date,
+            item.pc_delivery_date
+          );
+          const dayPc = pcArrival ? toDateOnly(pcArrival) : null;
           const dayStart = item.production_start ? toDateOnly(item.production_start) : null;
           const dayEnd = item.production_end ? toDateOnly(item.production_end) : null;
           const allLineDatesEqualAttention =
@@ -531,16 +536,18 @@ export function LineTable({
               </Cell>
               <Cell
                 className="text-center flex justify-center items-center text-[10px] min-w-0"
-                title={item.pc_number ? `PC ${item.pc_number}` : undefined}
+                title={
+                  item.pc_number
+                    ? `PC ${item.pc_number} — entrega (max. previsão/follow-up ou PV)`
+                    : undefined
+                }
               >
-                {item.pc_delivery_date
-                  ? format(safeParse(item.pc_delivery_date), "d/M/yy")
-                  : "--"}
+                {pcArrival ? formatShortDate(safeParse(pcArrival)) : "--"}
               </Cell>
               <Cell className="flex items-stretch p-0 h-full min-h-0 !overflow-visible z-[1]">
                 <CompactDateCell
                   value={item.production_start}
-                  min={item.pc_delivery_date}
+                  min={pcArrival}
                   onChange={(val) =>
                     onChangeDate(item.id, "production_start", val)
                   }
@@ -551,7 +558,7 @@ export function LineTable({
               >
                 <CompactDateCell
                   value={item.production_end}
-                  min={maxDateStr(item.production_start, item.pc_delivery_date)}
+                  min={maxDateStr(item.production_start, pcArrival)}
                   onChange={(val) =>
                     onChangeDate(item.id, "production_end", val)
                   }

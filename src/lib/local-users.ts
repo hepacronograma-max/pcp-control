@@ -48,7 +48,7 @@ export function createLocalUser(data: {
   fullName: string;
   email: string;
   password: string;
-  role: "pcp" | "operator";
+  role: "pcp" | "operator" | "comercial" | "compras" | "logistica";
   companyId: string;
   lineIds: string[];
 }): LocalUser {
@@ -88,7 +88,7 @@ export function updateLocalUser(
     fullName?: string;
     email?: string;
     password?: string;
-    role?: "pcp" | "operator";
+    role?: "pcp" | "operator" | "comercial" | "compras" | "logistica";
     lineIds?: string[];
   }
 ): boolean {

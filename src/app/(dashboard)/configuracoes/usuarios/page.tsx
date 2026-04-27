@@ -22,6 +22,29 @@ import { toast } from "sonner";
 
 const LOCAL_LINES_KEY = "pcp-local-lines";
 
+type StaffFormRole = "pcp" | "operator" | "comercial" | "compras" | "logistica";
+
+function profileRoleLabel(role: string) {
+  switch (role) {
+    case "manager":
+      return "Manager";
+    case "pcp":
+      return "PCP";
+    case "comercial":
+      return "Comercial";
+    case "compras":
+      return "Compras";
+    case "logistica":
+      return "Logística";
+    case "operator":
+      return "Operador";
+    case "super_admin":
+      return "Super Admin";
+    default:
+      return role;
+  }
+}
+
 /** Alinhado à API: domínio com ponto (Supabase Auth rejeita ex.: @hepaf sem .com). */
 function isValidAuthEmail(email: string): boolean {
   const e = email.trim();
@@ -61,7 +84,7 @@ export default function UsersSettingsPage() {
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formPassword, setFormPassword] = useState("");
-  const [formRole, setFormRole] = useState<"pcp" | "operator">("operator");
+  const [formRole, setFormRole] = useState<StaffFormRole>("operator");
   const [formLineIds, setFormLineIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -192,7 +215,13 @@ export default function UsersSettingsPage() {
     const localUsers = getLocalUsers();
     const lu = localUsers.find((u) => u.id === user.id);
     setFormPassword(lu?.password ?? "");
-    setFormRole((user.role as "pcp" | "operator") ?? "operator");
+    setFormRole(
+      (["pcp", "operator", "comercial", "compras", "logistica"] as const).includes(
+        user.role as StaffFormRole
+      )
+        ? (user.role as StaffFormRole)
+        : "operator"
+    );
     setFormLineIds(user.lines.map((l) => l.id));
   }
 
@@ -261,7 +290,7 @@ export default function UsersSettingsPage() {
             password: formPassword,
             role: formRole,
             companyId: profile.company_id,
-            lineIds: formRole === "operator" ? formLineIds : [],
+            lineIds: formRole === "operator" || formRole === "logistica" ? formLineIds : [],
           });
           toast.success("Usuário criado com sucesso");
         } else if (modalMode === "edit" && editUserId) {
@@ -270,7 +299,7 @@ export default function UsersSettingsPage() {
             email: formEmail.trim(),
             password: formPassword || undefined,
             role: formRole,
-            lineIds: formRole === "operator" ? formLineIds : [],
+            lineIds: formRole === "operator" || formRole === "logistica" ? formLineIds : [],
           });
           if (ok) {
             toast.success("Usuário atualizado");
@@ -296,7 +325,7 @@ export default function UsersSettingsPage() {
             fullName: formName.trim(),
             role: formRole,
             companyId: apiCompanyId,
-            lineIds: formRole === "operator" ? formLineIds : [],
+            lineIds: formRole === "operator" || formRole === "logistica" ? formLineIds : [],
           }),
         });
         let data: {
@@ -330,7 +359,7 @@ export default function UsersSettingsPage() {
             email: formEmail.trim(),
             password: formPassword || undefined,
             role: formRole,
-            lineIds: formRole === "operator" ? formLineIds : [],
+            lineIds: formRole === "operator" || formRole === "logistica" ? formLineIds : [],
           }),
         });
         let data: { success?: boolean; error?: string } = {};
@@ -486,13 +515,7 @@ export default function UsersSettingsPage() {
               rows: users.map((u) => [
                 u.full_name,
                 u.email,
-                u.role === "manager"
-                  ? "Manager"
-                  : u.role === "pcp"
-                    ? "PCP"
-                    : u.role === "operator"
-                      ? "Operador"
-                      : "Super Admin",
+                profileRoleLabel(u.role),
                 u.is_active ? "Ativo" : "Inativo",
                 u.lines.map((l) => l.name).join("; ") || "—",
               ]),
@@ -553,13 +576,7 @@ export default function UsersSettingsPage() {
                 <td className="px-2 py-1 align-middle">{u.full_name}</td>
                 <td className="px-2 py-1 align-middle">{u.email}</td>
                 <td className="px-2 py-1 align-middle">
-                  {u.role === "manager"
-                    ? "Manager"
-                    : u.role === "pcp"
-                    ? "PCP"
-                    : u.role === "operator"
-                    ? "Operador"
-                    : "Super Admin"}
+                  {profileRoleLabel(u.role)}
                 </td>
                 <td className="px-2 py-1 align-middle">
                   {u.is_active ? "✅" : "❌"}
@@ -632,17 +649,20 @@ export default function UsersSettingsPage() {
                 <select
                   className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs h-9"
                   value={formRole}
-                  onChange={(e) => setFormRole(e.target.value as "pcp" | "operator")}
+                  onChange={(e) => setFormRole(e.target.value as StaffFormRole)}
                 >
                   <option value="pcp">PCP</option>
                   <option value="operator">Operador</option>
+                  <option value="comercial">Comercial</option>
+                  <option value="compras">Compras</option>
+                  <option value="logistica">Logística</option>
                 </select>
               </div>
             </div>
 
-            {formRole === "operator" && (
+            {(formRole === "operator" || formRole === "logistica") && (
               <div className="space-y-1">
-                <Label>Linhas de produção</Label>
+                <Label>Linhas (produção / logística / almox.)</Label>
                 {lines.length === 0 ? (
                   <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
                     Nenhuma linha carregada. Confira em{" "}

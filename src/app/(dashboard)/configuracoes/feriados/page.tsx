@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
+import { formatShortDate } from "@/lib/utils/date";
 import { toDateOnly, toBoolean } from "@/lib/utils/supabase-data";
 
 const FERIADOS_NACIONAIS = [
@@ -151,13 +152,8 @@ export default function HolidaysSettingsPage() {
             getData={() => ({
               headers: ["Data", "Descrição", "Recorrente"],
               rows: holidays.map((h) => {
-                const dateObj = new Date(h.date);
-                const formatted = h.is_recurring
-                  ? dateObj.toLocaleDateString("pt-BR", {
-                      day: "2-digit",
-                      month: "2-digit",
-                    })
-                  : dateObj.toLocaleDateString("pt-BR");
+                const ymd = h.date.length >= 10 ? h.date.slice(0, 10) : h.date;
+                const formatted = formatShortDate(ymd);
                 return [
                   formatted,
                   h.description,
@@ -221,13 +217,8 @@ export default function HolidaysSettingsPage() {
           </thead>
           <tbody>
             {holidays.map((h, idx) => {
-              const dateObj = new Date(h.date);
-              const formatted = h.is_recurring
-                ? dateObj.toLocaleDateString("pt-BR", {
-                    day: "2-digit",
-                    month: "2-digit",
-                  })
-                : dateObj.toLocaleDateString("pt-BR");
+              const ymd = h.date.length >= 10 ? h.date.slice(0, 10) : h.date;
+              const formatted = formatShortDate(ymd);
               return (
                 <tr
                   key={h.id}
