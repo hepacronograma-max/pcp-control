@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { fetchOperatorLineIdsForUserId } from "@/lib/supabase/fetch-operator-line-ids";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -17,8 +18,18 @@ export async function GET() {
     .eq("id", user.id)
     .single();
 
+  let operatorLineIds: string[] | undefined;
+  const role = profile?.role;
+  if (
+    profile &&
+    (role === "operator" || role === "logistica")
+  ) {
+    operatorLineIds = await fetchOperatorLineIdsForUserId(user.id);
+  }
+
   return NextResponse.json({
     user: { id: user.id, email: user.email },
     profile,
+    operatorLineIds,
   });
 }

@@ -166,14 +166,28 @@ export default function LinePage() {
       }
 
       if (currentProfile.role === "operator" || currentProfile.role === "logistica") {
-        const { data: access } = await supabase
-          .from("operator_lines")
-          .select("id")
-          .eq("user_id", currentProfile.id)
-          .eq("line_id", lineId)
-          .maybeSingle();
-
-        if (!access) {
+        let allowed = false;
+        try {
+          const meRes = await fetch("/api/me", { credentials: "include" });
+          if (meRes.ok) {
+            const meJson = (await meRes.json()) as {
+              operatorLineIds?: string[];
+            };
+            allowed = (meJson.operatorLineIds ?? []).includes(lineId);
+          }
+        } catch {
+          /* fallback */
+        }
+        if (!allowed && supabase) {
+          const { data: access } = await supabase
+            .from("operator_lines")
+            .select("line_id")
+            .eq("user_id", currentProfile.id)
+            .eq("line_id", lineId)
+            .maybeSingle();
+          allowed = !!access;
+        }
+        if (!allowed) {
           router.push("/");
           return;
         }

@@ -162,16 +162,35 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       setLines(linesData ?? []);
 
       if (profile?.role === "operator" || profile?.role === "logistica") {
-        const { data: opLines } = await client
-          .from("operator_lines")
-          .select("line_id")
-          .eq("user_id", profile!.id);
-        if (opLines?.length) {
-          setOperatorLines(opLines);
-        } else {
-          const lineIds = getOperatorLineIdsForLocalUser(profile!.id);
-          setOperatorLines(lineIds.map((line_id) => ({ line_id })));
+        /** `/api/me` usa service role — não depende de RLS em `operator_lines` no browser. */
+        let nextOperatorLines: OperatorLine[] = [];
+        try {
+          const meRes = await fetch("/api/me", { credentials: "include" });
+          if (meRes.ok) {
+            const meJson = (await meRes.json()) as {
+              operatorLineIds?: string[];
+            };
+            const ids = meJson.operatorLineIds ?? [];
+            if (ids.length > 0) {
+              nextOperatorLines = ids.map((line_id) => ({ line_id }));
+            }
+          }
+        } catch {
+          /* fallback abaixo */
         }
+        if (nextOperatorLines.length === 0) {
+          const { data: opLines } = await client
+            .from("operator_lines")
+            .select("line_id")
+            .eq("user_id", profile!.id);
+          if (opLines?.length) {
+            nextOperatorLines = opLines;
+          } else {
+            const lineIds = getOperatorLineIdsForLocalUser(profile!.id);
+            nextOperatorLines = lineIds.map((line_id) => ({ line_id }));
+          }
+        }
+        setOperatorLines(nextOperatorLines);
       }
 
       try {

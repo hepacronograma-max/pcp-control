@@ -1,4 +1,5 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { fetchOperatorLineIdsForUserId } from "@/lib/supabase/fetch-operator-line-ids";
 import {
   orderAppliesToDashboardDelayKpi,
   orderItemInDashboardAtrasoStatusPiece,
@@ -24,18 +25,7 @@ export async function GET() {
     return NextResponse.json({ error: "not authenticated" }, { status: 401 });
   }
 
-  const { data: opLines } = await supabase
-    .from("operator_lines")
-    .select("line_id")
-    .eq("user_id", user.id);
-
-  const lineIds = [
-    ...new Set(
-      (opLines ?? [])
-        .map((r) => r.line_id)
-        .filter((id): id is string => typeof id === "string" && id.length > 0)
-    ),
-  ];
+  const lineIds = await fetchOperatorLineIdsForUserId(user.id);
 
   if (lineIds.length === 0) {
     return NextResponse.json({
