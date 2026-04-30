@@ -14,6 +14,16 @@ function canRoleViewComercial(role: string | null | undefined): boolean {
   return (
     role === "super_admin" ||
     role === "manager" ||
+    role === "admin" ||
+    role === "comercial"
+  );
+}
+
+function canRoleEditComercialObservation(role: string | null | undefined): boolean {
+  return (
+    role === "super_admin" ||
+    role === "manager" ||
+    role === "admin" ||
     role === "comercial"
   );
 }
@@ -121,11 +131,18 @@ export async function GET(request: NextRequest) {
       production_deadline: string | null;
       status: string;
       updated_at: string | null;
+      comercial_pcp_observation: string | null;
       items: ItemLite[];
     };
 
     /** Não incluir `updated_at` aqui: vários projetos antigos não têm a coluna em `orders` (erro PostgREST). */
+    const OBS_COL = "comercial_pcp_observation";
     const selectWithItems = `
+      id, order_number, client_name, created_at, delivery_deadline, pcp_deadline, production_deadline, status, ${OBS_COL},
+      items:order_items(id, line_id, status, production_start, production_end, description)
+    `;
+
+    const selectWithoutObs = `
       id, order_number, client_name, created_at, delivery_deadline, pcp_deadline, production_deadline, status,
       items:order_items(id, line_id, status, production_start, production_end, description)
     `;
@@ -139,6 +156,18 @@ export async function GET(request: NextRequest) {
     /** Reatribuições com selects distintos — evita incompatibilidade de genérico PostgREST. */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let res: any = r1;
+    if (
+      res.error?.message &&
+      /comercial_pcp_observation|column|schema cache|does not exist|PGRST204/i.test(
+        res.error.message
+      )
+    ) {
+      res = await supabase
+        .from("orders")
+        .select(selectWithoutObs)
+        .eq("company_id", companyId)
+        .order("delivery_deadline", { ascending: true, nullsFirst: false });
+    }
     if (res.error?.message &&
       /delivery_deadline|pcp_deadline|column|schema cache|does not exist/i.test(res.error.message)
     ) {
@@ -188,6 +217,10 @@ export async function GET(request: NextRequest) {
       production_deadline: o.production_deadline ?? null,
       status: o.status as string,
       updated_at: (o.updated_at as string | null | undefined) ?? (o.created_at as string) ?? null,
+      comercial_pcp_observation:
+        typeof (o as { comercial_pcp_observation?: unknown }).comercial_pcp_observation === "string"
+          ? ((o as { comercial_pcp_observation: string }).comercial_pcp_observation || null)
+          : null,
       items: Array.isArray(o.items) ? o.items : [],
     }));
 
@@ -195,5 +228,127 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     console.error("[comercial-orders]", e);
     return NextResponse.json({ orders: [] }, { status: 200 });
+  }
+}
+
+/**
+ * Grava observação Comercial → PCP no pedido (`orders.comercial_pcp_observation`).
+ */
+export async function PATCH(request: NextRequest) {
+  try {
+    const supabaseAdmin = createSupabaseAdminClient();
+    const body = await request.json();
+    const orderId = String(body.orderId ?? "").trim();
+    const rawObs = body.comercial_pcp_observation;
+    const observation =
+      rawObs === null || rawObs === undefined
+        ? null
+        : String(rawObs).trim().slice(0, 2000) || null;
+
+    if (!isUuid(orderId)) {
+      return NextResponse.json(
+        { success: false, error: "orderId inválido" },
+        { status: 400 }
+      );
+    }
+
+    const { data: orderRow, error: ordErr } = await supabaseAdmin
+      .from("orders")
+      .select("company_id")
+      .eq("id", orderId)
+      .maybeSingle();
+
+    if (ordErr || !orderRow?.company_id) {
+      return NextResponse.json(
+        { success: false, error: "Pedido não encontrado" },
+        { status: 404 }
+      );
+    }
+
+    const orderCompanyId = orderRow.company_id as string;
+
+    const cookieStore = await cookies();
+    const isLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+
+    if (isLocalAuth) {
+      let primary = await resolvePrimaryCompanyId(supabaseAdmin);
+      if (!primary) {
+        const { data: anyCompany } = await supabaseAdmin
+          .from("companies")
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+        primary = anyCompany?.id ?? null;
+      }
+      if (primary && orderCompanyId !== primary) {
+        return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
+      }
+    } else {
+      const supabaseAuth = await createServerSupabaseClient();
+      const {
+        data: { user },
+      } = await supabaseAuth.auth.getUser();
+      if (!user) {
+        return NextResponse.json(
+          { success: false, error: "Não autenticado" },
+          { status: 401 }
+        );
+      }
+
+      const { data: profile } = await supabaseAuth
+        .from("profiles")
+        .select("company_id, role")
+        .eq("id", user.id)
+        .single();
+
+      if (!profile || !canRoleEditComercialObservation(profile.role)) {
+        return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
+      }
+
+      const cid = profile.company_id as string | null;
+      if (
+        profile.role !== "super_admin" &&
+        cid !== orderCompanyId
+      ) {
+        return NextResponse.json(
+          { success: false, error: "Pedido de outra empresa" },
+          { status: 403 }
+        );
+      }
+    }
+
+    let { error: updErr } = await supabaseAdmin
+      .from("orders")
+      .update({
+        comercial_pcp_observation: observation,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", orderId);
+
+    if (
+      updErr &&
+      /updated_at|schema cache|column|does not exist/i.test(updErr.message)
+    ) {
+      ({ error: updErr } = await supabaseAdmin
+        .from("orders")
+        .update({ comercial_pcp_observation: observation })
+        .eq("id", orderId));
+    }
+
+    if (updErr) {
+      const hint =
+        /comercial_pcp_observation|column|schema cache|does not exist/i.test(updErr.message)
+          ? " Execute no SQL Editor: ALTER TABLE orders ADD COLUMN IF NOT EXISTS comercial_pcp_observation text;"
+          : "";
+      return NextResponse.json(
+        { success: false, error: updErr.message + hint },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Erro interno";
+    return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }

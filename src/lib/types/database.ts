@@ -69,6 +69,8 @@ export interface Order {
   pdf_path: string | null;
   folder_path: string | null;
   notes: string | null;
+  /** Texto livre do Comercial para o PCP (`orders.comercial_pcp_observation`). Opcional até migrar o SQL. */
+  comercial_pcp_observation?: string | null;
   created_at: string;
   updated_at: string;
   finished_at: string | null;

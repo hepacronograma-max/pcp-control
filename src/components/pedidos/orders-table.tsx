@@ -86,6 +86,7 @@ export function OrdersTable({
       list = list.filter((o) => {
         if (o.order_number?.toLowerCase().includes(query)) return true;
         if (o.client_name?.toLowerCase().includes(query)) return true;
+        if ((o.comercial_pcp_observation ?? "").toLowerCase().includes(query)) return true;
         const statusLabel = statusLabels[o.status ?? ""] ?? "";
         if (statusLabel && statusLabel.includes(query)) return true;
         const matchInItems = o.items?.some((it) =>
@@ -152,7 +153,7 @@ export function OrdersTable({
           enterKeyHint="search"
           autoComplete="off"
           className="w-full sm:w-64 sm:max-w-full min-h-[40px] rounded-md border border-slate-300 bg-white px-3 py-2 text-xs"
-          placeholder="Buscar pedido, cliente ou item..."
+          placeholder="Buscar pedido, cliente, obs. comercial ou item..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

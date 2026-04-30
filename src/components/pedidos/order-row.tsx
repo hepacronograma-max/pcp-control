@@ -150,6 +150,14 @@ export function OrderRow({
           </div>
         )}
         <div className="col-span-2 flex flex-nowrap items-center justify-end gap-1">
+          {!!order.comercial_pcp_observation?.trim() && (
+            <span
+              className="inline-flex shrink-0 max-w-[10rem] truncate rounded-full bg-sky-100 text-sky-900 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap border border-sky-200"
+              title={order.comercial_pcp_observation ?? undefined}
+            >
+              Obs. Comercial
+            </span>
+          )}
           {principalStatus === "atrasado" && (
             <span className="inline-flex items-center shrink-0 rounded-full bg-red-100 text-red-800 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap">
               Atrasado
@@ -261,14 +269,22 @@ export function OrderRow({
       )}
 
       {expanded && (
-        <OrderItems
-          items={order.items}
-          lines={lines}
-          orderPcpDeadline={order.pcp_deadline}
-          onChangeLine={onUpdateItemLine}
-          onChangeQuantity={onUpdateItemQuantity}
-          onUpdateItemPc={onUpdateItemPc}
-        />
+        <>
+          {!!order.comercial_pcp_observation?.trim() && (
+            <div className="mx-3 mb-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-slate-800">
+              <span className="font-semibold text-sky-950">Comercial → PCP: </span>
+              <span className="whitespace-pre-wrap">{order.comercial_pcp_observation}</span>
+            </div>
+          )}
+          <OrderItems
+            items={order.items}
+            lines={lines}
+            orderPcpDeadline={order.pcp_deadline}
+            onChangeLine={onUpdateItemLine}
+            onChangeQuantity={onUpdateItemQuantity}
+            onUpdateItemPc={onUpdateItemPc}
+          />
+        </>
       )}
     </>
   );

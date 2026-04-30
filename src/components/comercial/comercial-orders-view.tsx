@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ItemStatus, OrderStatus, OrderWithItems } from "@/lib/types/database";
 import { formatBrazilianDateTime, formatShortDate } from "@/lib/utils/date";
 import { OrderStatusBadge } from "@/components/pedidos/order-status-badge";
@@ -12,6 +12,7 @@ import {
 } from "@/lib/utils/order-aggregates";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 
 export type ComercialItemLite = {
   id: string;
@@ -32,6 +33,8 @@ export type ComercialOrderApi = {
   production_deadline: string | null;
   status: string;
   updated_at: string | null;
+  /** Recado visível para o PCP na tela Pedidos */
+  comercial_pcp_observation?: string | null;
   items: ComercialItemLite[];
 };
 
@@ -78,6 +81,7 @@ function toOrderWithItems(row: ComercialOrderApi): OrderWithItems {
     pdf_path: null,
     folder_path: null,
     notes: null,
+    comercial_pcp_observation: row.comercial_pcp_observation ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at ?? row.created_at,
     finished_at: null,
@@ -131,9 +135,9 @@ function StatusBadges({ principal, orderStatus }: { principal: OrderPrincipalSta
   return <OrderStatusBadge status={orderStatus} />;
 }
 
-/** Larguras estáveis: nº, cliente, 3 datas iguais, status — menos “folga” entre colunas. */
+/** Larguras estáveis + coluna ícone observação → PCP */
 const COMERCIAL_TABLE_GRID =
-  "grid w-full min-w-[46rem] sm:min-w-[54rem] grid-cols-[5.5rem_minmax(0,1.1fr)_5.5rem_5.5rem_5.5rem_minmax(9.5rem,1fr)] items-center gap-x-2 sm:gap-x-2.5 gap-y-0";
+  "grid w-full min-w-[48rem] sm:min-w-[56rem] grid-cols-[5.5rem_minmax(0,1.1fr)_5.5rem_5.5rem_5.5rem_minmax(9.5rem,1fr)_2.75rem] items-center gap-x-2 sm:gap-x-2.5 gap-y-0";
 
 function HeaderCell({
   children,
@@ -174,6 +178,9 @@ interface ComercialOrdersViewProps {
   fetching: boolean;
   lastAt: Date | null;
   onRefresh: () => void;
+  /** Comercial / gestão pode editar recado ao PCP */
+  canEditObservation: boolean;
+  onObservationSaved?: (orderId: string, observation: string | null) => void;
 }
 
 export function ComercialOrdersView({
@@ -182,11 +189,16 @@ export function ComercialOrdersView({
   fetching,
   lastAt,
   onRefresh,
+  canEditObservation,
+  onObservationSaved,
 }: ComercialOrdersViewProps) {
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<TabKey>("open");
   const [sortKey, setSortKey] = useState<SortKey>("delivery_deadline");
   const [sortAsc, setSortAsc] = useState(true);
+  const [obsExpandedId, setObsExpandedId] = useState<string | null>(null);
+  const [obsDraft, setObsDraft] = useState("");
+  const [savingObs, setSavingObs] = useState(false);
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) setSortAsc((v) => !v);
@@ -226,6 +238,7 @@ export function ComercialOrdersView({
         if (row.client_name?.toLowerCase().includes(query)) return true;
         const st = statusLabels[row.status ?? ""] ?? "";
         if (st && st.includes(query)) return true;
+        if ((row.comercial_pcp_observation ?? "").toLowerCase().includes(query)) return true;
         return (row.items ?? []).some((it) =>
           (it.description ?? "").toLowerCase().includes(query)
         );
@@ -243,13 +256,53 @@ export function ComercialOrdersView({
     });
   }, [source, search, sortKey, sortAsc]);
 
+  useEffect(() => {
+    if (!obsExpandedId) {
+      setObsDraft("");
+      return;
+    }
+    const row = orders.find((o) => o.id === obsExpandedId);
+    setObsDraft(row?.comercial_pcp_observation ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só ao abrir/fechar painel; não ligar em `orders` (polling sobrescreveria o texto ao digitar)
+  }, [obsExpandedId]);
+
+  async function saveObservation(orderId: string) {
+    const trimmed = obsDraft.trim().slice(0, 2000);
+    const payload = trimmed.length ? trimmed : null;
+    setSavingObs(true);
+    try {
+      const res = await fetch("/api/comercial-orders", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          comercial_pcp_observation: payload,
+        }),
+      });
+      const j = (await res.json()) as { success?: boolean; error?: string };
+      if (!res.ok || j.success === false) {
+        toast.error(j.error || "Não foi possível salvar.");
+        return;
+      }
+      onObservationSaved?.(orderId, payload);
+      toast.success("Observação para o PCP salva.");
+      setObsExpandedId(null);
+    } catch {
+      toast.error("Erro de rede ao salvar.");
+    } finally {
+      setSavingObs(false);
+    }
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <h1 className="text-lg font-semibold text-slate-900">Prazos de venda</h1>
           <p className="text-sm text-slate-600">
-            Visualização dos pedidos — mesmas informações principais da lista de Pedidos, sem editar.
+            Visualização dos pedidos — prazos e situação. Use o ícone à direita para registrar um recado ao PCP
+            (visível na tela Pedidos).
           </p>
           {lastAt && (
             <p className="text-[11px] text-slate-400 mt-0.5">
@@ -278,6 +331,7 @@ export function ComercialOrdersView({
                 "Prazo vendas",
                 "Prazo entrega",
                 "Status pedido",
+                "Obs. para PCP",
               ],
               rows: orders.map((o) => [
                 o.order_number,
@@ -286,6 +340,7 @@ export function ComercialOrdersView({
                 formatShortDate(o.delivery_deadline),
                 formatShortDate(o.pcp_deadline),
                 o.status,
+                o.comercial_pcp_observation ?? "",
               ]),
             })}
           />
@@ -368,6 +423,9 @@ export function ComercialOrdersView({
             <div className="text-right text-[10px] sm:text-[11px] font-semibold text-slate-500 pl-1">
               Status
             </div>
+            <div className="text-center text-[10px] sm:text-[11px] font-semibold text-slate-500 px-0">
+              Recado
+            </div>
           </div>
         </div>
 
@@ -393,40 +451,125 @@ export function ComercialOrdersView({
                       : traffic === "green"
                         ? "bg-emerald-50"
                         : "bg-white";
+                const hasObs = !!(row.comercial_pcp_observation ?? "").trim();
+                const gridTitle =
+                  traffic === "white"
+                    ? undefined
+                    : sameDay
+                      ? "Atenção: prazo de vendas, PCP e produção na mesma data."
+                      : traffic === "red"
+                        ? "Alerta: PCP após vendas ou produção após vendas."
+                        : traffic === "yellow"
+                          ? "Atenção: produção após o PCP e até a data de vendas."
+                          : "OK: produção até o PCP, antes de vendas.";
                 return (
-                  <div
-                    key={row.id}
-                    className={`${COMERCIAL_TABLE_GRID} px-3 sm:px-4 py-1.5 border-b border-slate-200 text-[11px] sm:text-xs ${rowTrafficClass}`}
-                    title={
-                      traffic === "white"
-                        ? undefined
-                        : sameDay
-                          ? "Atenção: prazo de vendas, PCP e produção na mesma data."
-                          : traffic === "red"
-                            ? "Alerta: PCP após vendas ou produção após vendas."
-                            : traffic === "yellow"
-                              ? "Atenção: produção após o PCP e até a data de vendas."
-                              : "OK: produção até o PCP, antes de vendas."
-                    }
-                  >
-                    <div className="font-medium text-slate-800 tabular-nums tracking-tight">
-                      {row.order_number}
+                  <div key={row.id} className={`border-b border-slate-200 ${rowTrafficClass}`}>
+                    <div
+                      className={`${COMERCIAL_TABLE_GRID} px-3 sm:px-4 py-1.5 text-[11px] sm:text-xs`}
+                      title={gridTitle}
+                    >
+                      <div className="font-medium text-slate-800 tabular-nums tracking-tight">
+                        {row.order_number}
+                      </div>
+                      <div className="min-w-0 truncate text-slate-800 pr-0.5" title={row.client_name ?? ""}>
+                        {row.client_name || "—"}
+                      </div>
+                      <div className="text-center tabular-nums text-slate-600">
+                        {formatShortDate(row.created_at)}
+                      </div>
+                      <div className="text-center tabular-nums text-slate-600">
+                        {formatShortDate(row.delivery_deadline)}
+                      </div>
+                      <div className="text-center tabular-nums text-[#1B4F72] font-medium">
+                        {formatShortDate(row.pcp_deadline)}
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-0.5 min-h-[24px] pl-0.5">
+                        <StatusBadges principal={principal} orderStatus={o.status} />
+                      </div>
+                      <div className="flex justify-center items-center">
+                        <button
+                          type="button"
+                          className={`rounded-md p-1 min-h-[28px] min-w-[28px] flex items-center justify-center border border-transparent hover:bg-white/80 hover:border-slate-200 transition-colors ${
+                            hasObs ? "text-sky-700" : "text-slate-400"
+                          }`}
+                          title={
+                            hasObs
+                              ? (row.comercial_pcp_observation ?? "").slice(0, 500)
+                              : canEditObservation
+                                ? "Registrar observação para o PCP"
+                                : "Ver observação para o PCP"
+                          }
+                          aria-expanded={obsExpandedId === row.id}
+                          onClick={() =>
+                            setObsExpandedId((id) => (id === row.id ? null : row.id))
+                          }
+                        >
+                          <span className="text-base leading-none" aria-hidden>
+                            {hasObs ? "●" : "○"}
+                          </span>
+                        </button>
+                      </div>
                     </div>
-                    <div className="min-w-0 truncate text-slate-800 pr-0.5" title={row.client_name ?? ""}>
-                      {row.client_name || "—"}
-                    </div>
-                    <div className="text-center tabular-nums text-slate-600">
-                      {formatShortDate(row.created_at)}
-                    </div>
-                    <div className="text-center tabular-nums text-slate-600">
-                      {formatShortDate(row.delivery_deadline)}
-                    </div>
-                    <div className="text-center tabular-nums text-[#1B4F72] font-medium">
-                      {formatShortDate(row.pcp_deadline)}
-                    </div>
-                    <div className="flex flex-wrap items-center justify-end gap-0.5 min-h-[24px] pl-0.5">
-                      <StatusBadges principal={principal} orderStatus={o.status} />
-                    </div>
+                    {obsExpandedId === row.id && (
+                      <div className="px-3 sm:px-4 py-3 bg-white/70 border-t border-slate-100 text-xs space-y-2">
+                        <div>
+                          <p className="text-[11px] font-semibold text-slate-800">
+                            Observação para o PCP
+                          </p>
+                          <p className="text-[10px] text-slate-500 mt-0.5">
+                            Visível na tela Pedidos para quem programa produção (badge e painel ao expandir o
+                            pedido).
+                          </p>
+                        </div>
+                        {canEditObservation ? (
+                          <>
+                            <textarea
+                              className="w-full rounded-md border border-slate-300 px-2 py-2 text-xs text-slate-800 min-h-[5rem] resize-y max-h-[14rem]"
+                              placeholder="Ex.: combinei com o cliente — novo prazo de entrega em DD/MM/AAAA…"
+                              maxLength={2000}
+                              rows={4}
+                              value={obsDraft}
+                              onChange={(e) => setObsDraft(e.target.value.slice(0, 2000))}
+                              disabled={savingObs}
+                            />
+                            <div className="flex flex-wrap gap-2 justify-end">
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 disabled:opacity-60 min-h-8"
+                                disabled={savingObs}
+                                onClick={() => setObsExpandedId(null)}
+                              >
+                                Cancelar
+                              </button>
+                              <Button
+                                type="button"
+                                className="text-xs h-8 bg-[#1B4F72]"
+                                disabled={savingObs}
+                                onClick={() => saveObservation(row.id)}
+                              >
+                                {savingObs ? "Salvando…" : "Salvar"}
+                              </Button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="whitespace-pre-wrap rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800 min-h-[3rem]">
+                              {(row.comercial_pcp_observation ?? "").trim() ||
+                                "Nenhuma observação registrada pelo Comercial."}
+                            </div>
+                            <div className="flex justify-end">
+                              <button
+                                type="button"
+                                className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-medium border border-slate-300 bg-white text-slate-800 hover:bg-slate-50 min-h-8"
+                                onClick={() => setObsExpandedId(null)}
+                              >
+                                Fechar
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}

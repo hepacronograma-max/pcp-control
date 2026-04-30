@@ -8,6 +8,7 @@ import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 import {
   defaultAppPathForRole,
   hasPermission,
+  normalizeUserRole,
 } from "@/lib/utils/permissions";
 import { ComercialOrdersView, type ComercialOrderApi } from "@/components/comercial/comercial-orders-view";
 import { toast } from "sonner";
@@ -101,6 +102,12 @@ export default function ComercialPage() {
     return null;
   }
 
+  const roleNorm = normalizeUserRole(profile!.role);
+  const canEditObservation =
+    roleNorm === "comercial" ||
+    roleNorm === "manager" ||
+    roleNorm === "super_admin";
+
   return (
     <ComercialOrdersView
       orders={rows}
@@ -108,6 +115,14 @@ export default function ComercialPage() {
       fetching={fetching}
       lastAt={lastAt}
       onRefresh={() => void load()}
+      canEditObservation={canEditObservation}
+      onObservationSaved={(orderId, observation) =>
+        setRows((prev) =>
+          prev.map((o) =>
+            o.id === orderId ? { ...o, comercial_pcp_observation: observation } : o
+          )
+        )
+      }
     />
   );
 }

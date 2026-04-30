@@ -14,6 +14,9 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS pcp_deadline date;
 -- Data/hora em que o pedido foi finalizado na tela Pedidos (action "finish")
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS finished_at timestamptz;
 
+-- Área Comercial: recado visível para o PCP na tela Pedidos
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS comercial_pcp_observation text;
+
 -- Prazo PCP por item (espelha o do pedido na UI e na linha de produção)
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS pcp_deadline date;
 
