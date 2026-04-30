@@ -9,7 +9,7 @@ import {
   isWeekend,
   subDays,
 } from "date-fns";
-import type { Holiday, OrderItem } from "@/lib/types/database";
+import type { Holiday, OrderItem, OrderStatus } from "@/lib/types/database";
 import { GanttBar } from "./gantt-bar";
 
 export interface GanttDay {
@@ -29,6 +29,7 @@ export interface LineItemWithOrder extends OrderItem {
     client_name: string;
     delivery_deadline: string | null;
     pcp_deadline: string | null;
+    status: OrderStatus;
   };
   /** Preenchido na carga: datas do `purchase_orders` vinculado (Compras). */
   po_expected_delivery?: string | null;

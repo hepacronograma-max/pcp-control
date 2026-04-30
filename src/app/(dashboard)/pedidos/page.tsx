@@ -7,12 +7,14 @@ import { useUser } from "@/lib/hooks/use-user";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { getOperatorLineIdsForLocalUser } from "@/lib/local-users";
 import type {
+  OrderComercialThreadPatch,
   OrderWithItems,
   ProductionLine,
   UserRole,
 } from "@/lib/types/database";
 import { OrdersTable } from "@/components/pedidos/orders-table";
 import { defaultAppPathForRole, hasPermission } from "@/lib/utils/permissions";
+import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 import { Button } from "@/components/ui/button";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
@@ -410,12 +412,188 @@ export default function PedidosPage() {
   async function handleFinishOrder(orderId: string) {
     if (
       !window.confirm(
-        "Tem certeza que deseja finalizar este pedido? Esta ação não pode ser desfeita."
+        "Finalizar este pedido? Você poderá reabri-lo depois em Finalizados, se precisar."
       )
     ) {
       return;
     }
     await runFinishOrder(orderId);
+  }
+
+  async function runReopenOrder(orderId: string): Promise<boolean> {
+    const order = orders.find((o) => o.id === orderId);
+    if (!order || order.status !== "finished") return false;
+
+    if (useApi) {
+      const r = await postOrderItemsUpdate({ action: "unfinish", orderId });
+      if (!r.ok) {
+        toast.error(r.error);
+        return false;
+      }
+    } else if (supabase) {
+      let { error } = await supabase
+        .from("orders")
+        .update({ status: "planning", finished_at: null })
+        .eq("id", orderId);
+      if (
+        error &&
+        /finished_at|schema cache|column|does not exist/i.test(error.message)
+      ) {
+        ({ error } = await supabase
+          .from("orders")
+          .update({ status: "planning" })
+          .eq("id", orderId));
+      }
+      if (error) {
+        toast.error(error.message);
+        return false;
+      }
+
+      const completedIds = order.items.filter((it) => it.status === "completed").map((it) => it.id);
+      for (const itemId of completedIds) {
+        const it = order.items.find((x) => x.id === itemId);
+        if (!it) continue;
+        const nextStatus = itemStatusAfterReopenCompleted(it);
+        let patch: Record<string, unknown> = {
+          status: nextStatus,
+          completed_at: null,
+          completed_by: null,
+        };
+        let { error: ie } = await supabase.from("order_items").update(patch).eq("id", itemId);
+        if (
+          ie &&
+          /completed_by|schema cache|column|does not exist/i.test(ie.message)
+        ) {
+          patch = { status: nextStatus, completed_at: null };
+          ({ error: ie } = await supabase.from("order_items").update(patch).eq("id", itemId));
+        }
+        if (ie) {
+          toast.error(ie.message);
+          return false;
+        }
+      }
+    } else return false;
+
+    updateOrdersState((prev) =>
+      prev.map((o) =>
+        o.id === orderId
+          ? {
+              ...o,
+              status: "planning",
+              finished_at: null,
+              items: o.items.map((it) =>
+                it.status === "completed"
+                  ? {
+                      ...it,
+                      status: itemStatusAfterReopenCompleted(it),
+                      completed_at: null,
+                      completed_by: null,
+                    }
+                  : it
+              ),
+            }
+          : o
+      )
+    );
+    return true;
+  }
+
+  async function handleReopenOrder(orderId: string) {
+    if (
+      !window.confirm(
+        "Reabrir este pedido? Ele volta para Em aberto e os itens concluídos voltam para programação ou aguardando."
+      )
+    ) {
+      return;
+    }
+    const ok = await runReopenOrder(orderId);
+    if (ok) toast.success("Pedido reaberto.");
+  }
+
+  async function handleReopenItem(itemId: string) {
+    const order = orders.find((o) => o.items.some((it) => it.id === itemId));
+    const item = order?.items.find((it) => it.id === itemId);
+    if (!item || item.status !== "completed") return;
+
+    if (
+      !window.confirm(
+        "Reabrir este item? Ele deixa de aparecer como concluído e volta para programação ou aguardando."
+      )
+    ) {
+      return;
+    }
+
+    const nextStatus = itemStatusAfterReopenCompleted(item);
+
+    if (useApi) {
+      const r = await postOrderItemsUpdate({ action: "uncomplete", itemId });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+    } else if (supabase) {
+      let patch: Record<string, unknown> = {
+        status: nextStatus,
+        completed_at: null,
+        completed_by: null,
+      };
+      let { error } = await supabase.from("order_items").update(patch).eq("id", itemId);
+      if (
+        error &&
+        /completed_by|schema cache|column|does not exist/i.test(error.message)
+      ) {
+        patch = { status: nextStatus, completed_at: null };
+        ({ error } = await supabase.from("order_items").update(patch).eq("id", itemId));
+      }
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      if (order?.status === "finished") {
+        let { error: oe } = await supabase
+          .from("orders")
+          .update({ status: "planning", finished_at: null })
+          .eq("id", order.id);
+        if (
+          oe &&
+          /finished_at|schema cache|column|does not exist/i.test(oe.message)
+        ) {
+          ({ error: oe } = await supabase
+            .from("orders")
+            .update({ status: "planning" })
+            .eq("id", order.id));
+        }
+        if (oe) {
+          toast.error(oe.message);
+          return;
+        }
+      }
+    } else return;
+
+    updateOrdersState((prev) =>
+      prev.map((o) => {
+        if (!o.items.some((it) => it.id === itemId)) return o;
+        const wasFinished = o.status === "finished";
+        return {
+          ...o,
+          ...(wasFinished
+            ? { status: "planning" as const, finished_at: null }
+            : {}),
+          items: o.items.map((it) =>
+            it.id === itemId
+              ? {
+                  ...it,
+                  status: nextStatus,
+                  completed_at: null,
+                  completed_by: null,
+                }
+              : it
+          ),
+        };
+      })
+    );
+    toast.success("Item reaberto.");
   }
 
   async function handleFinishOrdersBulk(orderIds: string[]) {
@@ -436,7 +614,7 @@ export default function PedidosPage() {
     }
     if (
       !window.confirm(
-        `Finalizar ${ready.length} pedido(s)? Esta ação não pode ser desfeita.`
+        `Finalizar ${ready.length} pedido(s)? Você poderá reabrir depois na aba Finalizados, se precisar.`
       )
     ) {
       return;
@@ -679,6 +857,13 @@ export default function PedidosPage() {
           onDeleteOrder={handleDeleteOrder}
           onFinishOrder={handleFinishOrder}
           onFinishOrdersBulk={handleFinishOrdersBulk}
+          onReopenOrder={handleReopenOrder}
+          onReopenCompletedItem={handleReopenItem}
+          onComercialObservationThreadUpdated={(orderId, patch: OrderComercialThreadPatch) => {
+            updateOrdersState((prev) =>
+              prev.map((o) => (o.id === orderId ? { ...o, ...patch } : o))
+            );
+          }}
         />
       )}
 

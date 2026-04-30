@@ -12,6 +12,7 @@ import type {
   ProductionLine,
 } from "@/lib/types/database";
 import { toDateOnly } from "@/lib/utils/supabase-data";
+import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
 import {
   attachPoDatesToLineItems,
   itemPcArrivalForProduction,
@@ -34,6 +35,7 @@ import { useUserPreferences } from "@/hooks/use-user-preferences";
 import {
   canViewProductionLineMenu,
   defaultAppPathForRole,
+  hasPermission,
 } from "@/lib/utils/permissions";
 
 type TabKey = "all" | "in_progress" | "finished";
@@ -460,6 +462,86 @@ export default function LinePage() {
     await runCompleteItems(ids);
   }
 
+  async function handleReopenCompleted(itemId: string) {
+    if (
+      !window.confirm(
+        "Reabrir este item? Ele volta para programação ou aguardando."
+      )
+    ) {
+      return;
+    }
+    const targetItem = items.find((i) => i.id === itemId);
+    if (!targetItem || targetItem.status !== "completed") return;
+
+    if (useApi) {
+      const res = await fetch("/api/order-items/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ action: "uncomplete", itemId }),
+      });
+      let msg = "";
+      try {
+        const j = (await res.json()) as { error?: string };
+        msg = j.error ?? "";
+      } catch {
+        // ignore
+      }
+      if (!res.ok) {
+        toast.error(msg || "Não foi possível reabrir o item.");
+        return;
+      }
+    } else if (supabase) {
+      const nextStatus = itemStatusAfterReopenCompleted(targetItem);
+      let patch: Record<string, unknown> = {
+        status: nextStatus,
+        completed_at: null,
+        completed_by: null,
+      };
+      let { error } = await supabase.from("order_items").update(patch).eq("id", itemId);
+      if (
+        error &&
+        /completed_by|schema cache|column|does not exist/i.test(error.message)
+      ) {
+        patch = { status: nextStatus, completed_at: null };
+        ({ error } = await supabase.from("order_items").update(patch).eq("id", itemId));
+      }
+      if (error) {
+        toast.error(error.message || "Erro ao reabrir.");
+        return;
+      }
+
+      const oid = targetItem.order?.id;
+      if (oid && targetItem.order?.status === "finished") {
+        let { error: oe } = await supabase
+          .from("orders")
+          .update({ status: "planning", finished_at: null })
+          .eq("id", oid);
+        if (
+          oe &&
+          /finished_at|schema cache|column|does not exist/i.test(oe.message)
+        ) {
+          ({ error: oe } = await supabase
+            .from("orders")
+            .update({ status: "planning" })
+            .eq("id", oid));
+        }
+        if (oe) {
+          toast.error(oe.message || "Erro ao reabrir o pedido.");
+          return;
+        }
+      }
+    } else return;
+
+    toast.success("Item reaberto.");
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(itemId);
+      return next;
+    });
+    setRefreshKey((k) => k + 1);
+  }
+
   async function handleSupply(itemId: string) {
     const nowIso = new Date().toISOString();
     if (!supabase) return;
@@ -674,6 +756,11 @@ export default function LinePage() {
                     onChangeDate={handleChangeDate}
                     onChangeNotes={handleChangeNotes}
                     onComplete={handleComplete}
+                    onReopenCompleted={
+                      profile && hasPermission(profile.role, "finishOrders")
+                        ? handleReopenCompleted
+                        : undefined
+                    }
                     isAlmoxarifado={isAlmoxarifado}
                     allLines={allLines}
                     onSupply={handleSupply}

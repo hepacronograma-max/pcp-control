@@ -1,4 +1,4 @@
-import type { OrderItem, OrderWithItems } from "@/lib/types/database";
+import type { ItemStatus, OrderItem, OrderWithItems } from "@/lib/types/database";
 import { isPastDeadline, parseLocalDate } from "@/lib/utils/date";
 import { toDateOnly } from "@/lib/utils/supabase-data";
 
@@ -15,6 +15,13 @@ export type OrderPrincipalStatus =
   | "produzindo"
   | "finalizado"
   | null;
+
+/** Voltar um item de `completed`: `scheduled` se já tinha janela de produção, senão `waiting`. */
+export function itemStatusAfterReopenCompleted(
+  item: Pick<OrderItem, "production_start" | "production_end">
+): ItemStatus {
+  return item.production_start && item.production_end ? "scheduled" : "waiting";
+}
 
 export function getOrderPrincipalStatus(order: OrderWithItems): OrderPrincipalStatus {
   const items = order.items;
@@ -204,4 +211,22 @@ export function getOrderDeadlineTrafficLight(
   if (p < v && pr > p && pr <= v) return "yellow";
   if (p < v && pr <= p) return "green";
   return "white";
+}
+
+/**
+ * Há texto do Comercial e falta resposta do PCP à mensagem atual.
+ * Usa timestamps quando existem; senão compara só presença do texto da resposta (legado).
+ * Novo recado após uma resposta: `comercial_pcp_observation_at` > `pcp_reply_comercial_observation_at`.
+ */
+export function orderComercialObsNeedsPcpReply(order: OrderWithItems): boolean {
+  const obs = (order.comercial_pcp_observation ?? "").trim();
+  if (!obs) return false;
+  const replyText = (order.pcp_reply_comercial_observation ?? "").trim();
+  const obsAt = order.comercial_pcp_observation_at;
+  const replyAt = order.pcp_reply_comercial_observation_at;
+  if (obsAt) {
+    if (!replyAt) return !replyText;
+    return obsAt > replyAt;
+  }
+  return !replyText;
 }

@@ -17,6 +17,9 @@ interface OrderItemsProps {
     itemId: string,
     data: { pc_number: string | null; pc_delivery_date: string | null }
   ) => void;
+  /** Reabrir item marcado como concluído (PCP/gestão). */
+  canReopenCompletedItem?: boolean;
+  onReopenCompletedItem?: (itemId: string) => void;
 }
 
 export function OrderItems({
@@ -26,6 +29,8 @@ export function OrderItems({
   onChangeLine,
   onChangeQuantity,
   onUpdateItemPc,
+  canReopenCompletedItem,
+  onReopenCompletedItem,
 }: OrderItemsProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [pcModalItemId, setPcModalItemId] = useState<string | null>(null);
@@ -65,7 +70,7 @@ export function OrderItems({
   }
 
   const gridCols =
-    "grid-cols-[26px_minmax(0,2fr)_40px_minmax(0,0.85fr)_minmax(0,0.7fr)_76px_minmax(0,1.05fr)]";
+    "grid-cols-[26px_minmax(0,0.55fr)_minmax(0,1.75fr)_40px_minmax(0,0.85fr)_minmax(0,0.7fr)_76px_minmax(0,1.05fr)]";
 
   return (
     <div className="bg-slate-50 border-t border-slate-200">
@@ -73,6 +78,7 @@ export function OrderItems({
         className={`grid ${gridCols} gap-1.5 px-3 py-1.5 text-[10px] font-semibold text-slate-500 border-b border-slate-200`}
       >
         <span>Item</span>
+        <span className="truncate">Cód.</span>
         <span>Descrição</span>
         <span className="text-center">Qtd</span>
         <span className="truncate">Linha</span>
@@ -91,6 +97,12 @@ export function OrderItems({
             className={`grid ${gridCols} gap-1.5 px-3 py-2 text-[10px] sm:text-xs items-center`}
           >
             <div className="text-slate-400 text-center">{item.item_number}</div>
+            <div
+              className="font-mono text-[10px] text-slate-700 truncate text-center"
+              title={(item.product_code ?? "").trim() || undefined}
+            >
+              {(item.product_code ?? "").trim() || "—"}
+            </div>
             <div
               className={
                 isExpanded
@@ -164,12 +176,26 @@ export function OrderItems({
               <span className="text-[10px] text-slate-500 shrink-0">
                 {formatShortDate(item.production_end)}
               </span>
+            <div className="flex flex-col items-end gap-0.5 min-w-0">
               <ItemStatusBadge
                 status={item.status}
                 productionStart={item.production_start}
                 productionEnd={item.production_end}
                 pcpDeadline={effectivePcp}
               />
+              {item.status === "completed" &&
+                canReopenCompletedItem &&
+                onReopenCompletedItem && (
+                  <button
+                    type="button"
+                    className="rounded border border-amber-400 bg-amber-50 px-1 py-0.5 text-[9px] font-semibold text-amber-900 hover:bg-amber-100 whitespace-nowrap"
+                    title="Desfazer conclusão deste item"
+                    onClick={() => onReopenCompletedItem(item.id)}
+                  >
+                    Reabrir item
+                  </button>
+                )}
+            </div>
             </div>
           </div>
         );

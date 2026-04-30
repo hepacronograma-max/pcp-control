@@ -31,9 +31,37 @@ function normalizarTextoPdf(text: string): string {
     .trim();
 }
 
+/** Código na coluna "Código" do PDF TOTVS (ex.: HF-071, HF-25715). */
+const RE_CODIGO_PRODUTO_TOTVS = /^[A-Z]{2,}-\d+[A-Z0-9.-]*$/i;
+
+/**
+ * Layout típico no PDF:
+ * - Mesma linha: `3,00 PÇ HF-071 FILTRO ...` → código + início da descrição na mesma linha.
+ * - Ou `3,00 PÇ HF-071` só código na linha da qtde e a linha seguinte é só o nome curto do item;
+ *   linhas abaixo são observações (normas, texto promocional) — não importamos.
+ */
+function splitTotvsCodeFromQuantityTail(tailAfterUnit: string): {
+  product_code: string | null;
+  restSameLine: string;
+} {
+  const trimmed = tailAfterUnit.trim();
+  if (!trimmed) return { product_code: null, restSameLine: "" };
+  const tokens = trimmed.split(/\s+/);
+  const first = tokens[0] ?? "";
+  if (RE_CODIGO_PRODUTO_TOTVS.test(first)) {
+    return {
+      product_code: first,
+      restSameLine: tokens.slice(1).join(" ").trim(),
+    };
+  }
+  return { product_code: null, restSameLine: trimmed };
+}
+
 export interface ParsedTotvsItem {
   description: string;
   quantity: number;
+  /** Coluna "Código" do PDF, quando reconhecida */
+  product_code?: string | null;
 }
 
 export interface ParsedTotvsResult {
@@ -137,52 +165,67 @@ export function parseTotvsOrcamento(
     }
     const end = idxOutras > start ? idxOutras : linhas.length;
 
-    const UNIDADES = /^(UN|PÇ|PC|PCS|PCT|CX|KG|M|M2|M3|LT|L|HR|CJ|JG|PR|RL|SC|TB|FD|GL|TON|MIL|PAR|UNID|UND|PEÇA)$/i;
-    // Regex: linha começando com quantidade decimal
+    const UNIDADES =
+      /^(UN|PÇ|PC|PCS|PCT|CX|KG|M|M2|M3|LT|L|HR|CJ|JG|PR|RL|SC|TB|FD|GL|TON|MIL|PAR|UNID|UND|PEÇA)$/i;
     const reLinhaItem = /^(\d+[,.]\d{2})\s+(.+)$/;
 
-    let i = start;
-    while (i < end) {
-      const linha = linhas[i];
-
+    let lineIdx = start;
+    while (lineIdx < end) {
+      const linha = linhas[lineIdx];
       const m = linha.match(reLinhaItem);
-      if (m) {
-        const qtd = parseFloat(m[1].replace(".", "").replace(",", "."));
-        const resto = m[2].trim();
-
-        // Separar partes: pode ser "PÇ HF-27462 FILTRO..." ou "HF-27462 FILTRO..."
-        const partes = resto.split(/\s+/);
-        let startIdx = 0;
-
-        // Pular unidade se for a primeira palavra
-        if (partes.length > 1 && UNIDADES.test(partes[0])) {
-          startIdx = 1;
-        }
-
-        const descPartes = partes.slice(startIdx).join(" ");
-
-        // Coletar linhas de continuação da descrição
-        let descCompleta = descPartes;
-        while (
-          i + 1 < end &&
-          !reLinhaItem.test(linhas[i + 1]) &&
-          !/^Outras\s+Informa/i.test(linhas[i + 1])
-        ) {
-          i++;
-          descCompleta += " " + linhas[i];
-        }
-
-        if (!Number.isNaN(qtd) && qtd > 0 && descCompleta.length > 1) {
-          items.push({
-            description: descCompleta.trim(),
-            quantity: qtd,
-          });
-        }
-        i++;
+      if (!m) {
+        lineIdx++;
         continue;
       }
 
-      i++;
+      const qtd = parseFloat(m[1].replace(".", "").replace(",", "."));
+      let resto = m[2].trim();
+      const partes = resto.split(/\s+/);
+      let startIdx = 0;
+      if (partes.length > 1 && UNIDADES.test(partes[0])) {
+        startIdx = 1;
+      }
+      const tailTokens = partes.slice(startIdx);
+      const tailJoined = tailTokens.join(" ");
+
+      const { product_code, restSameLine } =
+        splitTotvsCodeFromQuantityTail(tailJoined);
+
+      let description = "";
+      let blockEnd = lineIdx;
+
+      if (
+        product_code &&
+        !restSameLine &&
+        lineIdx + 1 < end &&
+        !reLinhaItem.test(linhas[lineIdx + 1]) &&
+        !/^Outras\s+Informa/i.test(linhas[lineIdx + 1])
+      ) {
+        /** Código só na linha da quantidade; descrição curta na linha seguinte. */
+        description = linhas[lineIdx + 1].trim();
+        blockEnd = lineIdx + 1;
+      } else {
+        description = restSameLine.trim();
+        blockEnd = lineIdx;
+      }
+
+      while (
+        blockEnd + 1 < end &&
+        !reLinhaItem.test(linhas[blockEnd + 1]) &&
+        !/^Outras\s+Informa/i.test(linhas[blockEnd + 1])
+      ) {
+        blockEnd++;
+      }
+
+      if (!Number.isNaN(qtd) && qtd > 0 && description.length > 0) {
+        items.push({
+          quantity: qtd,
+          description: description.slice(0, 500),
+          product_code: product_code ?? null,
+        });
+      }
+
+      lineIdx = blockEnd + 1;
     }
   }
 

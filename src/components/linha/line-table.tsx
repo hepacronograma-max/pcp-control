@@ -4,6 +4,7 @@ import type { LineItemWithOrder } from "./gantt-calendar";
 import type { Profile, ProductionLine } from "@/lib/types/database";
 import { formatShortDate, parseLocalDate } from "@/lib/utils/date";
 import { itemPcArrivalForProduction } from "@/lib/utils/pc-purchase-dates";
+import { hasPermission } from "@/lib/utils/permissions";
 import { toDateOnly } from "@/lib/utils/supabase-data";
 
 function safeParse(d: string): Date {
@@ -119,6 +120,8 @@ interface LineTableProps {
   ) => void;
   onChangeNotes: (itemId: string, value: string) => void;
   onComplete: (itemId: string) => void;
+  /** Desfazer conclusão do item (PCP/gestão). */
+  onReopenCompleted?: (itemId: string) => void;
   isAlmoxarifado?: boolean;
   allLines?: ProductionLine[];
   onSupply?: (itemId: string) => void;
@@ -138,6 +141,7 @@ export function LineTable({
   onChangeDate,
   onChangeNotes,
   onComplete,
+  onReopenCompleted,
   isAlmoxarifado,
   allLines,
   onSupply,
@@ -155,15 +159,29 @@ export function LineTable({
   const defaultWidths = isAlmoxarifado
     ? [60, 140, 200, 55, 110, 90, 80]
     : selectCol
-      ? [32, 54, 118, 158, 42, 76, 76, 116, 116, 40, 96]
-      : [54, 118, 158, 42, 76, 76, 116, 116, 40, 96];
+      ? [32, 54, 118, 72, 158, 42, 76, 76, 116, 116, 40, 96]
+      : [54, 118, 72, 158, 42, 76, 76, 116, 116, 40, 96];
+
+  /** Preferências antigas (antes da coluna Cód.) tinham um elemento a menos. */
+  const normalizedPropWidths = useMemo(() => {
+    if (!columnWidthsProp?.length) return undefined;
+    const exp = defaultWidths.length;
+    if (columnWidthsProp.length === exp) return columnWidthsProp;
+    if (isAlmoxarifado) return undefined;
+    const legacyLen = exp - 1;
+    if (columnWidthsProp.length !== legacyLen) return undefined;
+    const insertAt = selectCol ? 3 : 2;
+    const merged = [...columnWidthsProp];
+    merged.splice(insertAt, 0, defaultWidths[insertAt] ?? 72);
+    return merged;
+  }, [columnWidthsProp, defaultWidths, isAlmoxarifado, selectCol]);
 
   const [internalWidths, setInternalWidths] = useState<number[]>(defaultWidths);
-  const columnWidths = columnWidthsProp ?? internalWidths;
+  const columnWidths = normalizedPropWidths ?? internalWidths;
   const setColumnWidths = useCallback(
     (updater: number[] | ((prev: number[]) => number[])) => {
       if (onColumnWidthsChange) {
-        const current = columnWidthsProp ?? internalWidths;
+        const current = normalizedPropWidths ?? internalWidths;
         const next =
           typeof updater === "function" ? updater(current) : updater;
         onColumnWidthsChange(next);
@@ -171,7 +189,7 @@ export function LineTable({
         setInternalWidths(updater);
       }
     },
-    [onColumnWidthsChange, columnWidthsProp, internalWidths]
+    [onColumnWidthsChange, normalizedPropWidths, internalWidths]
   );
   const resizingIndexRef = useRef<number | null>(null);
   const startXRef = useRef(0);
@@ -193,12 +211,14 @@ export function LineTable({
       isAlmoxarifado
         ? [44, 72, 96, 36, 72, 64, 56]
         : selectCol
-          ? [28, 44, 72, 96, 36, 56, 56, 100, 100, 32, 64]
-          : [44, 72, 96, 36, 56, 56, 100, 100, 32, 64],
+          ? [28, 44, 72, 52, 96, 36, 56, 56, 100, 100, 32, 64]
+          : [44, 72, 52, 96, 36, 56, 56, 100, 100, 32, 64],
     [isAlmoxarifado, selectCol]
   );
 
   const sel = selectedItemIds ?? new Set<string>();
+  const canReopenCompleted =
+    !!onReopenCompleted && hasPermission(profile.role, "finishOrders");
   const allVisibleSelected =
     items.length > 0 && items.every((it) => sel.has(it.id));
   const someSelected = items.some((it) => sel.has(it.id));
@@ -401,9 +421,15 @@ export function LineTable({
             Cliente
           </HeaderCell>
           <HeaderCell
+            className="text-center"
+            onResizeStart={(e) => handleResizeStart(2 + colOff, e)}
+          >
+            Cód.
+          </HeaderCell>
+          <HeaderCell
             onClick={() => toggleSort("description")}
             sortIndex={getSortIndex("description")}
-            onResizeStart={(e) => handleResizeStart(2 + colOff, e)}
+            onResizeStart={(e) => handleResizeStart(3 + colOff, e)}
           >
             Descrição
           </HeaderCell>
@@ -411,7 +437,7 @@ export function LineTable({
             className="text-center"
             onClick={() => toggleSort("quantity")}
             sortIndex={getSortIndex("quantity")}
-            onResizeStart={(e) => handleResizeStart(3 + colOff, e)}
+            onResizeStart={(e) => handleResizeStart(4 + colOff, e)}
           >
             Qtd
           </HeaderCell>
@@ -419,13 +445,13 @@ export function LineTable({
             className="text-center"
             onClick={() => toggleSort("delivery_deadline")}
             sortIndex={getSortIndex("delivery_deadline")}
-            onResizeStart={(e) => handleResizeStart(4 + colOff, e)}
+            onResizeStart={(e) => handleResizeStart(5 + colOff, e)}
           >
             Prazo PCP
           </HeaderCell>
           <HeaderCell
             className="text-center"
-            onResizeStart={(e) => handleResizeStart(5 + colOff, e)}
+            onResizeStart={(e) => handleResizeStart(6 + colOff, e)}
           >
             PC entrega
           </HeaderCell>
@@ -433,7 +459,7 @@ export function LineTable({
             className="text-center"
             onClick={() => toggleSort("production_start")}
             sortIndex={getSortIndex("production_start")}
-            onResizeStart={(e) => handleResizeStart(6 + colOff, e)}
+            onResizeStart={(e) => handleResizeStart(7 + colOff, e)}
           >
             Início Prod.
           </HeaderCell>
@@ -441,17 +467,17 @@ export function LineTable({
             className="text-center"
             onClick={() => toggleSort("production_end")}
             sortIndex={getSortIndex("production_end")}
-            onResizeStart={(e) => handleResizeStart(7 + colOff, e)}
+            onResizeStart={(e) => handleResizeStart(8 + colOff, e)}
           >
             Fim Prod.
           </HeaderCell>
           <HeaderCell
             className="text-center"
-            onResizeStart={(e) => handleResizeStart(8 + colOff, e)}
+            onResizeStart={(e) => handleResizeStart(9 + colOff, e)}
           >
             ✓
           </HeaderCell>
-          <HeaderCell onResizeStart={(e) => handleResizeStart(9 + colOff, e)}>
+          <HeaderCell onResizeStart={(e) => handleResizeStart(10 + colOff, e)}>
             Obs.
           </HeaderCell>
         </div>
@@ -525,6 +551,14 @@ export function LineTable({
                   {item.order.client_name}
                 </span>
               </Cell>
+              <Cell
+                title={(item.product_code ?? "").trim() || undefined}
+                className="text-center flex justify-center items-center font-mono text-[10px] min-w-0"
+              >
+                <span className="truncate block">
+                  {(item.product_code ?? "").trim() || "—"}
+                </span>
+              </Cell>
               <Cell title={item.description} className="flex items-center min-w-0">
                 <span className="truncate block">{item.description}</span>
               </Cell>
@@ -565,17 +599,40 @@ export function LineTable({
                 />
               </Cell>
               <Cell className="text-center px-0.5 flex items-center justify-center">
-                <button
-                  onClick={() => handleComplete(item.id)}
-                  className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px] leading-none ${
-                    willDelay
-                      ? "border-red-300 text-red-700 hover:bg-red-100"
-                      : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
-                  }`}
-                  title={willDelay ? "Vai atrasar - Marcar como concluído" : "Marcar como concluído"}
-                >
-                  ✓
-                </button>
+                {item.status === "completed" && canReopenCompleted ? (
+                  <button
+                    type="button"
+                    onClick={() => onReopenCompleted!(item.id)}
+                    className="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded border border-amber-400 bg-amber-50 px-0.5 text-[10px] font-semibold leading-none text-amber-900 hover:bg-amber-100"
+                    title="Reabrir item (desfazer conclusão)"
+                  >
+                    ↺
+                  </button>
+                ) : item.status !== "completed" ? (
+                  <button
+                    type="button"
+                    onClick={() => handleComplete(item.id)}
+                    className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px] leading-none ${
+                      willDelay
+                        ? "border-red-300 text-red-700 hover:bg-red-100"
+                        : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                    }`}
+                    title={
+                      willDelay
+                        ? "Vai atrasar - Marcar como concluído"
+                        : "Marcar como concluído"
+                    }
+                  >
+                    ✓
+                  </button>
+                ) : (
+                  <span
+                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center text-[10px] text-emerald-700"
+                    title="Concluído"
+                  >
+                    ✓
+                  </span>
+                )}
               </Cell>
               <Cell className="flex items-center py-0 h-full min-h-0">
                 <input

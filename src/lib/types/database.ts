@@ -71,6 +71,12 @@ export interface Order {
   notes: string | null;
   /** Texto livre do Comercial para o PCP (`orders.comercial_pcp_observation`). Opcional até migrar o SQL. */
   comercial_pcp_observation?: string | null;
+  comercial_pcp_observation_by?: string | null;
+  comercial_pcp_observation_at?: string | null;
+  /** Resposta do PCP ao recado do Comercial */
+  pcp_reply_comercial_observation?: string | null;
+  pcp_reply_comercial_observation_by?: string | null;
+  pcp_reply_comercial_observation_at?: string | null;
   created_at: string;
   updated_at: string;
   finished_at: string | null;
@@ -81,6 +87,8 @@ export interface OrderItem {
   id: string;
   order_id: string;
   item_number: number;
+  /** Código no PDF TOTVS (ex. HF-071); opcional até migrar SQL */
+  product_code?: string | null;
   description: string;
   quantity: number;
   line_id: string | null;
@@ -112,6 +120,19 @@ export interface Holiday {
 export interface OrderWithItems extends Order {
   items: OrderItem[];
 }
+
+/** Atualização parcial do fio Comercial ↔ PCP no pedido (API PATCH / estado local). */
+export type OrderComercialThreadPatch = Partial<
+  Pick<
+    Order,
+    | "comercial_pcp_observation"
+    | "comercial_pcp_observation_by"
+    | "comercial_pcp_observation_at"
+    | "pcp_reply_comercial_observation"
+    | "pcp_reply_comercial_observation_by"
+    | "pcp_reply_comercial_observation_at"
+  >
+>;
 
 export interface OrderItemWithLine extends OrderItem {
   production_line?: ProductionLine;

@@ -16,6 +16,11 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS finished_at timestamptz;
 
 -- Área Comercial: recado visível para o PCP na tela Pedidos
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS comercial_pcp_observation text;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS comercial_pcp_observation_by text;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS comercial_pcp_observation_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pcp_reply_comercial_observation text;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pcp_reply_comercial_observation_by text;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pcp_reply_comercial_observation_at timestamptz;
 
 -- Prazo PCP por item (espelha o do pedido na UI e na linha de produção)
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS pcp_deadline date;
@@ -26,6 +31,9 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS line_id uuid REFERENCES product
 -- Pedido de compras (PC): número e data de entrega da matéria-prima
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS pc_number text;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS pc_delivery_date date;
+
+-- Código do produto no PDF TOTVS (ex.: HF-071), separado da descrição curta do item
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS product_code text;
 
 -- Ciclo do item na linha (obrigatório para programar início/fim e concluir)
 -- Valores usados pelo app: waiting | scheduled | delayed | completed

@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getDocument } from "pdfjs-serverless";
 import { parseTotvsOrcamento } from "@/lib/pdf/parse-totvs";
 import {
@@ -55,7 +56,42 @@ interface ExtractedData {
   orderNumber: string;
   clientName: string;
   deliveryDate: string | null;
-  items: { description: string; quantity: number }[];
+  items: {
+    description: string;
+    quantity: number;
+    product_code?: string | null;
+  }[];
+}
+
+async function insertImportedOrderItems(
+  supabase: SupabaseClient,
+  orderId: string,
+  items: ExtractedData["items"]
+): Promise<{ error: { message: string } | null }> {
+  const rows = items.map((item) => {
+    const row: Record<string, unknown> = {
+      order_id: orderId,
+      description: String(item.description || "").trim().slice(0, 500),
+      quantity: toQuantity(item.quantity),
+    };
+    const code = item.product_code?.trim();
+    if (code) row.product_code = code.slice(0, 120);
+    return row;
+  });
+  let res = await supabase.from("order_items").insert(rows);
+  if (
+    res.error &&
+    /product_code|schema cache|column|does not exist|PGRST204/i.test(
+      res.error.message
+    )
+  ) {
+    const stripped = rows.map((r) => {
+      const { product_code: _, ...rest } = r;
+      return rest;
+    });
+    res = await supabase.from("order_items").insert(stripped);
+  }
+  return res;
 }
 
 async function extractFromPdf(
@@ -328,13 +364,12 @@ export async function POST(request: NextRequest) {
         }
 
         const createdOrder = createdOrders[0];
-        const { error: itemsError } = await supabase.from("order_items").insert(
-          extracted.items.map((item) => ({
-            order_id: createdOrder.id,
-            description: String(item.description || "").trim().slice(0, 500),
-            quantity: toQuantity(item.quantity),
-          }))
+        const itemsRes = await insertImportedOrderItems(
+          supabase,
+          createdOrder.id,
+          extracted.items
         );
+        const { error: itemsError } = itemsRes;
 
         if (itemsError) {
           console.error("Erro ao criar itens (local auth):", itemsError);
@@ -500,13 +535,12 @@ export async function POST(request: NextRequest) {
         }
 
         const createdOrder = createdOrders[0];
-        const { error: itemsError } = await supabase.from("order_items").insert(
-          extracted.items.map((item) => ({
-            order_id: createdOrder.id,
-            description: String(item.description || "").trim().slice(0, 500),
-            quantity: toQuantity(item.quantity),
-          }))
+        const itemsRes = await insertImportedOrderItems(
+          supabase,
+          createdOrder.id,
+          extracted.items
         );
+        const { error: itemsError } = itemsRes;
 
         if (itemsError) {
           console.error("Erro ao criar itens:", itemsError);

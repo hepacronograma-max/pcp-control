@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
+  OrderComercialThreadPatch,
   OrderWithItems,
   ProductionLine,
   UserRole,
@@ -37,6 +38,12 @@ interface OrdersTableProps {
   onDeleteOrder: (orderId: string) => void;
   onFinishOrder: (orderId: string) => void;
   onFinishOrdersBulk?: (orderIds: string[]) => void | Promise<void>;
+  onReopenOrder?: (orderId: string) => void | Promise<void>;
+  onReopenCompletedItem?: (itemId: string) => void | Promise<void>;
+  onComercialObservationThreadUpdated?: (
+    orderId: string,
+    patch: OrderComercialThreadPatch
+  ) => void;
 }
 
 export function OrdersTable({
@@ -52,6 +59,9 @@ export function OrdersTable({
   onDeleteOrder,
   onFinishOrder,
   onFinishOrdersBulk,
+  onReopenOrder,
+  onReopenCompletedItem,
+  onComercialObservationThreadUpdated,
 }: OrdersTableProps) {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -86,7 +96,18 @@ export function OrdersTable({
       list = list.filter((o) => {
         if (o.order_number?.toLowerCase().includes(query)) return true;
         if (o.client_name?.toLowerCase().includes(query)) return true;
-        if ((o.comercial_pcp_observation ?? "").toLowerCase().includes(query)) return true;
+        if ((o.comercial_pcp_observation ?? "").toLowerCase().includes(query))
+          return true;
+        if (
+          (o.pcp_reply_comercial_observation ?? "").toLowerCase().includes(query)
+        )
+          return true;
+        if ((o.comercial_pcp_observation_by ?? "").toLowerCase().includes(query))
+          return true;
+        if (
+          (o.pcp_reply_comercial_observation_by ?? "").toLowerCase().includes(query)
+        )
+          return true;
         const statusLabel = statusLabels[o.status ?? ""] ?? "";
         if (statusLabel && statusLabel.includes(query)) return true;
         const matchInItems = o.items?.some((it) =>
@@ -153,7 +174,7 @@ export function OrdersTable({
           enterKeyHint="search"
           autoComplete="off"
           className="w-full sm:w-64 sm:max-w-full min-h-[40px] rounded-md border border-slate-300 bg-white px-3 py-2 text-xs"
-          placeholder="Buscar pedido, cliente, obs. comercial ou item..."
+          placeholder="Buscar pedido, cliente, obs./resposta Comercial↔PCP ou item..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -259,6 +280,11 @@ export function OrdersTable({
                 onUpdateOrder={onUpdateOrder}
                 onDeleteOrder={onDeleteOrder}
                 onFinishOrder={onFinishOrder}
+                onReopenOrder={onReopenOrder}
+                onReopenCompletedItem={onReopenCompletedItem}
+                onComercialObservationThreadUpdated={
+                  onComercialObservationThreadUpdated
+                }
                 showSelect={showBulk}
                 selected={selectedIds.has(order.id)}
                 onToggleSelect={() => toggleOrder(order.id)}

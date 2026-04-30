@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import type { ItemStatus, OrderStatus, OrderWithItems } from "@/lib/types/database";
+import type {
+  ItemStatus,
+  OrderStatus,
+  OrderWithItems,
+  OrderComercialThreadPatch,
+} from "@/lib/types/database";
 import { formatBrazilianDateTime, formatShortDate } from "@/lib/utils/date";
 import { OrderStatusBadge } from "@/components/pedidos/order-status-badge";
 import {
@@ -35,6 +40,11 @@ export type ComercialOrderApi = {
   updated_at: string | null;
   /** Recado visível para o PCP na tela Pedidos */
   comercial_pcp_observation?: string | null;
+  comercial_pcp_observation_by?: string | null;
+  comercial_pcp_observation_at?: string | null;
+  pcp_reply_comercial_observation?: string | null;
+  pcp_reply_comercial_observation_by?: string | null;
+  pcp_reply_comercial_observation_at?: string | null;
   items: ComercialItemLite[];
 };
 
@@ -82,6 +92,11 @@ function toOrderWithItems(row: ComercialOrderApi): OrderWithItems {
     folder_path: null,
     notes: null,
     comercial_pcp_observation: row.comercial_pcp_observation ?? null,
+    comercial_pcp_observation_by: row.comercial_pcp_observation_by ?? null,
+    comercial_pcp_observation_at: row.comercial_pcp_observation_at ?? null,
+    pcp_reply_comercial_observation: row.pcp_reply_comercial_observation ?? null,
+    pcp_reply_comercial_observation_by: row.pcp_reply_comercial_observation_by ?? null,
+    pcp_reply_comercial_observation_at: row.pcp_reply_comercial_observation_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at ?? row.created_at,
     finished_at: null,
@@ -180,7 +195,7 @@ interface ComercialOrdersViewProps {
   onRefresh: () => void;
   /** Comercial / gestão pode editar recado ao PCP */
   canEditObservation: boolean;
-  onObservationSaved?: (orderId: string, observation: string | null) => void;
+  onObservationSaved?: (orderId: string, patch: OrderComercialThreadPatch) => void;
 }
 
 export function ComercialOrdersView({
@@ -239,6 +254,9 @@ export function ComercialOrdersView({
         const st = statusLabels[row.status ?? ""] ?? "";
         if (st && st.includes(query)) return true;
         if ((row.comercial_pcp_observation ?? "").toLowerCase().includes(query)) return true;
+        if ((row.pcp_reply_comercial_observation ?? "").toLowerCase().includes(query)) return true;
+        if ((row.comercial_pcp_observation_by ?? "").toLowerCase().includes(query)) return true;
+        if ((row.pcp_reply_comercial_observation_by ?? "").toLowerCase().includes(query)) return true;
         return (row.items ?? []).some((it) =>
           (it.description ?? "").toLowerCase().includes(query)
         );
@@ -280,12 +298,26 @@ export function ComercialOrdersView({
           comercial_pcp_observation: payload,
         }),
       });
-      const j = (await res.json()) as { success?: boolean; error?: string };
+      const j = (await res.json()) as {
+        success?: boolean;
+        error?: string;
+        comercial_pcp_observation?: string | null;
+        comercial_pcp_observation_by?: string | null;
+        comercial_pcp_observation_at?: string | null;
+      };
       if (!res.ok || j.success === false) {
         toast.error(j.error || "Não foi possível salvar.");
         return;
       }
-      onObservationSaved?.(orderId, payload);
+      const patch: OrderComercialThreadPatch = {
+        comercial_pcp_observation:
+          j.comercial_pcp_observation !== undefined
+            ? j.comercial_pcp_observation
+            : payload,
+        comercial_pcp_observation_by: j.comercial_pcp_observation_by ?? null,
+        comercial_pcp_observation_at: j.comercial_pcp_observation_at ?? null,
+      };
+      onObservationSaved?.(orderId, patch);
       toast.success("Observação para o PCP salva.");
       setObsExpandedId(null);
     } catch {
@@ -331,7 +363,10 @@ export function ComercialOrdersView({
                 "Prazo vendas",
                 "Prazo entrega",
                 "Status pedido",
-                "Obs. para PCP",
+                "Obs. Comercial",
+                "Registo Comercial",
+                "Resposta PCP",
+                "Registo PCP",
               ],
               rows: orders.map((o) => [
                 o.order_number,
@@ -341,6 +376,23 @@ export function ComercialOrdersView({
                 formatShortDate(o.pcp_deadline),
                 o.status,
                 o.comercial_pcp_observation ?? "",
+                [
+                  o.comercial_pcp_observation_by ?? "",
+                  o.comercial_pcp_observation_at
+                    ? formatBrazilianDateTime(o.comercial_pcp_observation_at)
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+                o.pcp_reply_comercial_observation ?? "",
+                [
+                  o.pcp_reply_comercial_observation_by ?? "",
+                  o.pcp_reply_comercial_observation_at
+                    ? formatBrazilianDateTime(o.pcp_reply_comercial_observation_at)
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
               ]),
             })}
           />
@@ -451,7 +503,9 @@ export function ComercialOrdersView({
                       : traffic === "green"
                         ? "bg-emerald-50"
                         : "bg-white";
-                const hasObs = !!(row.comercial_pcp_observation ?? "").trim();
+                const hasThread =
+                  !!(row.comercial_pcp_observation ?? "").trim() ||
+                  !!(row.pcp_reply_comercial_observation ?? "").trim();
                 const gridTitle =
                   traffic === "white"
                     ? undefined
@@ -490,14 +544,21 @@ export function ComercialOrdersView({
                         <button
                           type="button"
                           className={`rounded-md p-1 min-h-[28px] min-w-[28px] flex items-center justify-center border border-transparent hover:bg-white/80 hover:border-slate-200 transition-colors ${
-                            hasObs ? "text-sky-700" : "text-slate-400"
+                            hasThread ? "text-sky-700" : "text-slate-400"
                           }`}
                           title={
-                            hasObs
-                              ? (row.comercial_pcp_observation ?? "").slice(0, 500)
+                            hasThread
+                              ? [
+                                  (row.comercial_pcp_observation ?? "").trim() &&
+                                    `Comercial: ${(row.comercial_pcp_observation ?? "").slice(0, 240)}`,
+                                  (row.pcp_reply_comercial_observation ?? "").trim() &&
+                                    `PCP: ${(row.pcp_reply_comercial_observation ?? "").slice(0, 240)}`,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" | ") || "Recado"
                               : canEditObservation
                                 ? "Registrar observação para o PCP"
-                                : "Ver observação para o PCP"
+                                : "Ver recados com o PCP"
                           }
                           aria-expanded={obsExpandedId === row.id}
                           onClick={() =>
@@ -505,7 +566,7 @@ export function ComercialOrdersView({
                           }
                         >
                           <span className="text-base leading-none" aria-hidden>
-                            {hasObs ? "●" : "○"}
+                            {hasThread ? "●" : "○"}
                           </span>
                         </button>
                       </div>
@@ -521,6 +582,25 @@ export function ComercialOrdersView({
                             pedido).
                           </p>
                         </div>
+                        {!!(row.pcp_reply_comercial_observation ?? "").trim() && (
+                          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-slate-800">
+                            <p className="text-[11px] font-semibold text-emerald-950">
+                              Resposta do PCP ao Comercial
+                            </p>
+                            <p className="whitespace-pre-wrap mt-1">
+                              {row.pcp_reply_comercial_observation}
+                            </p>
+                            {(row.pcp_reply_comercial_observation_by ||
+                              row.pcp_reply_comercial_observation_at) && (
+                              <p className="text-[10px] text-emerald-900/85 mt-1.5">
+                                Por {row.pcp_reply_comercial_observation_by ?? "—"}
+                                {row.pcp_reply_comercial_observation_at
+                                  ? ` · ${formatBrazilianDateTime(row.pcp_reply_comercial_observation_at)}`
+                                  : ""}
+                              </p>
+                            )}
+                          </div>
+                        )}
                         {canEditObservation ? (
                           <>
                             <textarea
@@ -532,6 +612,15 @@ export function ComercialOrdersView({
                               onChange={(e) => setObsDraft(e.target.value.slice(0, 2000))}
                               disabled={savingObs}
                             />
+                            {(row.comercial_pcp_observation_by ||
+                              row.comercial_pcp_observation_at) && (
+                              <p className="text-[10px] text-slate-500">
+                                Último envio ao PCP: {row.comercial_pcp_observation_by ?? "—"}
+                                {row.comercial_pcp_observation_at
+                                  ? ` · ${formatBrazilianDateTime(row.comercial_pcp_observation_at)}`
+                                  : ""}
+                              </p>
+                            )}
                             <div className="flex flex-wrap gap-2 justify-end">
                               <button
                                 type="button"
@@ -557,6 +646,16 @@ export function ComercialOrdersView({
                               {(row.comercial_pcp_observation ?? "").trim() ||
                                 "Nenhuma observação registrada pelo Comercial."}
                             </div>
+                            {(row.comercial_pcp_observation_by ||
+                              row.comercial_pcp_observation_at) &&
+                              !!(row.comercial_pcp_observation ?? "").trim() && (
+                              <p className="text-[10px] text-slate-500">
+                                Por {row.comercial_pcp_observation_by ?? "—"}
+                                {row.comercial_pcp_observation_at
+                                  ? ` · ${formatBrazilianDateTime(row.comercial_pcp_observation_at)}`
+                                  : ""}
+                              </p>
+                            )}
                             <div className="flex justify-end">
                               <button
                                 type="button"

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/hooks/use-user";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import type { OrderComercialThreadPatch } from "@/lib/types/database";
 import {
   defaultAppPathForRole,
   hasPermission,
@@ -116,11 +117,9 @@ export default function ComercialPage() {
       lastAt={lastAt}
       onRefresh={() => void load()}
       canEditObservation={canEditObservation}
-      onObservationSaved={(orderId, observation) =>
+      onObservationSaved={(orderId, patch: OrderComercialThreadPatch) =>
         setRows((prev) =>
-          prev.map((o) =>
-            o.id === orderId ? { ...o, comercial_pcp_observation: observation } : o
-          )
+          prev.map((o) => (o.id === orderId ? { ...o, ...patch } : o))
         )
       }
     />

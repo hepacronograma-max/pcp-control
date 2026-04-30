@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { syncAlmoxarifadoOnProgram } from "@/lib/supabase/sync-almoxarifado-on-program";
+import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 
 /**
@@ -121,6 +122,180 @@ export async function POST(request: NextRequest) {
           { success: false, error: itemsErr.message },
           { status: 500 }
         );
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "unfinish" && orderId) {
+      const { data: ord } = await supabase
+        .from("orders")
+        .select("id, status")
+        .eq("id", orderId)
+        .maybeSingle();
+      if (!ord?.id) {
+        return NextResponse.json(
+          { success: false, error: "Pedido não encontrado" },
+          { status: 404 }
+        );
+      }
+      if (ord.status !== "finished") {
+        return NextResponse.json(
+          { success: false, error: "Só é possível reabrir pedidos finalizados." },
+          { status: 400 }
+        );
+      }
+
+      let { error: ordErr } = await supabase
+        .from("orders")
+        .update({ status: "planning", finished_at: null })
+        .eq("id", orderId);
+      if (
+        ordErr &&
+        /finished_at|schema cache|column|does not exist/i.test(ordErr.message)
+      ) {
+        ({ error: ordErr } = await supabase
+          .from("orders")
+          .update({ status: "planning" })
+          .eq("id", orderId));
+      }
+      if (ordErr) {
+        return NextResponse.json(
+          { success: false, error: ordErr.message },
+          { status: 500 }
+        );
+      }
+
+      const { data: completedRows, error: selErr } = await supabase
+        .from("order_items")
+        .select("id, production_start, production_end")
+        .eq("order_id", orderId)
+        .eq("status", "completed");
+      if (selErr) {
+        return NextResponse.json(
+          { success: false, error: selErr.message },
+          { status: 500 }
+        );
+      }
+
+      for (const row of completedRows ?? []) {
+        const nextStatus = itemStatusAfterReopenCompleted({
+          production_start: row.production_start as string | null,
+          production_end: row.production_end as string | null,
+        });
+        let patch: Record<string, unknown> = {
+          status: nextStatus,
+          completed_at: null,
+          completed_by: null,
+        };
+        let { error: upErr } = await supabase
+          .from("order_items")
+          .update(patch)
+          .eq("id", row.id as string);
+        if (
+          upErr &&
+          /completed_by|schema cache|column|does not exist/i.test(upErr.message)
+        ) {
+          patch = { status: nextStatus, completed_at: null };
+          ({ error: upErr } = await supabase
+            .from("order_items")
+            .update(patch)
+            .eq("id", row.id as string));
+        }
+        if (upErr) {
+          return NextResponse.json(
+            { success: false, error: upErr.message },
+            { status: 500 }
+          );
+        }
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "uncomplete" && itemId !== undefined) {
+      const { data: row, error: getErr } = await supabase
+        .from("order_items")
+        .select("id, order_id, status, production_start, production_end")
+        .eq("id", itemId)
+        .maybeSingle();
+      if (getErr) {
+        return NextResponse.json(
+          { success: false, error: getErr.message },
+          { status: 500 }
+        );
+      }
+      if (!row?.id) {
+        return NextResponse.json(
+          { success: false, error: "Item não encontrado" },
+          { status: 404 }
+        );
+      }
+      if (row.status !== "completed") {
+        return NextResponse.json(
+          { success: false, error: "Só é possível reabrir itens concluídos." },
+          { status: 400 }
+        );
+      }
+
+      const nextStatus = itemStatusAfterReopenCompleted({
+        production_start: row.production_start as string | null,
+        production_end: row.production_end as string | null,
+      });
+      let patch: Record<string, unknown> = {
+        status: nextStatus,
+        completed_at: null,
+        completed_by: null,
+      };
+      let { error: upErr } = await supabase
+        .from("order_items")
+        .update(patch)
+        .eq("id", itemId);
+      if (
+        upErr &&
+        /completed_by|schema cache|column|does not exist/i.test(upErr.message)
+      ) {
+        patch = { status: nextStatus, completed_at: null };
+        ({ error: upErr } = await supabase
+          .from("order_items")
+          .update(patch)
+          .eq("id", itemId));
+      }
+      if (upErr) {
+        return NextResponse.json(
+          { success: false, error: upErr.message },
+          { status: 500 }
+        );
+      }
+
+      const orderFk = row.order_id as string | undefined;
+      if (orderFk) {
+        const { data: parent } = await supabase
+          .from("orders")
+          .select("id, status")
+          .eq("id", orderFk)
+          .maybeSingle();
+        if (parent?.status === "finished") {
+          let { error: pErr } = await supabase
+            .from("orders")
+            .update({ status: "planning", finished_at: null })
+            .eq("id", orderFk);
+          if (
+            pErr &&
+            /finished_at|schema cache|column|does not exist/i.test(pErr.message)
+          ) {
+            ({ error: pErr } = await supabase
+              .from("orders")
+              .update({ status: "planning" })
+              .eq("id", orderFk));
+          }
+          if (pErr) {
+            return NextResponse.json(
+              { success: false, error: pErr.message },
+              { status: 500 }
+            );
+          }
+        }
       }
 
       return NextResponse.json({ success: true });
