@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { OperatorDashboard } from "@/components/dashboard/operator-dashboard";
 import { ManagerDashboard } from "@/components/dashboard/manager-dashboard";
+import { ComprasDashboard } from "@/components/dashboard/compras-dashboard";
 
 export default function DashboardPage() {
   const [role, setRole] = useState<string | null>(null);
@@ -84,6 +85,11 @@ export default function DashboardPage() {
   /** Operador e Logística: KPIs só das linhas atribuídas (`operator_lines`). */
   if (role === "operator" || role === "logistica") {
     return <OperatorDashboard />;
+  }
+
+  /** Compras: KPIs só de pedidos de compra (PC). */
+  if (role === "compras" && companyId) {
+    return <ComprasDashboard companyId={companyId} />;
   }
 
   if (companyId) {

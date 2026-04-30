@@ -5,7 +5,7 @@ import type { UserRole } from "@/lib/types/database";
  * - Operador / Logística: só as linhas em `operator_lines`.
  * - PCP: vê Compras em modo leitura; edita produção, logística, almox. conforme ações.
  * - Comercial: área comercial + dashboard de produção (não edita pedidos gerais).
- * - Compras: vê/altera compras; pode ver Pedidos; dashboard geral.
+ * - Compras: vê/altera compras; dashboard dedicado a compras (sem lista Pedidos).
  * - Manager / super_admin: configuração e tudo o resto.
  */
 export const PERMISSIONS = {
@@ -19,8 +19,8 @@ export const PERMISSIONS = {
     "logistica",
   ] as UserRole[],
 
-  /** Tela de lista de pedidos (importação / edição de pedidos) */
-  viewOrders: ["super_admin", "manager", "pcp", "compras"] as UserRole[],
+  /** Tela de lista de pedidos de venda (importação / edição) — não inclui Compras */
+  viewOrders: ["super_admin", "manager", "pcp"] as UserRole[],
 
   viewComercial: ["super_admin", "manager", "comercial"] as UserRole[],
 
