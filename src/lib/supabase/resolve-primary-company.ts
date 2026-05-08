@@ -1,41 +1,83 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+const PRIMARY_COMPANY_TTL_MS = 5 * 60 * 1000;
+
+let primaryCompanyCache: { value: string | null; expiresAt: number } | null = null;
+
+export function invalidatePrimaryCompanyCache() {
+  primaryCompanyCache = null;
+}
+
 /**
- * Escolhe o company_id “principal” quando há várias empresas no banco.
- * Evita usar .limit(1) sem ordenação (PostgreSQL: linha indefinida) e prioriza
- * a empresa com mais pedidos — típico cenário após import local → Supabase.
+ * Resolve o `company_id` principal para modo local / single-tenant.
+ *
+ * Usa cache em memória por instância de servidor ({@link invalidatePrimaryCompanyCache}
+ * invalida explicitamente — ex.: após criar empresa). TTL: 5 minutos.
+ *
+ * Critério de negócio: ver documentação em `fetchPrimaryCompanyIdUncached`.
  */
 export async function resolvePrimaryCompanyId(
   supabase: SupabaseClient
 ): Promise<string | null> {
-  const { data: rows, error } = await supabase
-    .from("orders")
-    .select("company_id");
-
-  if (error || !rows?.length) {
-    const { data: anyCompany } = await supabase
-      .from("companies")
-      .select("id")
-      .limit(1)
-      .maybeSingle();
-    return anyCompany?.id ?? null;
+  const now = Date.now();
+  if (primaryCompanyCache && primaryCompanyCache.expiresAt > now) {
+    return primaryCompanyCache.value;
   }
 
-  const tally = new Map<string, number>();
-  for (const r of rows) {
-    const id = r.company_id as string | null | undefined;
-    if (!id) continue;
-    tally.set(id, (tally.get(id) ?? 0) + 1);
+  try {
+    const result = await fetchPrimaryCompanyIdUncached(supabase);
+    primaryCompanyCache = {
+      value: result,
+      expiresAt: now + PRIMARY_COMPANY_TTL_MS,
+    };
+    return result;
+  } catch (err) {
+    console.error("[resolvePrimaryCompanyId] erro:", err);
+    return null;
+  }
+}
+
+/**
+ * Corpo não-cacheado da resolução do tenant principal.
+ *
+ * **Hoje:** critério “empresa mais antiga” — primeira linha em `companies`
+ * ordenada por `created_at` ascendente (`limit 1`; determinístico).
+ *
+ * **Regra histórica:** versões anteriores priorizavam a empresa com **mais linhas**
+ * em `orders` (desempate por `company_id` ascendente lexicográfico).
+ *
+ * **Multi-tenant (reativar volume de pedidos):** substituir o corpo desta função
+ * por uma chamada `.rpc('get_primary_company_id_by_order_volume')` após criar a
+ * função no PostgreSQL / SQL Editor. SQL de referência:
+ *
+ * ```
+ * CREATE OR REPLACE FUNCTION public.get_primary_company_id_by_order_volume()
+ * RETURNS uuid
+ * LANGUAGE sql
+ * STABLE
+ * AS $$
+ *   SELECT company_id
+ *   FROM orders
+ *   WHERE company_id IS NOT NULL
+ *   GROUP BY company_id
+ *   ORDER BY COUNT(*) DESC, company_id ASC
+ *   LIMIT 1;
+ * $$;
+ * ```
+ */
+async function fetchPrimaryCompanyIdUncached(
+  supabase: SupabaseClient
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("companies")
+    .select("id")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
   }
 
-  let best: string | null = null;
-  let bestCount = -1;
-  for (const [id, n] of tally) {
-    if (n > bestCount || (n === bestCount && (best === null || id < best))) {
-      bestCount = n;
-      best = id;
-    }
-  }
-
-  return best;
+  return data?.id ?? null;
 }
