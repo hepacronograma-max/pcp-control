@@ -27,6 +27,18 @@ Opcional: `POST /api/order-items/reconcile-almox` com `lineId` continua disponí
 
 **Obs.:** Quem salvar programação **só pelo cliente Supabase no browser** (sem cookie local / sem API) não passa por essa lógica; o fluxo recomendado é login local em produção, que já usa a API.
 
+### Sincronização automática Produção ↔ Almox (painel lista agregada)
+
+Na tabela **real** (linha de chão), quando `production_end` é preenchido pela API (`POST /api/order-items/update`, `program`) ou pela ação **`complete`**:
+
+- O sistema atualiza `almox_supplied_at` (timestamptz alinhado à data do fim) e marca `almox_supplied_auto = true` quando a migração existir (`supabase-add-columns.sql`).
+- `almox_supplied_by` só é gravado quando o ID é um UUID válido em `auth.users` (ex.: perfil Supabase).
+
+**Listagem Almox («Em aberto» / período)** só inclui itens com `production_start` no intervalo, `production_end IS NULL`, `almox_supplied_at IS NULL`. Itens com produção já finalizada **somem das listagens** (o vínculo fica apenas nos registros brutos por SQL/relatórios).
+
+Quem marca **manualmente** o ✓ antes do fim do chão aparece na aba **«Finalizados»** até a produção encerrar; `almox_supplied_auto = false`. Se **apagar** o `production_end`, o Almox só **reverte** data de abastecimento automático (se `almox_supplied_auto`); uma marcação manual permanece até ser alterada pela equipe/API.
+
 ## Banco
 
-Execute `supabase-add-columns.sql` para garantir `is_almoxarifado` em `production_lines` se ainda não existir.
+Execute `supabase-add-columns.sql` para garantir `is_almoxarifado` em `production_lines` se ainda não existir **e** a coluna `almox_supplied_auto` em `order_items`.
+
