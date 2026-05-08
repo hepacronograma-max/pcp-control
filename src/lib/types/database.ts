@@ -100,6 +100,12 @@ export interface OrderItem {
   completed_by: string | null;
   notes: string | null;
   supplied_at: string | null;
+  /** Abastecido/separado no painel Almoxarifado (timestamp). */
+  almox_supplied_at?: string | null;
+  /** Quem marcou como abastecido no Almox (auth.users ou profiles.id). */
+  almox_supplied_by?: string | null;
+  /** true quando almox_supplied_* foi gravado pela finalização da produção (`production_end`). */
+  almox_supplied_auto?: boolean | null;
   /** Número do pedido de compras (matéria-prima) */
   pc_number: string | null;
   /** Data prevista de entrega do PC (matéria-prima) — início/fim de produção não podem ser antes */

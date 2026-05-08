@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { OperatorDashboard } from "@/components/dashboard/operator-dashboard";
-import { ManagerDashboard } from "@/components/dashboard/manager-dashboard";
 import { ComprasDashboard } from "@/components/dashboard/compras-dashboard";
+import { DashboardMainTabs } from "@/components/dashboard/dashboard-main-tabs";
 
 export default function DashboardPage() {
   const [role, setRole] = useState<string | null>(null);
@@ -93,7 +93,17 @@ export default function DashboardPage() {
   }
 
   if (companyId) {
-    return <ManagerDashboard companyId={companyId} />;
+    return (
+      <Suspense
+        fallback={
+          <div className="flex items-center justify-center py-12">
+            <p className="text-sm text-slate-500">Carregando dashboard...</p>
+          </div>
+        }
+      >
+        <DashboardMainTabs companyId={companyId} userRole={role ?? "manager"} />
+      </Suspense>
+    );
   }
 
   return (

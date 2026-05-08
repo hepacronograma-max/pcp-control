@@ -44,6 +44,11 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS completed_by text;
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS notes text;
 
+-- Almoxarifado: separação/abastecimento (painel lista agregada)
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS almox_supplied_at timestamptz;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS almox_supplied_by uuid REFERENCES auth.users(id) ON DELETE SET NULL;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS almox_supplied_auto boolean NOT NULL DEFAULT false;
+
 -- Se o comando acima falhar (ex.: tipos incompatíveis), crie só a coluna:
 -- ALTER TABLE order_items ADD COLUMN IF NOT EXISTS line_id uuid;
 

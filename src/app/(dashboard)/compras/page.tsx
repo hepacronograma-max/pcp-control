@@ -447,6 +447,9 @@ export default function ComprasPage() {
         orderItemsForLink={orderItemsForLink}
         schemaMissing={schemaMissing}
         readOnly={readOnly}
+        cqUserId={profile?.id}
+        cqCompanyId={effectiveCompanyId}
+        cqUserRole={profile?.role}
         onLink={doLink}
         onUnlink={doUnlink}
         onDeletePo={deletePo}

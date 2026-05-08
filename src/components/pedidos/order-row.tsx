@@ -23,11 +23,15 @@ import {
   getOrderPrincipalStatus,
   orderComercialObsNeedsPcpReply,
 } from "@/lib/utils/order-aggregates";
+import { CQField } from "@/components/cq/CQField";
+import { CQList } from "@/components/cq/CQList";
 
 export interface OrderRowProps {
   order: OrderWithItems;
   lines: ProductionLine[];
   userRole: UserRole;
+  cqUserId?: string;
+  cqCompanyId?: string | null;
   onUpdateOrderPcpDate: (orderId: string, date: string | null) => void;
   onUpdateItemLine: (itemId: string, lineId: string | null) => void;
   onUpdateItemQuantity: (itemId: string, quantity: number) => void;
@@ -80,6 +84,8 @@ export function OrderRow({
   selected,
   onToggleSelect,
   onComercialObservationThreadUpdated,
+  cqUserId,
+  cqCompanyId,
 }: OrderRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -235,8 +241,8 @@ export function OrderRow({
       <div
         className={`grid gap-2 px-3 sm:px-4 py-1.5 border-b border-slate-200 text-xs items-center transition-colors ${
           showSelect
-            ? "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.4fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,1.1fr)_minmax(0,0.95fr)_28px_minmax(0,1.5fr)_minmax(0,1.2fr)]"
-            : "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.4fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,1.1fr)_minmax(0,0.95fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
+            ? "grid-cols-[28px_minmax(0,0.82fr)_minmax(0,1.28fr)_minmax(0,0.88fr)_minmax(0,0.88fr)_minmax(0,1.02fr)_minmax(0,0.88fr)_28px_minmax(0,1.95fr)_4.75rem]"
+            : "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.35fr)_minmax(0,0.92fr)_minmax(0,0.92fr)_minmax(0,1.06fr)_minmax(0,0.92fr)_minmax(0,2.1fr)_4.75rem]"
         } ${rowTrafficClass}`}
         title={
           traffic === "white"
@@ -250,12 +256,15 @@ export function OrderRow({
                   : "OK: produção até o PCP, antes de vendas."
         }
       >
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="text-slate-500 hover:text-slate-800"
-        >
-          {expanded ? "▼" : "▶"}
-        </button>
+        <div className="flex items-center justify-center shrink-0">
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="text-slate-500 hover:text-slate-800"
+          >
+            {expanded ? "▼" : "▶"}
+          </button>
+        </div>
         <div className="font-medium text-slate-800">{order.order_number}</div>
         <div className="truncate">{order.client_name}</div>
         <div className="text-center text-slate-600">
@@ -283,7 +292,7 @@ export function OrderRow({
             />
           </div>
         )}
-        <div className="col-span-2 flex flex-nowrap items-center justify-end gap-1">
+        <div className="flex flex-nowrap items-center justify-end gap-1 overflow-x-auto min-w-0">
           {showObsComercialBadgeInRow && (
             <span
               className={`inline-flex shrink-0 max-w-[10rem] truncate rounded-full bg-sky-100 text-sky-900 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap border border-sky-200 ${
@@ -385,6 +394,28 @@ export function OrderRow({
                 Excluir
               </button>
             </>
+          )}
+        </div>
+        <div className="flex justify-center items-center gap-1 min-w-0 py-0.5">
+          {cqCompanyId ? (
+            <>
+              <CQField
+                targetType="order"
+                targetId={order.id}
+                userRole={userRole}
+                userId={cqUserId}
+                companyId={cqCompanyId}
+              />
+              <CQList
+                targetType="order"
+                targetId={order.id}
+                companyId={cqCompanyId}
+                userId={cqUserId}
+                userRole={userRole}
+              />
+            </>
+          ) : (
+            <span className="text-[10px] text-slate-300">—</span>
           )}
         </div>
       </div>

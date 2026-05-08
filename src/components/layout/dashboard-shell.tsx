@@ -12,9 +12,16 @@ import {
   canViewProductionLineMenu,
   hasPermission,
 } from "@/lib/utils/permissions";
+import { isUuid } from "@/lib/utils/is-uuid";
+import { attentionMenuCountLocal } from "@/lib/tasks-local";
 import { itemNeedsProductionProgram } from "@/lib/utils/line-program-indicator";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
+import {
+  bucketLinesForSidebar,
+  rollupSidebarGroupAttention,
+} from "@/lib/utils/nav-line-groups";
+import { ChevronDown } from "lucide-react";
 
 interface CompanyInfo {
   id: string;
@@ -38,6 +45,11 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const [tasksPendingBadge, setTasksPendingBadge] = useState(0);
+  const [lineAttentionCounts, setLineAttentionCounts] = useState<
+    Record<string, number>
+  >({});
+  const [lineAttentionLoaded, setLineAttentionLoaded] = useState(false);
   /** Uma tentativa de criar linha padrão Almoxarifado por empresa (sessão). */
   const ensureDefaultsTriedRef = useRef<string | null>(null);
 
@@ -211,7 +223,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     }
 
     loadData();
-  }, [profile, supabase, effectiveCompanyId, effectiveLoaded, pathname]);
+  }, [profile, supabase, effectiveCompanyId, effectiveLoaded]);
 
   // Atualiza contagem ao trocar de aba / intervalo — só com sessão Supabase no browser.
   // Login local (+ company-data na API) NÃO deve usar isto: RLS do anon zera a contagem e o piscar “morre”.
@@ -237,7 +249,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         // ignore
       }
     }
-    const interval = setInterval(refreshCounts, 5000);
+    const interval = setInterval(refreshCounts, 30000);
     window.addEventListener("focus", refreshCounts);
     return () => {
       clearInterval(interval);
@@ -246,9 +258,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }, [profile, supabase, effectiveCompanyId]);
 
   const pageTitle = useMemo(() => {
+    if (pathname?.startsWith("/dashboard/atividades")) return "Atividades";
+    if (pathname?.startsWith("/dashboard/cq")) return "CQ Dashboard";
     if (pathname === "/dashboard" || pathname === "/") return "Dashboard";
     if (pathname?.startsWith("/pedidos")) return "Pedidos";
     if (pathname?.startsWith("/linha")) return "Linha de Produção";
+    if (pathname?.startsWith("/configuracoes/cq-categorias"))
+      return "CQ Categorias";
     if (pathname?.startsWith("/configuracoes")) return "Configurações";
     if (pathname?.startsWith("/importar")) return "Importar PDFs";
     if (pathname?.startsWith("/comercial")) return "Comercial";
@@ -264,6 +280,41 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     }
     return lines;
   }, [profile, lines, operatorLines]);
+
+  const navBuckets = useMemo(
+    () => bucketLinesForSidebar(visibleLines),
+    [visibleLines]
+  );
+
+  const sidebarSignalByLineId = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const l of visibleLines) {
+      const id = l.id;
+      out[id] = lineAttentionLoaded
+        ? lineAttentionCounts[id] ?? 0
+        : unprogrammedByLine[id] ?? 0;
+    }
+    return out;
+  }, [visibleLines, lineAttentionLoaded, lineAttentionCounts, unprogrammedByLine]);
+
+  const groupAttention = useMemo(
+    () =>
+      rollupSidebarGroupAttention(
+        navBuckets.producao,
+        navBuckets.logistica,
+        sidebarSignalByLineId
+      ),
+    [navBuckets.producao, navBuckets.logistica, sidebarSignalByLineId]
+  );
+
+  const lineIdFromPath =
+    pathname?.match(/^\/linha\/([^/]+)/)?.[1] ?? null;
+  const producaoNavActive =
+    !!lineIdFromPath &&
+    navBuckets.producao.some((l) => l.id === lineIdFromPath);
+  const logisticaNavActive =
+    !!lineIdFromPath &&
+    navBuckets.logistica.some((l) => l.id === lineIdFromPath);
 
   function handleLogout() {
     const isLocalUser =
@@ -312,8 +363,105 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     !profile || hasPermission(profile.role, "viewComercial");
   const canViewCompras =
     !profile || hasPermission(profile.role, "viewCompras");
+  const canViewTasks = !profile || hasPermission(profile.role, "viewTasks");
+  /** Sem Supabase, ou perfil com id não‑UUID → contagem só em localStorage. */
+  const tasksPendingUsesLocalOnly = useMemo(() => {
+    if (!supabase) return true;
+    if (!profile?.id) return true;
+    return !isUuid(profile.id);
+  }, [profile?.id, supabase]);
   const showProductionLines =
     profile && canViewProductionLineMenu(profile.role);
+
+  /** Badge do menu «Atividades»: tarefas com status ≠ done. */
+  useEffect(() => {
+    if (!profile || !effectiveLoaded) return;
+    const companyForBadge = effectiveCompanyId;
+    if (!companyForBadge) return;
+
+    const refreshTasksBadge = () => {
+      if (tasksPendingUsesLocalOnly) {
+        setTasksPendingBadge(attentionMenuCountLocal(companyForBadge, profile.id ?? null));
+        return;
+      }
+      void (async () => {
+        try {
+          const r = await fetch(
+            `/api/tasks/pending-count?companyId=${encodeURIComponent(companyForBadge)}&viewerId=${encodeURIComponent(profile.id)}`,
+            { credentials: "include" }
+          );
+          const j = (await r.json()) as { count?: number };
+          if (r.ok) {
+            setTasksPendingBadge(typeof j.count === "number" ? j.count : 0);
+          }
+        } catch {
+          /* ignore */
+        }
+      })();
+    };
+
+    refreshTasksBadge();
+
+    const onTasksPendingChanged = (ev: Event) => {
+      const d = (ev as CustomEvent<{ companyId?: string; count?: number }>).detail;
+      if (d?.companyId === companyForBadge && typeof d.count === "number") {
+        setTasksPendingBadge(d.count);
+        return;
+      }
+      refreshTasksBadge();
+    };
+
+    window.addEventListener("pcp-tasks-pending-changed", onTasksPendingChanged);
+    const interval = setInterval(refreshTasksBadge, 30000);
+    return () => {
+      window.removeEventListener("pcp-tasks-pending-changed", onTasksPendingChanged);
+      clearInterval(interval);
+    };
+  }, [
+    profile,
+    effectiveLoaded,
+    effectiveCompanyId,
+    tasksPendingUsesLocalOnly,
+  ]);
+
+  /** Contagens por linha para pulso/badge hierárquico no menu Produção | Logística. */
+  useEffect(() => {
+    if (!profile || !effectiveLoaded) return;
+    if (!showProductionLines || !effectiveCompanyId) return;
+    if (!isUuid(effectiveCompanyId)) return;
+
+    const cid = effectiveCompanyId;
+    const viewerPk = profile.id;
+    let cancelled = false;
+
+    async function loadLineAttention() {
+      try {
+        const qp = new URLSearchParams({ companyId: cid });
+        if (isUuid(viewerPk)) qp.set("viewerId", viewerPk);
+        const r = await fetch(`/api/line-pending-count?${qp}`, {
+          credentials: "include",
+        });
+        const j = (await r.json()) as { counts?: Record<string, number> };
+        if (cancelled) return;
+        if (r.ok && j.counts && typeof j.counts === "object") {
+          setLineAttentionCounts(j.counts);
+          setLineAttentionLoaded(true);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    void loadLineAttention();
+    const t = window.setInterval(loadLineAttention, 30000);
+    const onFocus = () => void loadLineAttention();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [profile, effectiveLoaded, effectiveCompanyId, showProductionLines]);
 
   return (
     <div className="min-h-screen min-h-[100dvh] flex w-full max-w-[100vw] overflow-x-hidden">
@@ -369,16 +517,70 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               active={pathname?.startsWith("/compras")}
             />
           )}
-          {showProductionLines &&
-            visibleLines.map((line) => (
-              <SidebarItem
-                key={line.id}
-                label={line.name}
-                href={`/linha/${line.id}`}
-                active={pathname?.startsWith(`/linha/${line.id}`)}
-                hasUnprogrammed={(unprogrammedByLine[line.id] ?? 0) > 0}
-              />
-            ))}
+          {canViewTasks && (
+            <SidebarItem
+              label="Atividades"
+              href="/dashboard/atividades"
+              active={pathname?.startsWith("/dashboard/atividades")}
+              badge={tasksPendingBadge}
+            />
+          )}
+          {showProductionLines && navBuckets.producao.length > 0 && (
+            <SidebarNavGroup
+              title="Produção"
+              activeSubgroup={producaoNavActive}
+              attentionPulse={groupAttention.producao.pulse}
+              attentionBadge={
+                groupAttention.producao.badge > 0
+                  ? groupAttention.producao.badge
+                  : undefined
+              }
+            >
+              {navBuckets.producao.map((line) => {
+                const sig = sidebarSignalByLineId[line.id] ?? 0;
+                const unp = (unprogrammedByLine[line.id] ?? 0) > 0;
+                return (
+                  <SidebarItem
+                    key={line.id}
+                    label={line.name}
+                    href={`/linha/${line.id}`}
+                    active={pathname?.startsWith(`/linha/${line.id}`)}
+                    hasUnprogrammed={unp}
+                    pulseAttention={sig > 0 || unp}
+                    badge={sig > 0 ? sig : undefined}
+                  />
+                );
+              })}
+            </SidebarNavGroup>
+          )}
+          {showProductionLines && navBuckets.logistica.length > 0 && (
+            <SidebarNavGroup
+              title="Logística"
+              activeSubgroup={logisticaNavActive}
+              attentionPulse={groupAttention.logistica.pulse}
+              attentionBadge={
+                groupAttention.logistica.badge > 0
+                  ? groupAttention.logistica.badge
+                  : undefined
+              }
+            >
+              {navBuckets.logistica.map((line) => {
+                const sig = sidebarSignalByLineId[line.id] ?? 0;
+                const unp = (unprogrammedByLine[line.id] ?? 0) > 0;
+                return (
+                  <SidebarItem
+                    key={line.id}
+                    label={line.name}
+                    href={`/linha/${line.id}`}
+                    active={pathname?.startsWith(`/linha/${line.id}`)}
+                    hasUnprogrammed={unp}
+                    pulseAttention={sig > 0 || unp}
+                    badge={sig > 0 ? sig : undefined}
+                  />
+                );
+              })}
+            </SidebarNavGroup>
+          )}
           {canViewSettings && (
             <SidebarItem
               label="Configurações"
@@ -506,17 +708,73 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   onClick={() => setSidebarOpen(false)}
                 />
               )}
-              {showProductionLines &&
-                visibleLines.map((line) => (
-                  <SidebarItem
-                    key={line.id}
-                    label={line.name}
-                    href={`/linha/${line.id}`}
-                    active={pathname?.startsWith(`/linha/${line.id}`)}
-                    hasUnprogrammed={(unprogrammedByLine[line.id] ?? 0) > 0}
-                    onClick={() => setSidebarOpen(false)}
-                  />
-                ))}
+              {canViewTasks && (
+                <SidebarItem
+                  label="Atividades"
+                  href="/dashboard/atividades"
+                  active={pathname?.startsWith("/dashboard/atividades")}
+                  badge={tasksPendingBadge}
+                  onClick={() => setSidebarOpen(false)}
+                />
+              )}
+              {showProductionLines && navBuckets.producao.length > 0 && (
+                <SidebarNavGroup
+                  title="Produção"
+                  activeSubgroup={producaoNavActive}
+                  attentionPulse={groupAttention.producao.pulse}
+                  attentionBadge={
+                    groupAttention.producao.badge > 0
+                      ? groupAttention.producao.badge
+                      : undefined
+                  }
+                >
+                  {navBuckets.producao.map((line) => {
+                    const sig = sidebarSignalByLineId[line.id] ?? 0;
+                    const unp = (unprogrammedByLine[line.id] ?? 0) > 0;
+                    return (
+                      <SidebarItem
+                        key={line.id}
+                        label={line.name}
+                        href={`/linha/${line.id}`}
+                        active={pathname?.startsWith(`/linha/${line.id}`)}
+                        hasUnprogrammed={unp}
+                        pulseAttention={sig > 0 || unp}
+                        badge={sig > 0 ? sig : undefined}
+                        onClick={() => setSidebarOpen(false)}
+                      />
+                    );
+                  })}
+                </SidebarNavGroup>
+              )}
+              {showProductionLines && navBuckets.logistica.length > 0 && (
+                <SidebarNavGroup
+                  title="Logística"
+                  activeSubgroup={logisticaNavActive}
+                  attentionPulse={groupAttention.logistica.pulse}
+                  attentionBadge={
+                    groupAttention.logistica.badge > 0
+                      ? groupAttention.logistica.badge
+                      : undefined
+                  }
+                >
+                  {navBuckets.logistica.map((line) => {
+                    const sig = sidebarSignalByLineId[line.id] ?? 0;
+                    const unp = (unprogrammedByLine[line.id] ?? 0) > 0;
+                    return (
+                      <SidebarItem
+                        key={line.id}
+                        label={line.name}
+                        href={`/linha/${line.id}`}
+                        active={pathname?.startsWith(`/linha/${line.id}`)}
+                        hasUnprogrammed={unp}
+                        pulseAttention={sig > 0 || unp}
+                        badge={sig > 0 ? sig : undefined}
+                        onClick={() => setSidebarOpen(false)}
+                      />
+                    );
+                  })}
+                </SidebarNavGroup>
+              )}
               {canViewSettings && (
                 <SidebarItem
                   label="Configurações"
@@ -550,15 +808,96 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   );
 }
 
+function SidebarNavGroup({
+  title,
+  activeSubgroup,
+  attentionPulse,
+  attentionBadge,
+  children,
+}: {
+  title: string;
+  activeSubgroup: boolean;
+  attentionPulse?: boolean;
+  attentionBadge?: number;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(activeSubgroup);
+
+  useEffect(() => {
+    if (activeSubgroup) setOpen(true);
+  }, [activeSubgroup]);
+
+  return (
+    <div className="space-y-0.5">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={`w-full flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide transition-colors ${
+          activeSubgroup
+            ? "bg-slate-100 text-[#1B4F72]"
+            : attentionPulse
+              ? "text-amber-800 bg-amber-50/70"
+              : "text-slate-500 hover:bg-slate-50"
+        }`}
+      >
+        <span
+          className={`truncate ${
+            attentionPulse ? "animate-pulse font-bold" : ""
+          }`}
+        >
+          {title}
+        </span>
+        <span className="flex items-center gap-1 shrink-0">
+          {attentionBadge !== undefined && attentionBadge > 0 ? (
+            <span
+              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[1.125rem] text-center tabular-nums ${
+                activeSubgroup
+                  ? "bg-[#1B4F72]/15 text-[#1B4F72]"
+                  : "bg-amber-200 text-amber-950 border border-amber-400"
+              }`}
+            >
+              {attentionBadge > 99 ? "99+" : attentionBadge}
+            </span>
+          ) : null}
+          <ChevronDown
+            className={`h-4 w-4 text-slate-400 transition-transform duration-150 ${
+              open ? "rotate-180" : ""
+            }`}
+            aria-hidden
+          />
+        </span>
+      </button>
+      {open ? (
+        <div className="ml-2 pl-2 border-l border-slate-200 space-y-0.5">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 interface SidebarItemProps {
   label: string;
   href: string;
   active?: boolean;
   hasUnprogrammed?: boolean;
+  /** Pulso de atenção hierárquico (atrasos, contagem API, etc.). */
+  pulseAttention?: boolean;
+  /** Itens em aberto (Kanban «Atividades»). */
+  badge?: number;
   onClick?: () => void;
 }
 
-function SidebarItem({ label, href, active, hasUnprogrammed, onClick }: SidebarItemProps) {
+function SidebarItem({
+  label,
+  href,
+  active,
+  hasUnprogrammed,
+  pulseAttention,
+  badge,
+  onClick,
+}: SidebarItemProps) {
   const router = useRouter();
 
   function handleClick() {
@@ -575,12 +914,16 @@ function SidebarItem({ label, href, active, hasUnprogrammed, onClick }: SidebarI
           ? "bg-[#1B4F72] text-white"
           : hasUnprogrammed
           ? "text-slate-800 bg-amber-50 border-2 border-amber-400 pcp-sidebar-line-alert"
+          : pulseAttention
+          ? "text-slate-900 bg-amber-50/60 border border-amber-300/80"
           : "text-slate-700 hover:bg-slate-100"
       }`}
       title={
         hasUnprogrammed
           ? "Itens nesta linha sem data de produção programada — defina na Linha de Produção"
-          : undefined
+          : pulseAttention
+            ? "Itens pendentes de atenção nesta linha"
+            : undefined
       }
     >
       {hasUnprogrammed && (
@@ -589,7 +932,22 @@ function SidebarItem({ label, href, active, hasUnprogrammed, onClick }: SidebarI
           title="Aguardando programação"
         />
       )}
-      <span className="flex-1 truncate">{label}</span>
+      <span
+        className={`flex-1 truncate ${
+          pulseAttention && !active ? "animate-pulse font-semibold text-amber-900" : ""
+        }`}
+      >
+        {label}
+      </span>
+      {badge !== undefined && badge > 0 && (
+        <span
+          className={`shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[1.125rem] text-center tabular-nums ${
+            active ? "bg-white/20 text-white" : "bg-amber-100 text-amber-900 border border-amber-300"
+          }`}
+        >
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
       {hasUnprogrammed && (
         <span className="text-[10px] font-bold text-amber-600 shrink-0">!</span>
       )}

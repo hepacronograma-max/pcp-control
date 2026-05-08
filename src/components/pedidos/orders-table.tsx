@@ -24,6 +24,8 @@ interface OrdersTableProps {
   visibleOrders: OrderWithItems[];
   lines: ProductionLine[];
   userRole: UserRole;
+  cqUserId?: string;
+  cqCompanyId?: string | null;
   onUpdateOrderPcpDate: (orderId: string, date: string | null) => void;
   onUpdateItemLine: (itemId: string, lineId: string | null) => void;
   onUpdateItemQuantity: (itemId: string, quantity: number) => void;
@@ -51,6 +53,8 @@ export function OrdersTable({
   visibleOrders,
   lines,
   userRole,
+  cqUserId,
+  cqCompanyId,
   onUpdateOrderPcpDate,
   onUpdateItemLine,
   onUpdateItemQuantity,
@@ -207,10 +211,10 @@ export function OrdersTable({
 
       <div className="overflow-x-auto border-b border-slate-200">
         <div
-          className={`grid gap-2 px-3 sm:px-4 py-2 min-h-[42px] items-center text-[11px] font-semibold text-slate-500 min-w-[780px] ${
+          className={`grid gap-2 px-3 sm:px-4 py-2 min-h-[42px] items-center text-[11px] font-semibold text-slate-500 min-w-[820px] ${
             showBulk
-              ? "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.4fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,1.1fr)_minmax(0,0.95fr)_28px_minmax(0,1.5fr)_minmax(0,1.2fr)]"
-              : "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.4fr)_minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,1.1fr)_minmax(0,0.95fr)_minmax(0,1.5fr)_minmax(0,1.2fr)]"
+              ? "grid-cols-[28px_minmax(0,0.82fr)_minmax(0,1.28fr)_minmax(0,0.88fr)_minmax(0,0.88fr)_minmax(0,1.02fr)_minmax(0,0.88fr)_28px_minmax(0,1.95fr)_4.75rem]"
+              : "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.35fr)_minmax(0,0.92fr)_minmax(0,0.92fr)_minmax(0,1.06fr)_minmax(0,0.92fr)_minmax(0,2.1fr)_4.75rem]"
           }`}
         >
         <div />
@@ -256,7 +260,13 @@ export function OrdersTable({
             />
           </div>
         ) : null}
-        <div className="col-span-2 text-right">Status</div>
+        <div className="text-right flex items-center justify-end gap-1">Status</div>
+        <div
+          className="flex items-center justify-center text-[10px] font-semibold text-slate-500"
+          title="Ocorrências (CQ)"
+        >
+          CQ
+        </div>
         </div>
       </div>
 
@@ -266,7 +276,7 @@ export function OrdersTable({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <div className="min-w-[780px]">
+          <div className="min-w-[820px]">
             {filteredAndSorted.map((order) => (
               <OrderRow
                 key={order.id}
@@ -285,6 +295,8 @@ export function OrdersTable({
                 onComercialObservationThreadUpdated={
                   onComercialObservationThreadUpdated
                 }
+                cqUserId={cqUserId}
+                cqCompanyId={cqCompanyId}
                 showSelect={showBulk}
                 selected={selectedIds.has(order.id)}
                 onToggleSelect={() => toggleOrder(order.id)}

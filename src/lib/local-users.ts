@@ -28,6 +28,30 @@ export function getLocalUsersAsProfiles(companyId: string): Profile[] {
     .map(({ password: _, line_ids: __, ...p }) => p);
 }
 
+/**
+ * Utilizadores locais elegíveis para «Atribuir para» em tarefas.
+ * - Primeiro: `company_id` igual ao `companyId` efetivo (UUID da empresa).
+ * - Se vazio: utilizadores com `company_id === "local-company"` (comum após sync do perfil sem atualizar a lista local).
+ * - Se ainda vazio: todos os ativos (modo mono-empresa / localhost).
+ */
+export function getAssignableLocalProfiles(companyId: string): Profile[] {
+  const active = getLocalUsers().filter((u) => u.is_active);
+  const unwrap = (u: LocalUser) => {
+    const { password: _, line_ids: __, ...p } = u;
+    return p;
+  };
+
+  const exact = active.filter((u) => u.company_id === companyId);
+  if (exact.length > 0) return exact.map(unwrap);
+
+  const legacy = active.filter((u) => u.company_id === "local-company");
+  if (legacy.length > 0) return legacy.map(unwrap);
+
+  if (active.length > 0) return active.map(unwrap);
+
+  return [];
+}
+
 export function findLocalUserByEmail(
   email: string,
   password: string

@@ -55,6 +55,30 @@ export const PERMISSIONS = {
   manageLines: ["super_admin", "manager"] as UserRole[],
 
   manageHolidays: ["super_admin", "manager"] as UserRole[],
+
+  /** CQ: categorias em Configurações */
+  manageCQCategorias: ["super_admin", "manager"] as UserRole[],
+
+  /** Dashboard de ocorrências CQ (super admin + gestão) */
+  viewCQDashboard: ["super_admin", "manager"] as UserRole[],
+
+  /** Quadro de atividades (Kanban) */
+  viewTasks: [
+    "super_admin",
+    "manager",
+    "pcp",
+    "operator",
+    "comercial",
+    "compras",
+  ] as UserRole[],
+
+  createTasks: ["super_admin", "manager", "pcp"] as UserRole[],
+
+  editTasks: ["super_admin", "manager", "pcp"] as UserRole[],
+
+  deleteTasks: ["super_admin", "manager"] as UserRole[],
+
+  assignTasks: ["super_admin", "manager", "pcp"] as UserRole[],
 };
 
 /** Perfis no Supabase às vezes usam `admin`; no app equivale a manager. */

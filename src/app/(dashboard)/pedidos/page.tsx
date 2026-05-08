@@ -849,6 +849,8 @@ export default function PedidosPage() {
           visibleOrders={visibleOrders}
           lines={lines}
           userRole={userRole as UserRole}
+          cqUserId={profile?.id}
+          cqCompanyId={effectiveCompanyId}
           onUpdateOrderPcpDate={handleUpdateOrderPcpDate}
           onUpdateItemLine={handleUpdateItemLine}
           onUpdateItemQuantity={handleUpdateItemQuantity}

@@ -37,7 +37,8 @@ function canAccessComprasDashboard(role: string | null | undefined): boolean {
   return (
     role === "super_admin" ||
     role === "manager" ||
-    role === "compras"
+    role === "compras" ||
+    role === "pcp"
   );
 }
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { syncAlmoxarifadoOnProgram } from "@/lib/supabase/sync-almoxarifado-on-program";
+import { syncAlmoxOnProductionEndChange } from "@/lib/supabase/sync-almox-on-production-end";
 import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 
@@ -438,6 +439,18 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      /** Almox fecha automaticamente com a data de fim da produção (ou limpa marcação automática ao apagar o fim). */
+      const progActorRaw =
+        (typeof body.completed_by === "string" && body.completed_by.trim()) ||
+        (typeof body.supplied_by === "string" && body.supplied_by.trim()) ||
+        (typeof body.finalized_by === "string" && body.finalized_by.trim()) ||
+        null;
+      await syncAlmoxOnProductionEndChange(supabase, String(itemId), {
+        nextProductionEnd: pe,
+        previousProductionEnd: existingEnd,
+        actorUserId: progActorRaw,
+      });
+
       return NextResponse.json({ success: true });
     }
 
@@ -454,6 +467,17 @@ export async function POST(request: NextRequest) {
       const nowIso = new Date().toISOString();
       const todayStr = nowIso.slice(0, 10);
       const completedBy = body.completed_by ?? null;
+
+      const { data: befComplete } = await supabase
+        .from("order_items")
+        .select("production_end")
+        .eq("id", itemId)
+        .maybeSingle();
+      const prevPeNorm =
+        befComplete?.production_end != null && befComplete.production_end !== ""
+          ? toDateOnly(befComplete.production_end as string)
+          : null;
+
       const updateData: Record<string, unknown> = {
         status: "completed",
         production_start: production_start ?? todayStr,
@@ -461,10 +485,21 @@ export async function POST(request: NextRequest) {
         completed_at: nowIso,
       };
       if (completedBy) updateData.completed_by = completedBy;
+
+      const nextPeNorm = toDateOnly(updateData.production_end as string) ?? todayStr;
+
       const { error } = await supabase.from("order_items").update(updateData).eq("id", itemId);
       if (error) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
       }
+
+      await syncAlmoxOnProductionEndChange(supabase, String(itemId), {
+        nextProductionEnd: nextPeNorm,
+        previousProductionEnd: prevPeNorm,
+        actorUserId:
+          typeof completedBy === "string" && completedBy.trim() ? completedBy.trim() : null,
+      });
+
       return NextResponse.json({ success: true });
     }
 

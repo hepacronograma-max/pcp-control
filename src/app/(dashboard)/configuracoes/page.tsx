@@ -9,6 +9,7 @@ import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 
 const links = [
   { href: "/configuracoes/linhas", label: "Linhas de Produção", description: "Criar, editar e desativar linhas de produção." },
+  { href: "/configuracoes/cq-categorias", label: "CQ Categorias", description: "Categorias de ocorrências por perfil (operador, PCP, compras, comercial…)." },
   { href: "/configuracoes/empresa", label: "Empresa", description: "Logo da empresa e pasta matriz para PDFs dos pedidos." },
   { href: "/configuracoes/feriados", label: "Feriados", description: "Cadastro de feriados para o calendário." },
   { href: "/configuracoes/usuarios", label: "Usuários", description: "Cadastro de usuários PCP e operadores." },

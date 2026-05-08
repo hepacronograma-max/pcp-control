@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatShortDate } from "@/lib/utils/date";
 import { Button } from "@/components/ui/button";
+import { CQField } from "@/components/cq/CQField";
+import { CQList } from "@/components/cq/CQList";
 
 export type PoLink = {
   id: string;
@@ -83,6 +85,9 @@ interface PurchaseOrdersTableProps {
   schemaMissing: boolean;
   /** PCP: só visualização (sem vincular, excluir ou editar prazos/notas). */
   readOnly?: boolean;
+  cqUserId?: string;
+  cqCompanyId?: string | null;
+  cqUserRole?: string;
   onLink: (poId: string, orderItemId: string, purchaseOrderLineId?: string) => void | Promise<void>;
   onUnlink: (poId: string, orderItemId: string) => void | Promise<void>;
   onDeletePo: (id: string) => void | Promise<void>;
@@ -97,6 +102,9 @@ export function PurchaseOrdersTable({
   orderItemsForLink,
   schemaMissing,
   readOnly = false,
+  cqUserId,
+  cqCompanyId,
+  cqUserRole,
   onLink,
   onUnlink,
   onDeletePo,
@@ -222,14 +230,16 @@ export function PurchaseOrdersTable({
         return (
           <div key={p.id} className="border-b border-slate-100 last:border-0 text-xs">
             <div className="flex flex-wrap items-end gap-x-3 gap-y-2 px-2 sm:px-3 py-2.5 bg-white hover:bg-slate-50/80">
-              <button
-                type="button"
-                onClick={() => toggleExpand(p.id)}
-                className="text-slate-500 hover:text-slate-800 w-6 shrink-0 self-center mb-0.5"
-                aria-expanded={ex}
-              >
-                {ex ? "▼" : "▶"}
-              </button>
+              <div className="flex shrink-0 items-start self-start pt-1">
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(p.id)}
+                  className="text-slate-500 hover:text-slate-800 w-6 shrink-0"
+                  aria-expanded={ex}
+                >
+                  {ex ? "▼" : "▶"}
+                </button>
+              </div>
               <div className="shrink-0 min-w-[3.5rem]">
                 <span className="text-[9px] uppercase tracking-wide text-slate-500 block leading-tight">
                   Nº PC
@@ -336,7 +346,27 @@ export function PurchaseOrdersTable({
                   </button>
                 </div>
               )}
-              {readOnly && <div className="w-0 shrink-0" aria-hidden />}
+              {cqCompanyId && cqUserRole ? (
+                <div className="flex shrink-0 items-center justify-center gap-1 self-center mb-0.5 min-h-[34px]">
+                  <CQField
+                    targetType="purchase_order"
+                    targetId={p.id}
+                    userRole={cqUserRole}
+                    userId={cqUserId}
+                    companyId={cqCompanyId}
+                  />
+                  <CQList
+                    targetType="purchase_order"
+                    targetId={p.id}
+                    companyId={cqCompanyId}
+                    userId={cqUserId}
+                    userRole={cqUserRole}
+                  />
+                </div>
+              ) : null}
+              {readOnly && !cqCompanyId && (
+                <div className="w-0 shrink-0" aria-hidden />
+              )}
             </div>
 
             {ex && (

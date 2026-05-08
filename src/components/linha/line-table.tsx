@@ -1,11 +1,59 @@
 import { CompactDateCell } from "@/components/ui/compact-date-cell";
+import * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ItemStatus, Profile, ProductionLine } from "@/lib/types/database";
 import type { LineItemWithOrder } from "./gantt-calendar";
-import type { Profile, ProductionLine } from "@/lib/types/database";
 import { formatShortDate, parseLocalDate } from "@/lib/utils/date";
 import { itemPcArrivalForProduction } from "@/lib/utils/pc-purchase-dates";
 import { hasPermission } from "@/lib/utils/permissions";
 import { toDateOnly } from "@/lib/utils/supabase-data";
+import { CQField } from "@/components/cq/CQField";
+import { CQList } from "@/components/cq/CQList";
+
+function migrateLineTableWidths(
+  prop: number[],
+  selectCol: boolean,
+  defaults: number[]
+): number[] | undefined {
+  let w = [...prop];
+  let guard = 0;
+  while (w.length !== defaults.length && guard++ < 8) {
+    if (selectCol && w.length === 12 && defaults.length === 13) {
+      const checkW = w[10];
+      const obsW = w[11];
+      if (
+        checkW !== undefined &&
+        obsW !== undefined &&
+        checkW <= 52 &&
+        obsW >= 72
+      ) {
+        w = [...w.slice(0, 10), obsW, 80, checkW];
+        continue;
+      }
+    }
+    if (!selectCol && w.length === 11 && defaults.length === 12) {
+      const checkW = w[9];
+      const obsW = w[10];
+      if (
+        checkW !== undefined &&
+        obsW !== undefined &&
+        checkW <= 52 &&
+        obsW >= 72
+      ) {
+        w = [...w.slice(0, 9), obsW, 80, checkW];
+        continue;
+      }
+    }
+    if (w.length === defaults.length - 1) {
+      const insertAt = selectCol ? 3 : 2;
+      w = [...w];
+      w.splice(insertAt, 0, defaults[insertAt] ?? 72);
+      continue;
+    }
+    return undefined;
+  }
+  return w.length === defaults.length ? w : undefined;
+}
 
 function safeParse(d: string): Date {
   return d.includes("-") ? parseLocalDate(d) : new Date(d);
@@ -32,6 +80,21 @@ export type LineSortKey =
   | "delivery_deadline"
   | "production_start"
   | "production_end";
+
+function itemStatusLabelPt(s: ItemStatus | string): string {
+  switch (s) {
+    case "waiting":
+      return "Aguardando";
+    case "scheduled":
+      return "Programado";
+    case "completed":
+      return "Concluído";
+    case "delayed":
+      return "Atrasado";
+    default:
+      return String(s || "—");
+  }
+}
 
 export function sortLineItemsByKeys(
   items: LineItemWithOrder[],
@@ -124,13 +187,19 @@ interface LineTableProps {
   onReopenCompleted?: (itemId: string) => void;
   isAlmoxarifado?: boolean;
   allLines?: ProductionLine[];
-  onSupply?: (itemId: string) => void;
   /** Seletor múltiplo (linha de produção) */
   selectedItemIds?: Set<string>;
   onToggleItemSelected?: (itemId: string) => void;
   onToggleSelectAllVisible?: () => void;
   columnWidths?: number[];
   onColumnWidthsChange?: (widths: number[]) => void;
+  cqContext?: { userId: string; companyId: string } | null;
+  /** Cabeçalhos de grupo por dia (vista só leitura Almox.) */
+  almoxGroupByDay?: boolean;
+  /** Aba Almox: «Em aberto» vs «Finalizados» (abastecido). */
+  almoxTab?: "all" | "in_progress" | "finished";
+  /** Marcar como abastecido (só na aba em aberto). */
+  onAlmoxSupply?: (itemId: string) => void;
 }
 
 export function LineTable({
@@ -144,36 +213,37 @@ export function LineTable({
   onReopenCompleted,
   isAlmoxarifado,
   allLines,
-  onSupply,
   selectedItemIds,
   onToggleItemSelected,
   onToggleSelectAllVisible,
   columnWidths: columnWidthsProp,
   onColumnWidthsChange,
+  cqContext,
+  almoxGroupByDay = false,
+  almoxTab = "in_progress",
+  onAlmoxSupply,
 }: LineTableProps) {
   /**
    * Início/Fim precisam de ~104–116px: o seletor de data usa área mínima ~96px;
    * valores menores encavalam colunas e o clique só pega no canto.
    */
   const selectCol = Boolean(onToggleItemSelected);
-  const defaultWidths = isAlmoxarifado
-    ? [60, 140, 200, 55, 110, 90, 80]
-    : selectCol
-      ? [32, 54, 118, 72, 158, 42, 76, 76, 116, 116, 40, 96]
-      : [54, 118, 72, 158, 42, 76, 76, 116, 116, 40, 96];
+  const defaultWidths = useMemo(
+    () =>
+      isAlmoxarifado
+        ? [100, 88, 72, 200, 44, 88, 88, 88, 56]
+        : selectCol
+          ? [32, 54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 40]
+          : [54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 40],
+    [isAlmoxarifado, selectCol]
+  );
 
-  /** Preferências antigas (antes da coluna Cód.) tinham um elemento a menos. */
+  /** Migra prefs antigas (sem Cód., sem “Ocorrências”, etc.). */
   const normalizedPropWidths = useMemo(() => {
-    if (!columnWidthsProp?.length) return undefined;
-    const exp = defaultWidths.length;
-    if (columnWidthsProp.length === exp) return columnWidthsProp;
-    if (isAlmoxarifado) return undefined;
-    const legacyLen = exp - 1;
-    if (columnWidthsProp.length !== legacyLen) return undefined;
-    const insertAt = selectCol ? 3 : 2;
-    const merged = [...columnWidthsProp];
-    merged.splice(insertAt, 0, defaultWidths[insertAt] ?? 72);
-    return merged;
+    if (!columnWidthsProp?.length || isAlmoxarifado) return undefined;
+    if (columnWidthsProp.length === defaultWidths.length)
+      return columnWidthsProp;
+    return migrateLineTableWidths(columnWidthsProp, selectCol, defaultWidths);
   }, [columnWidthsProp, defaultWidths, isAlmoxarifado, selectCol]);
 
   const [internalWidths, setInternalWidths] = useState<number[]>(defaultWidths);
@@ -209,10 +279,10 @@ export function LineTable({
   const columnMinWidths = useMemo(
     () =>
       isAlmoxarifado
-        ? [44, 72, 96, 36, 72, 64, 56]
+        ? [56, 64, 52, 96, 36, 72, 72, 64, 40]
         : selectCol
-          ? [28, 44, 72, 52, 96, 36, 56, 56, 100, 100, 32, 64]
-          : [44, 72, 52, 96, 36, 56, 56, 100, 100, 32, 64],
+          ? [28, 44, 72, 52, 96, 36, 56, 56, 100, 100, 64, 64, 32]
+          : [44, 72, 52, 96, 36, 56, 56, 100, 100, 64, 64, 32],
     [isAlmoxarifado, selectCol]
   );
 
@@ -272,32 +342,77 @@ export function LineTable({
 
   const linesMap = new Map((allLines ?? []).map((l) => [l.id, l.name]));
 
+  type AlmoxRow =
+    | { kind: "day"; key: string; label: string }
+    | { kind: "item"; key: string; item: LineItemWithOrder };
+
+  const almoxRows = useMemo((): AlmoxRow[] => {
+    if (!isAlmoxarifado) return [];
+    if (!almoxGroupByDay) {
+      return items.map((item) => ({ kind: "item" as const, key: item.id, item }));
+    }
+    const sorted = [...items].sort((a, b) => {
+      const as = (a.production_start ?? "").slice(0, 10);
+      const bs = (b.production_start ?? "").slice(0, 10);
+      return as.localeCompare(bs);
+    });
+    const out: AlmoxRow[] = [];
+    let prev = "";
+    for (const item of sorted) {
+      const d = (item.production_start ?? "").slice(0, 10) || "—";
+      if (d !== prev) {
+        prev = d;
+        out.push({
+          kind: "day",
+          key: `h-${d}`,
+          label:
+            d === "—"
+              ? "Sem data de início"
+              : `Início · ${formatShortDate(safeParse(`${d}T12:00:00`))}`,
+        });
+      }
+      out.push({ kind: "item", key: item.id, item });
+    }
+    return out;
+  }, [isAlmoxarifado, items, almoxGroupByDay]);
+
+  const itemRowStripe = useMemo(() => {
+    const m = new Map<string, number>();
+    let c = 0;
+    for (const row of almoxRows) {
+      if (row.kind === "item") {
+        m.set(row.item.id, c % 2);
+        c++;
+      }
+    }
+    return m;
+  }, [almoxRows]);
+
   if (isAlmoxarifado) {
     return (
-      <div className="min-w-[640px]">
+      <div className="min-w-[800px]">
         <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
           <div
             className="grid text-[11px] h-[var(--line-gantt-header-h)] items-stretch box-border overflow-hidden bg-slate-50/70"
             style={{ gridTemplateColumns: gridTemplate }}
           >
+            <HeaderCell onResizeStart={(e) => handleResizeStart(0, e)}>
+              Linha de produção
+            </HeaderCell>
             <HeaderCell
               onClick={() => toggleSort("order_number")}
               sortIndex={getSortIndex("order_number")}
-              onResizeStart={(e) => handleResizeStart(0, e)}
-            >
-              Pedido
-            </HeaderCell>
-            <HeaderCell
-              onClick={() => toggleSort("client_name")}
-              sortIndex={getSortIndex("client_name")}
               onResizeStart={(e) => handleResizeStart(1, e)}
             >
-              Cliente
+              Nº pedido
+            </HeaderCell>
+            <HeaderCell onResizeStart={(e) => handleResizeStart(2, e)}>
+              Cód.
             </HeaderCell>
             <HeaderCell
               onClick={() => toggleSort("description")}
               sortIndex={getSortIndex("description")}
-              onResizeStart={(e) => handleResizeStart(2, e)}
+              onResizeStart={(e) => handleResizeStart(3, e)}
             >
               Descrição
             </HeaderCell>
@@ -305,14 +420,9 @@ export function LineTable({
               className="text-center"
               onClick={() => toggleSort("quantity")}
               sortIndex={getSortIndex("quantity")}
-              onResizeStart={(e) => handleResizeStart(3, e)}
-            >
-              Qtd
-            </HeaderCell>
-            <HeaderCell
               onResizeStart={(e) => handleResizeStart(4, e)}
             >
-              Linha
+              Qtd
             </HeaderCell>
             <HeaderCell
               className="text-center"
@@ -320,35 +430,62 @@ export function LineTable({
               sortIndex={getSortIndex("production_start")}
               onResizeStart={(e) => handleResizeStart(5, e)}
             >
-              Início Prod.
+              Início prod.
             </HeaderCell>
             <HeaderCell
               className="text-center"
+              onClick={() => toggleSort("production_end")}
+              sortIndex={getSortIndex("production_end")}
               onResizeStart={(e) => handleResizeStart(6, e)}
             >
+              Fim prod.
+            </HeaderCell>
+            <HeaderCell onResizeStart={(e) => handleResizeStart(7, e)}>
+              Status
+            </HeaderCell>
+            <HeaderCell onResizeStart={(e) => handleResizeStart(8, e)}>
               Abastecido
             </HeaderCell>
           </div>
         </div>
 
         <div>
-          {items.map((item, idx) => {
-            const lineName = item.line_id ? linesMap.get(item.line_id) ?? "--" : "--";
-            const isSupplied = !!item.supplied_at;
-
+          {almoxRows.map((row) => {
+            if (row.kind === "day") {
+              return (
+                <div
+                  key={row.key}
+                  className="w-full border-b border-slate-200 bg-slate-100/90 px-2 py-1.5 text-[11px] font-semibold text-[#1B4F72]"
+                >
+                  {row.label}
+                </div>
+              );
+            }
+            const item = row.item;
+            const lineName =
+              item.line_id ? linesMap.get(item.line_id) ?? "—" : "—";
+            const stripe = itemRowStripe.get(item.id) ?? 0;
             return (
               <div
                 key={item.id}
-                className={`grid text-[11px] items-center border-b border-slate-200 h-[var(--line-gantt-row-h)] gap-x-0 box-border overflow-hidden ${
-                  idx % 2 === 0 ? "bg-white" : "bg-slate-50"
+                className={`grid text-[11px] items-center border-b border-slate-200 min-h-[var(--line-gantt-row-h)] gap-x-0 box-border overflow-hidden py-1 ${
+                  stripe === 0 ? "bg-white" : "bg-slate-50"
                 }`}
                 style={{ gridTemplateColumns: gridTemplate }}
               >
+                <Cell title={lineName} className="flex items-center min-w-0 font-medium text-slate-700">
+                  <span className="truncate block">{lineName}</span>
+                </Cell>
                 <Cell className="font-medium text-slate-800 flex items-center">
                   {item.order.order_number}
                 </Cell>
-                <Cell title={item.order.client_name} className="flex items-center min-w-0">
-                  <span className="truncate block">{item.order.client_name}</span>
+                <Cell
+                  title={(item.product_code ?? "").trim() || undefined}
+                  className="text-center flex justify-center items-center font-mono text-[10px] min-w-0"
+                >
+                  <span className="truncate block">
+                    {(item.product_code ?? "").trim() || "—"}
+                  </span>
                 </Cell>
                 <Cell title={item.description} className="flex items-center min-w-0">
                   <span className="truncate block">{item.description}</span>
@@ -356,27 +493,42 @@ export function LineTable({
                 <Cell className="text-center flex justify-center items-center">
                   {item.quantity}
                 </Cell>
-                <Cell title={lineName} className="flex items-center min-w-0">
-                  <span className="truncate block text-slate-600">{lineName}</span>
-                </Cell>
-                <Cell className="text-center flex justify-center items-center">
+                <Cell className="text-center flex justify-center items-center text-slate-800">
                   {item.production_start
                     ? formatShortDate(safeParse(item.production_start))
-                    : "--"}
+                    : "—"}
                 </Cell>
-                <Cell className="text-center flex justify-center items-center">
-                  {isSupplied ? (
-                    <span className="inline-flex items-center rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px] font-medium">
-                      OK
+                <Cell className="text-center flex justify-center items-center text-slate-800">
+                  {item.production_end
+                    ? formatShortDate(safeParse(item.production_end))
+                    : "—"}
+                </Cell>
+                <Cell className="flex justify-center items-center">
+                  <span className="inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                    {itemStatusLabelPt(item.status)}
+                  </span>
+                </Cell>
+                <Cell className="text-center flex justify-center items-center px-0.5">
+                  {almoxTab === "finished" ? (
+                    <span className="text-[10px] text-slate-800 tabular-nums">
+                      {item.almox_supplied_at
+                        ? formatShortDate(safeParse(item.almox_supplied_at))
+                        : "—"}
                     </span>
-                  ) : (
+                  ) : onAlmoxSupply ? (
                     <button
-                      onClick={() => onSupply?.(item.id)}
-                      className="inline-flex h-6 px-2 items-center justify-center rounded border border-blue-300 text-[10px] font-medium text-blue-700 hover:bg-blue-50"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAlmoxSupply(item.id);
+                      }}
+                      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border border-emerald-300 text-[10px] leading-none touch-manipulation text-emerald-700 hover:bg-emerald-50"
                       title="Marcar como abastecido"
                     >
-                      Abastecer
+                      ✓
                     </button>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">—</span>
                   )}
                 </Cell>
               </div>
@@ -388,7 +540,7 @@ export function LineTable({
   }
 
   return (
-    <div className="min-w-[720px]">
+    <div className="min-w-[min(780px,100%)] md:min-w-[780px]">
       <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
         <div
           className="grid text-[11px] h-[var(--line-gantt-header-h)] items-stretch box-border overflow-x-clip bg-slate-50/70"
@@ -471,14 +623,20 @@ export function LineTable({
           >
             Fim Prod.
           </HeaderCell>
+          <HeaderCell onResizeStart={(e) => handleResizeStart(9 + colOff, e)}>
+            Obs.
+          </HeaderCell>
           <HeaderCell
             className="text-center"
-            onResizeStart={(e) => handleResizeStart(9 + colOff, e)}
+            onResizeStart={(e) => handleResizeStart(10 + colOff, e)}
+          >
+            Ocorrências
+          </HeaderCell>
+          <HeaderCell
+            className="text-center px-0.5"
+            onResizeStart={(e) => handleResizeStart(11 + colOff, e)}
           >
             ✓
-          </HeaderCell>
-          <HeaderCell onResizeStart={(e) => handleResizeStart(10 + colOff, e)}>
-            Obs.
           </HeaderCell>
         </div>
       </div>
@@ -598,12 +756,49 @@ export function LineTable({
                   }
                 />
               </Cell>
-              <Cell className="text-center px-0.5 flex items-center justify-center">
+              <Cell className="flex flex-col gap-1 py-1 h-full min-h-0 justify-center min-w-0">
+                <input
+                  type="text"
+                  className="w-full rounded-md border border-slate-300 bg-white px-2 text-[10px] h-[26px] box-border shrink-0"
+                  value={item.notes ?? ""}
+                  onChange={(e) => onChangeNotes(item.id, e.target.value)}
+                  placeholder="Observações..."
+                />
+              </Cell>
+              <Cell className="!overflow-visible px-1 flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 py-1 min-h-0 isolate z-[25] [@media(max-width:480px)]:justify-center [@media(max-width:480px)]:max-w-full">
+                {cqContext ? (
+                  <div
+                    className="flex flex-row items-center justify-center gap-2 sm:gap-1 shrink-0 w-full max-w-full"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <CQField
+                      targetType="order_item"
+                      targetId={item.id}
+                      userRole={profile.role}
+                      userId={cqContext.userId}
+                      companyId={cqContext.companyId}
+                      variant="icon"
+                      comfortableTouch
+                    />
+                    <CQList
+                      targetType="order_item"
+                      targetId={item.id}
+                      companyId={cqContext.companyId}
+                      userId={cqContext.userId}
+                      userRole={profile.role}
+                      comfortableTouch
+                    />
+                  </div>
+                ) : (
+                  <span className="text-[10px] text-slate-300">—</span>
+                )}
+              </Cell>
+              <Cell className="text-center px-0.5 flex items-center justify-center z-[10]">
                 {item.status === "completed" && canReopenCompleted ? (
                   <button
                     type="button"
                     onClick={() => onReopenCompleted!(item.id)}
-                    className="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded border border-amber-400 bg-amber-50 px-0.5 text-[10px] font-semibold leading-none text-amber-900 hover:bg-amber-100"
+                    className="inline-flex h-5 min-w-[1.25rem] shrink-0 items-center justify-center rounded border border-amber-400 bg-amber-50 px-0.5 text-[10px] font-semibold leading-none text-amber-900 hover:bg-amber-100 touch-manipulation"
                     title="Reabrir item (desfazer conclusão)"
                   >
                     ↺
@@ -612,7 +807,7 @@ export function LineTable({
                   <button
                     type="button"
                     onClick={() => handleComplete(item.id)}
-                    className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px] leading-none ${
+                    className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px] leading-none touch-manipulation ${
                       willDelay
                         ? "border-red-300 text-red-700 hover:bg-red-100"
                         : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
@@ -633,15 +828,6 @@ export function LineTable({
                     ✓
                   </span>
                 )}
-              </Cell>
-              <Cell className="flex items-center py-0 h-full min-h-0">
-                <input
-                  type="text"
-                  className="w-full rounded-md border border-slate-300 bg-white px-2 text-[10px] h-[26px] box-border"
-                  value={item.notes ?? ""}
-                  onChange={(e) => onChangeNotes(item.id, e.target.value)}
-                  placeholder="Observações..."
-                />
               </Cell>
             </div>
           );
