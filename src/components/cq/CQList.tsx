@@ -49,7 +49,8 @@ export function CQList({
   comfortableTouch = false,
 }: CQListProps) {
   const [registros, setRegistros] = useState<CQRegistro[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [unresolvedCount, setUnresolvedCount] = useState(0);
+  const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [resolvendo, setResolvendo] = useState<string | null>(null);
   const supabase = createClient();
@@ -118,9 +119,41 @@ export function CQList({
     setLoading(false);
   }, [useLocalApi, companyId, supabase, targetType, targetId]);
 
+  const loadUnresolvedCount = useCallback(async () => {
+    if (useLocalApi) {
+      try {
+        const params = new URLSearchParams({
+          companyId: companyId!,
+          target_type: targetType,
+          target_id: targetId,
+        });
+        const r = await fetch(`/api/cq/registros?${params}`, {
+          credentials: "include",
+        });
+        const j = (await r.json()) as { registros?: CQRegistro[] };
+        if (r.ok) {
+          setUnresolvedCount(
+            (j.registros ?? []).filter((x) => !x.resolvido_em).length
+          );
+        }
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+    if (!supabase) return;
+    const { count, error } = await supabase
+      .from("cq_registros")
+      .select("id", { count: "exact", head: true })
+      .eq("target_type", targetType)
+      .eq("target_id", targetId)
+      .is("resolvido_em", null);
+    if (!error) setUnresolvedCount(count ?? 0);
+  }, [useLocalApi, companyId, supabase, targetType, targetId]);
+
   useEffect(() => {
-    void loadRegistros();
-  }, [loadRegistros]);
+    void loadUnresolvedCount();
+  }, [loadUnresolvedCount]);
 
   useEffect(() => {
     function onRefresh(ev: Event) {
@@ -130,12 +163,13 @@ export function CQList({
       }>;
       const d = ce.detail;
       if (d?.targetType === targetType && d?.targetId === targetId) {
-        void loadRegistros();
+        void loadUnresolvedCount();
+        if (open) void loadRegistros();
       }
     }
     window.addEventListener("pcp-cq-refresh", onRefresh);
     return () => window.removeEventListener("pcp-cq-refresh", onRefresh);
-  }, [targetType, targetId, loadRegistros]);
+  }, [targetType, targetId, loadRegistros, loadUnresolvedCount, open]);
 
   useEffect(() => {
     if (open) {
@@ -172,6 +206,7 @@ export function CQList({
       } else {
         toast.success("Ocorrência marcada como resolvida!");
         void loadRegistros();
+        void loadUnresolvedCount();
       }
       setResolvendo(null);
       return;
@@ -199,6 +234,7 @@ export function CQList({
     } else {
       toast.success("Ocorrência marcada como resolvida!");
       void loadRegistros();
+      void loadUnresolvedCount();
     }
     setResolvendo(null);
   }
@@ -231,7 +267,9 @@ export function CQList({
     }
   }
 
-  const unresolved = registros.filter((r) => !r.resolvido_em).length;
+  const unresolved = open
+    ? registros.filter((r) => !r.resolvido_em).length
+    : unresolvedCount;
   const roleNorm = normalizeUserRole(userRole);
   const canResolve =
     roleNorm &&

@@ -16,6 +16,7 @@ import { isUuid } from "@/lib/utils/is-uuid";
 import { attentionMenuCountLocal } from "@/lib/tasks-local";
 import { itemNeedsProductionProgram } from "@/lib/utils/line-program-indicator";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import { usePollWhenVisible } from "@/lib/hooks/use-poll-when-visible";
 import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 import {
   bucketLinesForSidebar,
@@ -225,37 +226,32 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     loadData();
   }, [profile, supabase, effectiveCompanyId, effectiveLoaded]);
 
-  // Atualiza contagem ao trocar de aba / intervalo — só com sessão Supabase no browser.
-  // Login local (+ company-data na API) NÃO deve usar isto: RLS do anon zera a contagem e o piscar “morre”.
-  useEffect(() => {
-    if (!supabase || !effectiveCompanyId) return;
-    if (shouldUseLocalServiceApi(profile)) return;
-
-    const client = supabase;
-    async function refreshCounts() {
-      try {
-        const { data } = await client
-          .from("order_items")
-          .select("line_id, status, production_start, production_end")
-          .not("line_id", "is", null);
-        const counts: Record<string, number> = {};
-        for (const it of data ?? []) {
-          if (itemNeedsProductionProgram(it)) {
-            counts[it.line_id] = (counts[it.line_id] ?? 0) + 1;
+  // Contagem lateral: poll leve (60s) só com aba visível — evita spam no Supabase.
+  usePollWhenVisible(
+    () => {
+      if (!supabase || !effectiveCompanyId) return;
+      if (shouldUseLocalServiceApi(profile)) return;
+      void (async () => {
+        try {
+          const { data } = await supabase
+            .from("order_items")
+            .select("line_id, status, production_start, production_end")
+            .not("line_id", "is", null);
+          const counts: Record<string, number> = {};
+          for (const it of data ?? []) {
+            if (itemNeedsProductionProgram(it)) {
+              counts[it.line_id] = (counts[it.line_id] ?? 0) + 1;
+            }
           }
+          setUnprogrammedByLine(counts);
+        } catch {
+          /* ignore */
         }
-        setUnprogrammedByLine(counts);
-      } catch {
-        // ignore
-      }
-    }
-    const interval = setInterval(refreshCounts, 30000);
-    window.addEventListener("focus", refreshCounts);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("focus", refreshCounts);
-    };
-  }, [profile, supabase, effectiveCompanyId]);
+      })();
+    },
+    60_000,
+    Boolean(supabase && effectiveCompanyId && profile && !shouldUseLocalServiceApi(profile))
+  );
 
   const pageTitle = useMemo(() => {
     if (pathname?.startsWith("/dashboard/atividades")) return "Atividades";
@@ -412,10 +408,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     };
 
     window.addEventListener("pcp-tasks-pending-changed", onTasksPendingChanged);
-    const interval = setInterval(refreshTasksBadge, 30000);
     return () => {
       window.removeEventListener("pcp-tasks-pending-changed", onTasksPendingChanged);
-      clearInterval(interval);
     };
   }, [
     profile,
@@ -424,44 +418,70 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     tasksPendingUsesLocalOnly,
   ]);
 
-  /** Contagens por linha para pulso/badge hierárquico no menu Produção | Logística. */
-  useEffect(() => {
-    if (!profile || !effectiveLoaded) return;
-    if (!showProductionLines || !effectiveCompanyId) return;
-    if (!isUuid(effectiveCompanyId)) return;
-
-    const cid = effectiveCompanyId;
-    const viewerPk = profile.id;
-    let cancelled = false;
-
-    async function loadLineAttention() {
-      try {
-        const qp = new URLSearchParams({ companyId: cid });
-        if (isUuid(viewerPk)) qp.set("viewerId", viewerPk);
-        const r = await fetch(`/api/line-pending-count?${qp}`, {
-          credentials: "include",
-        });
-        const j = (await r.json()) as { counts?: Record<string, number> };
-        if (cancelled) return;
-        if (r.ok && j.counts && typeof j.counts === "object") {
-          setLineAttentionCounts(j.counts);
-          setLineAttentionLoaded(true);
-        }
-      } catch {
-        /* ignore */
+  usePollWhenVisible(
+    () => {
+      if (!profile || !effectiveLoaded || !effectiveCompanyId) return;
+      const companyForBadge = effectiveCompanyId;
+      if (tasksPendingUsesLocalOnly) {
+        setTasksPendingBadge(
+          attentionMenuCountLocal(companyForBadge, profile.id ?? null)
+        );
+        return;
       }
-    }
+      void (async () => {
+        try {
+          const r = await fetch(
+            `/api/tasks/pending-count?companyId=${encodeURIComponent(companyForBadge)}&viewerId=${encodeURIComponent(profile.id)}`,
+            { credentials: "include" }
+          );
+          const j = (await r.json()) as { count?: number };
+          if (r.ok) {
+            setTasksPendingBadge(typeof j.count === "number" ? j.count : 0);
+          }
+        } catch {
+          /* ignore */
+        }
+      })();
+    },
+    60_000,
+    Boolean(profile && effectiveLoaded && effectiveCompanyId)
+  );
 
-    void loadLineAttention();
-    const t = window.setInterval(loadLineAttention, 30000);
-    const onFocus = () => void loadLineAttention();
-    window.addEventListener("focus", onFocus);
-    return () => {
-      cancelled = true;
-      window.clearInterval(t);
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [profile, effectiveLoaded, effectiveCompanyId, showProductionLines]);
+  /** Contagens por linha para pulso/badge hierárquico no menu Produção | Logística. */
+  usePollWhenVisible(
+    () => {
+      if (!profile || !effectiveLoaded || !showProductionLines || !effectiveCompanyId) {
+        return;
+      }
+      if (!isUuid(effectiveCompanyId)) return;
+      const cid = effectiveCompanyId;
+      const viewerPk = profile.id;
+      void (async () => {
+        try {
+          const qp = new URLSearchParams({ companyId: cid });
+          if (isUuid(viewerPk)) qp.set("viewerId", viewerPk);
+          const r = await fetch(`/api/line-pending-count?${qp}`, {
+            credentials: "include",
+          });
+          const j = (await r.json()) as { counts?: Record<string, number> };
+          if (r.ok && j.counts && typeof j.counts === "object") {
+            setLineAttentionCounts(j.counts);
+            setLineAttentionLoaded(true);
+          }
+        } catch {
+          /* ignore */
+        }
+      })();
+    },
+    60_000,
+    Boolean(
+      profile &&
+        effectiveLoaded &&
+        showProductionLines &&
+        effectiveCompanyId &&
+        isUuid(effectiveCompanyId)
+    )
+  );
 
   return (
     <div className="min-h-screen min-h-[100dvh] flex w-full max-w-[100vw] overflow-x-hidden">
