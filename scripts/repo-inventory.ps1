@@ -10,7 +10,7 @@ $files = Get-ChildItem -Recurse -File -EA SilentlyContinue |
   Where-Object { $_.FullName -notmatch $exclude }
 
 $sum = ($files | Measure-Object Length -Sum)
-Write-Host "=== PCP Control — inventario ===" -ForegroundColor Cyan
+Write-Host "=== PCP Control - inventario ===" -ForegroundColor Cyan
 Write-Host ("Arquivos (sem node_modules/.next): {0}" -f $sum.Count)
 Write-Host ("Tamanho total: {0:N2} MB" -f ($sum.Sum / 1MB))
 
