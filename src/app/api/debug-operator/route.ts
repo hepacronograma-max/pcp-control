@@ -2,6 +2,10 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 export async function GET() {
+  if (process.env.VERCEL_ENV === "production") {
+    return NextResponse.json({ error: "Não disponível em produção" }, { status: 404 });
+  }
+
   const supabase = await createServerSupabaseClient();
 
   const {
@@ -10,7 +14,10 @@ export async function GET() {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.json({ error: "not authenticated", authError });
+    return NextResponse.json(
+      { error: "not authenticated", authError },
+      { status: 401 }
+    );
   }
 
   const { data: profile } = await supabase

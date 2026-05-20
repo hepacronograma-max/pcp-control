@@ -20,6 +20,7 @@ npm-debug.log*
 backup-pcp.json
 public/backup-inicial.json
 public/*-backup*.json
+secrets/
 
 # PDF de teste (dados de cliente)
 public/test-pedido.pdf

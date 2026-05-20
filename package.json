@@ -12,7 +12,9 @@
     "import-backup": "node import-backup-to-supabase.js",
     "cleanup": "node scripts/run-cleanup.js",
     "cleanup:dry": "node scripts/run-cleanup.js --dry-run",
-    "backup:weekly": "node scripts/weekly-backup-supabase.js"
+    "backup:weekly": "node scripts/weekly-backup-supabase.js",
+    "security:smoke": "powershell -ExecutionPolicy Bypass -File scripts/security-smoke-test.ps1",
+    "security:secrets": "node scripts/generate-vercel-secrets.js"
   },
   "keywords": [],
   "author": "",

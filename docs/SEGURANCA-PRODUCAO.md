@@ -56,3 +56,14 @@ Recomendado em `master`:
 ## Scripts destrutivos
 
 Scripts em `scripts/` usam `SUPABASE_SERVICE_ROLE_KEY`. Rodar só na sua máquina, nunca em CI público.
+
+## Testes automatizados (local)
+
+```powershell
+cd pcp-control
+npm run security:smoke          # valida produção (padrão: pcp-control.vercel.app)
+npm run security:secrets        # gera CLEANUP_SECRET em secrets/ (gitignored)
+npm run backup:weekly           # backup Supabase → OneDrive
+```
+
+Última execução dos smoke tests (produção): cleanup **503** sem secret, local-login **403**, `/api/me` **401**, cookie `pcp-local-auth` **307** (ignorado), backup público **307** (removido).

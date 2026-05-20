@@ -45,21 +45,6 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  async function handleRestoreFromRepo() {
-    setRestoring(true);
-    setRestoreResult(null);
-    try {
-      const res = await fetch("/backup-inicial.json");
-      if (!res.ok) throw new Error("Backup não encontrado no repositório");
-      const data = await res.json();
-      await doRestore(data);
-    } catch (err) {
-      setRestoreResult({ success: false, msg: err instanceof Error ? err.message : "Erro ao buscar backup" });
-    } finally {
-      setRestoring(false);
-    }
-  }
-
   async function doRestore(data: unknown) {
     const res = await fetch("/api/import-backup", {
       method: "POST",
@@ -214,18 +199,12 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS pc_delivery_date date;`}
             <div>
               <h3 className="text-sm font-medium text-emerald-800">Restaurar backup</h3>
               <p className="text-xs text-emerald-600 mt-0.5">
-                Importa pedidos, linhas, empresa e feriados para o Supabase. Use o backup do repositório (recomendado) ou selecione um arquivo.
+                Importa pedidos, linhas, empresa e feriados para o Supabase. Selecione um arquivo JSON
+                (ex.: pasta de backup semanal em OneDrive).
               </p>
             </div>
             <div className="flex flex-col items-end gap-2">
               <div className="flex gap-2">
-                <button
-                  onClick={handleRestoreFromRepo}
-                  disabled={restoring}
-                  className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50"
-                >
-                  {restoring ? "Restaurando..." : "Restaurar do repositório"}
-                </button>
                 <input
                   ref={fileInputRef}
                   type="file"
