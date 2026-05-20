@@ -1,8 +1,8 @@
-import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { hasPermission, normalizeUserRole } from "@/lib/utils/permissions";
 import { isUuid } from "@/lib/utils/is-uuid";
 
@@ -27,8 +27,7 @@ export async function assertTasksCompanyAccess(
     return { ok: false, error: "Servidor sem Supabase", status: 503 };
   }
 
-  const cookieStore = await cookies();
-  const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+  const hasLocalAuth = await hasServerLocalAuthCookie();
 
   if (hasLocalAuth) {
     let primary = await resolvePrimaryCompanyId(admin);

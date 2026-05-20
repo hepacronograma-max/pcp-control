@@ -1,12 +1,25 @@
 import { NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 
 /**
  * Retorna o company_id principal no banco (empresa com mais pedidos).
- * Usado quando o perfil é local (admin@local) para obter company_id sem depender do anon key.
+ * Requer sessão Supabase ou cookie local de desenvolvimento.
  */
 export async function GET() {
+  const hasLocal = await hasServerLocalAuthCookie();
+  if (!hasLocal) {
+    const supabaseAuth = await createServerSupabaseClient();
+    const {
+      data: { user },
+    } = await supabaseAuth.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+    }
+  }
+
   try {
     const supabase = createSupabaseAdminClient();
     let companyId = await resolvePrimaryCompanyId(supabase);

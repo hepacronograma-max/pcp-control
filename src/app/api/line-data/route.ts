@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 import { reconcileAlmoxMirrorsForCompany } from "@/lib/supabase/reconcile-almoxarifado";
 import {
@@ -42,8 +42,7 @@ function parseAlmoxOffsetParam(v: string | null): number {
  */
 export async function GET(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const hasLocalAuth = await hasServerLocalAuthCookie();
     if (!hasLocalAuth) {
       return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
     }

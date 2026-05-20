@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { allowLocalAuthClient } from "@/lib/allow-local-auth";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -60,9 +61,11 @@ const ROLES_CAN_REGISTER = new Set([
   "comercial",
 ]);
 
-function hasPcpLocalAuth(): boolean {
-  if (typeof document === "undefined") return false;
-  return document.cookie.split("; ").some((c) => c.trim().startsWith("pcp-local-auth=1"));
+function hasPcpLocalDevSession(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    allowLocalAuthClient() && !!window.localStorage.getItem("pcp-local-profile")
+  );
 }
 
 export function CQField({
@@ -139,7 +142,7 @@ export function CQField({
   const categoriasFetchEnabled = Boolean(
     currentCompanyId &&
       currentUserRole &&
-      (hasPcpLocalAuth() || !!supabase)
+      (hasPcpLocalDevSession() || !!supabase)
   );
 
   const categoriasFetchKey = categoriasFetchEnabled
@@ -155,7 +158,7 @@ export function CQField({
       const cid = currentCompanyId!;
       const role = currentUserRole!;
 
-      if (hasPcpLocalAuth()) {
+      if (hasPcpLocalDevSession()) {
         const url = `/api/cq/categorias?companyId=${encodeURIComponent(cid)}&userRole=${encodeURIComponent(role)}`;
         console.debug("[CQField] GET", url);
         const r = await fetch(url, { credentials: "include" });
@@ -232,7 +235,7 @@ export function CQField({
     };
 
     const useRegistroApi =
-      hasPcpLocalAuth() ||
+      hasPcpLocalDevSession() ||
       Boolean(currentUserId && !isUuid(currentUserId));
 
     if (useRegistroApi) {
@@ -337,7 +340,7 @@ export function CQField({
     }
   }
 
-  if (!supabase && !hasPcpLocalAuth()) {
+  if (!supabase && !hasPcpLocalDevSession()) {
     console.debug("[CQField] Oculto: sem cliente Supabase e sem cookie pcp-local-auth");
     return null;
   }

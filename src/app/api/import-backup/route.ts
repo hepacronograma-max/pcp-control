@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function isValidUuid(str: string | null | undefined): boolean {
@@ -32,10 +33,15 @@ function parseBackup(data: unknown): { orders: any[]; lines: any[]; company: any
 
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const hasLocalAuth = await hasServerLocalAuthCookie();
     if (!hasLocalAuth) {
-      return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+      const authClient = await createServerSupabaseClient();
+      const {
+        data: { user },
+      } = await authClient.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+      }
     }
 
     const body = await request.json();

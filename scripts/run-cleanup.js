@@ -12,7 +12,11 @@ require("dotenv").config({
 
 const baseUrl = process.env.CLEANUP_BASE_URL || "http://localhost:3000";
 const dryRun = process.argv.includes("--dry-run");
-const secret = process.env.CLEANUP_SECRET;
+const secret = process.env.CLEANUP_SECRET?.trim();
+if (!secret) {
+  console.error("Defina CLEANUP_SECRET no .env.local antes de chamar /api/cleanup");
+  process.exit(1);
+}
 
 async function run() {
   const url = `${baseUrl}/api/cleanup${dryRun ? "?dry_run=1" : ""}`;

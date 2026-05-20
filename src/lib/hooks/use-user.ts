@@ -41,38 +41,14 @@ export function useUser() {
 
   useEffect(() => {
     async function getProfile() {
-      // Auth local (admin@local): perfil no localStorage, funciona em localhost e produção
-      if (typeof window !== "undefined") {
-        const hasLocalAuth =
-          allowLocalAuthClient() &&
-          document.cookie
-            .split("; ")
-            .some((c) => c.startsWith("pcp-local-auth=1"));
-        if (hasLocalAuth) {
+      // Dev localhost: perfil em localStorage (cookie httpOnly só no servidor)
+      if (typeof window !== "undefined" && allowLocalAuthClient()) {
+        const rawProfile = window.localStorage.getItem("pcp-local-profile");
+        if (rawProfile) {
           try {
-            let raw = window.localStorage.getItem("pcp-local-profile");
-            if (!raw) {
-              const defaultProfile: Profile = {
-                id: "local-admin",
-                company_id: "local-company",
-                full_name: "Administrador Local",
-                email: "admin@local",
-                role: "manager",
-                is_active: true,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-              };
-              window.localStorage.setItem(
-                "pcp-local-profile",
-                JSON.stringify(defaultProfile)
-              );
-              raw = JSON.stringify(defaultProfile);
-            }
-            if (raw) {
-              const parsed = JSON.parse(raw) as Profile;
-              setProfile(parsed);
-              void syncLocalProfileCompanyId(parsed, setProfile);
-            }
+            const parsed = JSON.parse(rawProfile) as Profile;
+            setProfile(parsed);
+            void syncLocalProfileCompanyId(parsed, setProfile);
           } catch {
             // ignore
           }

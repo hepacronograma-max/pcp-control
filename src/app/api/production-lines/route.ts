@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { toSortOrder } from "@/lib/utils/supabase-data";
 
 /**
@@ -9,9 +10,14 @@ import { toSortOrder } from "@/lib/utils/supabase-data";
  */
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    if (cookieStore.get("pcp-local-auth")?.value !== "1") {
-      return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+    if (!(await hasServerLocalAuthCookie())) {
+      const authClient = await createServerSupabaseClient();
+      const {
+        data: { user },
+      } = await authClient.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+      }
     }
 
     const body = await request.json();

@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { assertTasksCompanyAccess } from "@/lib/tasks-api-guard";
@@ -48,8 +48,7 @@ async function fetchProfilesForCompany(
   const list = (rows1 ?? []) as Record<string, unknown>[];
 
   /** Perfis órfãos: `profiles.company_id` ainda `"local-company"` após empresa principal ser UUID */
-  const cookieStore = await cookies();
-  const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+  const hasLocalAuth = await hasServerLocalAuthCookie();
   if (list.length === 0 && hasLocalAuth) {
     const { data: rows2, error: err2 } = await admin
       .from("profiles")

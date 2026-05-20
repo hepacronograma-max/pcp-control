@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
@@ -251,8 +251,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const cookieStore = await cookies();
-    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const hasLocalAuth = await hasServerLocalAuthCookie();
     const companyIdParam = request.nextUrl.searchParams.get("companyId");
 
     let companyId: string | null = null;
@@ -383,8 +382,7 @@ export async function POST(request: NextRequest) {
       lineIds?: string[];
     };
 
-    const cookieStore = await cookies();
-    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const hasLocalAuth = await hasServerLocalAuthCookie();
 
     if (hasLocalAuth) {
       const cid = String(companyId ?? "").trim();
@@ -675,8 +673,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    const cookieStore = await cookies();
-    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const hasLocalAuth = await hasServerLocalAuthCookie();
 
     let callerCompanyId: string | null = null;
 
@@ -861,8 +858,7 @@ export async function DELETE(request: NextRequest) {
     let userId = String(searchParams.get("userId") ?? "").trim();
     const emailParam = String(searchParams.get("email") ?? "").trim();
 
-    const cookieStore = await cookies();
-    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const hasLocalAuth = await hasServerLocalAuthCookie();
 
     if ((!userId || !isUuid(userId)) && emailParam && hasLocalAuth) {
       const foundId = await findAuthUserIdByEmail(supabaseAdmin, emailParam);

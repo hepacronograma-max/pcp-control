@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -130,8 +130,7 @@ export async function GET(request: NextRequest) {
     const supabase = createSupabaseAdminClient();
     const param = request.nextUrl.searchParams.get("companyId")?.trim() ?? "";
 
-    const cookieStore = await cookies();
-    const isLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const isLocalAuth = await hasServerLocalAuthCookie();
 
     let companyId: string | null = null;
 

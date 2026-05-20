@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { ensureDeliveryColumns } from "@/lib/db/ensure-delivery-columns";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 
 /**
  * Adiciona delivery_deadline e pcp_deadline em orders e pcp_deadline em order_items.
@@ -8,8 +8,7 @@ import { ensureDeliveryColumns } from "@/lib/db/ensure-delivery-columns";
  */
 export async function POST() {
   try {
-    const cookieStore = await cookies();
-    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const hasLocalAuth = await hasServerLocalAuthCookie();
     if (!hasLocalAuth) {
       return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
     }

@@ -19,10 +19,13 @@ import type { CQTargetType, CQRegistro } from "@/lib/types/cq";
 import { toast } from "sonner";
 import { normalizeUserRole } from "@/lib/utils/permissions";
 import { isUuid } from "@/lib/utils/is-uuid";
+import { allowLocalAuthClient } from "@/lib/allow-local-auth";
 
-function hasPcpLocalAuth(): boolean {
-  if (typeof document === "undefined") return false;
-  return document.cookie.split("; ").some((c) => c.trim().startsWith("pcp-local-auth=1"));
+function hasPcpLocalDevSession(): boolean {
+  if (typeof window === "undefined") return false;
+  return (
+    allowLocalAuthClient() && !!window.localStorage.getItem("pcp-local-profile")
+  );
 }
 
 interface CQListProps {
@@ -51,7 +54,7 @@ export function CQList({
   const [resolvendo, setResolvendo] = useState<string | null>(null);
   const supabase = createClient();
   const companyUuid = Boolean(companyId && isUuid(companyId));
-  const useLocalApi = hasPcpLocalAuth() && companyUuid;
+  const useLocalApi = hasPcpLocalDevSession() && companyUuid;
 
   const loadRegistros = useCallback(async () => {
     if (useLocalApi) {

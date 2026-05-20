@@ -9,9 +9,8 @@ export function allowLocalAuth(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
-/** Uso em componentes client (hostname localhost). */
+/** Uso em componentes client: apenas hostname local (sem flag pública na Vercel). */
 export function allowLocalAuthClient(): boolean {
-  if (process.env.NEXT_PUBLIC_PCP_ALLOW_LOCAL_AUTH === "1") return true;
   if (typeof window === "undefined") return false;
   const h = window.location.hostname;
   return h === "localhost" || h === "127.0.0.1";

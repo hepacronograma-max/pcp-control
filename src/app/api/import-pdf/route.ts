@@ -19,6 +19,7 @@ import {
 } from "@/lib/pdf/parse-omie";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { hasRequestLocalAuthCookie } from "@/lib/server-local-auth";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 import { ensureDeliveryColumns } from "@/lib/db/ensure-delivery-columns";
@@ -256,9 +257,7 @@ export async function POST(request: NextRequest) {
     const hasSupabase =
       supabaseUrl?.startsWith("http://") || supabaseUrl?.startsWith("https://");
 
-    // Modo local: cookie pcp-local-auth (funciona em qualquer domínio, inclusive produção).
-    const hasLocalAuth =
-      request.cookies.get("pcp-local-auth")?.value === "1";
+    const hasLocalAuth = hasRequestLocalAuthCookie(request);
     let companyIdFromForm = (formData.get("company_id") as string)?.trim();
     if (companyIdFromForm === "local-company") companyIdFromForm = "";
 

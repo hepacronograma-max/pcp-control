@@ -1,7 +1,7 @@
-import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { productionLineIsAlmoxarifado } from "@/lib/supabase/sync-almoxarifado-on-program";
 
 interface OrderItemCompanyRow {
@@ -24,8 +24,7 @@ interface ProductionLineBrief {
  */
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const hasLocalAuth = await hasServerLocalAuthCookie();
 
     let body: {
       item_id?: string;

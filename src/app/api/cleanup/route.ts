@@ -7,19 +7,28 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
  *
  * POST /api/cleanup
  * Query: ?dry_run=1 para apenas simular (não deletar)
- * Header: X-Cleanup-Key (opcional, use CLEANUP_SECRET no .env para proteger)
+ * Header obrigatório: x-cleanup-key (mesmo valor de CLEANUP_SECRET no servidor).
  */
 export async function POST(request: NextRequest) {
   try {
     const secret = process.env.CLEANUP_SECRET?.trim();
-    if (secret) {
-      const key = request.headers.get("x-cleanup-key");
-      if (key !== secret) {
-        return NextResponse.json(
-          { success: false, error: "Não autorizado." },
-          { status: 401 }
-        );
-      }
+    if (!secret) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Limpeza desabilitada: configure CLEANUP_SECRET no ambiente do servidor.",
+        },
+        { status: 503 }
+      );
+    }
+
+    const key = request.headers.get("x-cleanup-key");
+    if (key !== secret) {
+      return NextResponse.json(
+        { success: false, error: "Não autorizado." },
+        { status: 401 }
+      );
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();

@@ -1,9 +1,10 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { hasRequestLocalAuthCookie } from "@/lib/server-local-auth";
 import { NextRequest, NextResponse } from "next/server";
 
 async function resolveUserId(request: NextRequest): Promise<string | null> {
-  const hasLocalAuth = request.cookies.get("pcp-local-auth")?.value === "1";
+  const hasLocalAuth = hasRequestLocalAuthCookie(request);
   if (hasLocalAuth) {
     return "local-admin";
   }

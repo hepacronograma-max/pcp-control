@@ -1,5 +1,5 @@
-import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 
 /** Identificador do utilizador atual nos endpoints que precisam de `viewerId`. */
 export async function resolveTasksViewerId(
@@ -8,8 +8,7 @@ export async function resolveTasksViewerId(
   | { ok: true; viewerId: string }
   | { ok: false; error: string; status: number }
 > {
-  const cookieStore = await cookies();
-  const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+  const hasLocalAuth = await hasServerLocalAuthCookie();
 
   if (hasLocalAuth) {
     const v = (requestViewerIdParam ?? "").trim();

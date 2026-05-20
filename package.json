@@ -11,7 +11,8 @@
     "lint": "next lint",
     "import-backup": "node import-backup-to-supabase.js",
     "cleanup": "node scripts/run-cleanup.js",
-    "cleanup:dry": "node scripts/run-cleanup.js --dry-run"
+    "cleanup:dry": "node scripts/run-cleanup.js --dry-run",
+    "backup:weekly": "node scripts/weekly-backup-supabase.js"
   },
   "keywords": [],
   "author": "",

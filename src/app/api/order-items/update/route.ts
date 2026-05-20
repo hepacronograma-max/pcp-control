@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { syncAlmoxarifadoOnProgram } from "@/lib/supabase/sync-almoxarifado-on-program";
 import { syncAlmoxOnProductionEndChange } from "@/lib/supabase/sync-almox-on-production-end";
 import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
@@ -12,10 +13,15 @@ import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
  */
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies();
-    const hasLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const hasLocalAuth = await hasServerLocalAuthCookie();
     if (!hasLocalAuth) {
-      return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+      const authClient = await createServerSupabaseClient();
+      const {
+        data: { user },
+      } = await authClient.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+      }
     }
 
     const body = await request.json();

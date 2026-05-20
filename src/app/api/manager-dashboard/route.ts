@@ -1,7 +1,7 @@
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getDashboardData } from "@/lib/queries/dashboard";
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   orderAppliesToDashboardDelayKpi,
@@ -179,8 +179,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "companyId required" }, { status: 400 });
   }
 
-  const cookieStore = await cookies();
-  if (cookieStore.get("pcp-local-auth")?.value !== "1") {
+  if (!(await hasServerLocalAuthCookie())) {
     const supabase = await createServerSupabaseClient();
     const {
       data: { user },

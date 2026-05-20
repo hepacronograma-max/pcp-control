@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { allowLocalAuth } from "@/lib/allow-local-auth";
+import { matchesLocalDevCredentials } from "@/lib/local-dev-credentials";
 
 export async function GET(request: NextRequest) {
   if (!allowLocalAuth()) {
@@ -11,7 +12,7 @@ export async function GET(request: NextRequest) {
   response.cookies.set("pcp-local-auth", "1", {
     path: "/",
     maxAge: 60 * 60 * 24,
-    httpOnly: false,
+    httpOnly: true,
     sameSite: "lax",
     secure: isSecure,
   });
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
   }
 
-  if (email !== "admin@local" || password !== "123456") {
+  if (!matchesLocalDevCredentials(email, password)) {
     return NextResponse.redirect(`${origin}/login?error=credenciais`, 302);
   }
 
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
   response.cookies.set("pcp-local-auth", "1", {
     path: "/",
     maxAge: 60 * 60 * 24,
-    httpOnly: false,
+    httpOnly: true,
     sameSite: "lax",
     secure: isSecure,
   });

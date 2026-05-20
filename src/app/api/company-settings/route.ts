@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 
 function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -13,8 +13,7 @@ function isUuid(s: string): boolean {
 async function assertCanEditCompany(
   companyId: string
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
-  const cookieStore = await cookies();
-  if (cookieStore.get("pcp-local-auth")?.value === "1") {
+  if (await hasServerLocalAuthCookie()) {
     return { ok: true };
   }
 

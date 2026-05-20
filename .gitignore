@@ -18,6 +18,8 @@ npm-debug.log*
 
 # backup (contém dados sensíveis)
 backup-pcp.json
+public/backup-inicial.json
+public/*-backup*.json
 
 # PDF de teste (dados de cliente)
 public/test-pedido.pdf

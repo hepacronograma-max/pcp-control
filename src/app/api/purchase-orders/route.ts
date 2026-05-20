@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -42,7 +42,6 @@ async function resolveCompanyId(
   error: NextResponse | null;
 }> {
   const param = request.nextUrl.searchParams.get("companyId")?.trim() ?? "";
-  const cookieStore = await cookies();
   if (!isLocalAuth) {
     const supabaseAuth = await createServerSupabaseClient();
     const {
@@ -117,8 +116,7 @@ async function resolveCompanyId(
  */
 export async function GET(request: NextRequest) {
   const supabase = createSupabaseAdminClient();
-  const cookieStore = await cookies();
-  const isLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+  const isLocalAuth = await hasServerLocalAuthCookie();
 
   const { companyId, error } = await resolveCompanyId(
     supabase,
@@ -400,8 +398,7 @@ type UpdatePoBody = {
  */
 export async function POST(request: NextRequest) {
   const supabase = createSupabaseAdminClient();
-  const cookieStore = await cookies();
-  const isLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+  const isLocalAuth = await hasServerLocalAuthCookie();
 
   const { companyId, error } = await resolveCompanyId(
     supabase,
@@ -646,8 +643,7 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   const supabase = createSupabaseAdminClient();
-  const cookieStore = await cookies();
-  const isLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+  const isLocalAuth = await hasServerLocalAuthCookie();
 
   const { companyId, error } = await resolveCompanyId(
     supabase,

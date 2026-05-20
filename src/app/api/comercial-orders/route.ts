@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -74,8 +74,7 @@ export async function GET(request: NextRequest) {
   try {
     const supabase = createSupabaseAdminClient();
     const param = request.nextUrl.searchParams.get("companyId")?.trim() ?? "";
-    const cookieStore = await cookies();
-    const isLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const isLocalAuth = await hasServerLocalAuthCookie();
 
     let companyId: string | null = null;
     let profileRole: string | null = null;
@@ -379,8 +378,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const orderCompanyId = orderRow.company_id as string;
-    const cookieStore = await cookies();
-    const isLocalAuth = cookieStore.get("pcp-local-auth")?.value === "1";
+    const isLocalAuth = await hasServerLocalAuthCookie();
 
     if (isLocalAuth) {
       let primary = await resolvePrimaryCompanyId(supabaseAdmin);

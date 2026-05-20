@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
   response.cookies.set("pcp-local-auth", "1", {
     path: "/",
     maxAge: 60 * 60 * 24,
-    httpOnly: false,
+    httpOnly: true,
     sameSite: "lax",
     secure: isSecure,
   });

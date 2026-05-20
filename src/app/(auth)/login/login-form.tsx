@@ -84,42 +84,47 @@ export function LoginForm() {
 
     try {
       const localOk = allowLocalAuthClient();
-      // 1) Administrador local (cookie + perfil demo) — só localhost
-      if (localOk && email === "admin@local" && password === "123456") {
-        const adminProfile = {
-          id: "local-admin",
-          company_id: "local-company",
-          full_name: "Administrador Local",
-          email: "admin@local",
-          role: "manager",
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        window.localStorage.setItem(
-          "pcp-local-profile",
-          JSON.stringify(adminProfile)
-        );
-        window.location.href = "/entrar";
-        return;
-      }
 
-      // 2) Usuários só em localStorage (modo demo sem Supabase) — só localhost
-      const localUser = localOk ? findLocalUser(email, password) : null;
-      if (localUser) {
-        setLocalProfile({
-          ...localUser,
-          is_active: localUser.is_active !== false,
+      if (localOk) {
+        const localUser = findLocalUser(email, password);
+        if (localUser) {
+          setLocalProfile({
+            ...localUser,
+            is_active: localUser.is_active !== false,
+          });
+          window.location.href = "/entrar";
+          return;
+        }
+
+        const devRes = await fetch("/api/auth/local-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+          credentials: "include",
+          redirect: "manual",
         });
-        window.location.href = "/entrar";
-        return;
+        if (devRes.status === 0 || devRes.status === 302 || devRes.ok) {
+          setLocalProfile({
+            id: "local-admin",
+            company_id: "local-company",
+            full_name: "Administrador Local",
+            email,
+            role: "manager",
+            is_active: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+          window.location.href = "/dashboard";
+          return;
+        }
       }
 
-      // 3) Supabase Auth (operadores / PCP cadastrados na tela Usuários)
       const supabase = createClient();
       if (!supabase) {
         setErrorMsg(
-          "Supabase não configurado neste ambiente. Use admin@local / 123456 ou configure o .env."
+          localOk
+            ? "Supabase não configurado. Defina PCP_LOCAL_DEV_EMAIL e PCP_LOCAL_DEV_PASSWORD no .env.local ou use usuário do localStorage."
+            : "Supabase não configurado. Configure as variáveis de ambiente."
         );
         setLoading(false);
         return;
@@ -195,7 +200,9 @@ export function LoginForm() {
       <p className="mt-3 text-xs text-slate-500 text-center">
         {allowLocalAuthClient() ? (
           <>
-            <strong>Dev (localhost):</strong> admin@local / 123456
+            <strong>Desenvolvimento (localhost):</strong> use credenciais em{" "}
+            <code className="text-[10px]">PCP_LOCAL_DEV_*</code> no servidor ou
+            usuários do modo demo no navegador.
             <br />
           </>
         ) : null}

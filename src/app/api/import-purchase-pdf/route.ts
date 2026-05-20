@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDocument } from "pdfjs-serverless";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { hasRequestLocalAuthCookie } from "@/lib/server-local-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import { toDateOnly } from "@/lib/utils/supabase-data";
@@ -157,7 +158,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const hasLocal = request.cookies.get("pcp-local-auth")?.value === "1";
+    const hasLocal = hasRequestLocalAuthCookie(request);
     const supabase = createSupabaseAdminClient();
     let companyId: string | null = cid || null;
     if (!companyId) {
