@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { allowLocalAuth } from "@/lib/allow-local-auth";
 
 export async function middleware(request: NextRequest) {
   if (
@@ -28,8 +29,15 @@ export async function middleware(request: NextRequest) {
   const urlPareceValida =
     url.startsWith("http://") || url.startsWith("https://");
 
-  const hasLocalAuth = request.cookies.get("pcp-local-auth")?.value === "1";
+  const hasLocalAuth =
+    allowLocalAuth() && request.cookies.get("pcp-local-auth")?.value === "1";
   const origin = request.nextUrl.origin;
+
+  if (!allowLocalAuth() && request.cookies.get("pcp-local-auth")?.value === "1") {
+    const res = NextResponse.redirect(`${origin}/login`);
+    res.cookies.set("pcp-local-auth", "", { path: "/", maxAge: 0 });
+    return res;
+  }
 
   if (!urlPareceValida || !anonKey) {
     if (hasLocalAuth) {

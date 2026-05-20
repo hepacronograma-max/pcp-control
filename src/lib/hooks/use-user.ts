@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { allowLocalAuthClient } from "@/lib/allow-local-auth";
 import type { Profile } from "@/lib/types/database";
 
 const UUID_RE =
@@ -42,9 +43,11 @@ export function useUser() {
     async function getProfile() {
       // Auth local (admin@local): perfil no localStorage, funciona em localhost e produção
       if (typeof window !== "undefined") {
-        const hasLocalAuth = document.cookie
-          .split("; ")
-          .some((c) => c.startsWith("pcp-local-auth=1"));
+        const hasLocalAuth =
+          allowLocalAuthClient() &&
+          document.cookie
+            .split("; ")
+            .some((c) => c.startsWith("pcp-local-auth=1"));
         if (hasLocalAuth) {
           try {
             let raw = window.localStorage.getItem("pcp-local-profile");

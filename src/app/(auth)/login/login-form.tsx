@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { allowLocalAuthClient } from "@/lib/allow-local-auth";
 
 function findLocalUser(email: string, password: string) {
   try {
@@ -82,8 +83,9 @@ export function LoginForm() {
     setErrorMsg("");
 
     try {
-      // 1) Administrador local (cookie + perfil demo)
-      if (email === "admin@local" && password === "123456") {
+      const localOk = allowLocalAuthClient();
+      // 1) Administrador local (cookie + perfil demo) — só localhost
+      if (localOk && email === "admin@local" && password === "123456") {
         const adminProfile = {
           id: "local-admin",
           company_id: "local-company",
@@ -102,8 +104,8 @@ export function LoginForm() {
         return;
       }
 
-      // 2) Usuários só em localStorage (modo demo sem Supabase)
-      const localUser = findLocalUser(email, password);
+      // 2) Usuários só em localStorage (modo demo sem Supabase) — só localhost
+      const localUser = localOk ? findLocalUser(email, password) : null;
       if (localUser) {
         setLocalProfile({
           ...localUser,
@@ -191,11 +193,14 @@ export function LoginForm() {
         {loading ? "Entrando…" : "Entrar"}
       </button>
       <p className="mt-3 text-xs text-slate-500 text-center">
-        <strong>Administrador da rede:</strong> admin@local / 123456
-        <br />
+        {allowLocalAuthClient() ? (
+          <>
+            <strong>Dev (localhost):</strong> admin@local / 123456
+            <br />
+          </>
+        ) : null}
         <span className="text-slate-400">
-          Operadores e PCP: use o mesmo e-mail e senha cadastrados em
-          Configurações → Usuários.
+          Use o e-mail e a senha cadastrados em Configurações → Usuários.
         </span>
       </p>
     </form>

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { allowLocalAuth } from "@/lib/allow-local-auth";
 
 export async function GET(request: NextRequest) {
+  if (!allowLocalAuth()) {
+    return NextResponse.json({ error: "Não disponível em produção" }, { status: 403 });
+  }
   const origin = request.nextUrl.origin;
   const isSecure = origin.startsWith("https://");
   const response = NextResponse.redirect(`${origin}/dashboard`, 302);
@@ -15,6 +19,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  if (!allowLocalAuth()) {
+    return NextResponse.json({ error: "Não disponível em produção" }, { status: 403 });
+  }
   const origin = request.nextUrl.origin;
   const isSecure = origin.startsWith("https://");
 
