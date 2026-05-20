@@ -509,13 +509,13 @@ export function ComercialOrdersView({
                 const gridTitle =
                   traffic === "white"
                     ? undefined
-                    : sameDay
-                      ? "Atenção: prazo de vendas, PCP e produção na mesma data."
-                      : traffic === "red"
-                        ? "Alerta: PCP após vendas ou produção após vendas."
-                        : traffic === "yellow"
-                          ? "Atenção: produção após o PCP e até a data de vendas."
-                          : "OK: produção até o PCP, antes de vendas.";
+                    : traffic === "red"
+                      ? "Atrasado: prazo de vendas, PCP ou produção já passou."
+                      : traffic === "yellow"
+                        ? "Atenção: algum prazo vence hoje."
+                        : sameDay
+                          ? "No prazo; vendas, PCP e produção na mesma data."
+                          : "No prazo: todos os prazos ainda no futuro.";
                 return (
                   <div key={row.id} className={`border-b border-slate-200 ${rowTrafficClass}`}>
                     <div

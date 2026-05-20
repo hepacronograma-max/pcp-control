@@ -1,4 +1,5 @@
 import { addDays, eachDayOfInterval, format, isSameDay, isWeekend } from "date-fns";
+import { toDateOnly } from "@/lib/utils/supabase-data";
 
 /** Converte string yyyy-MM-dd para Date em horário local (evita bug de fuso) */
 export function parseLocalDate(dateStr: string): Date {
@@ -12,21 +13,33 @@ export function addLocalCalendarDays(yyyyMmDd: string, dayCount: number): string
   return format(d, "yyyy-MM-dd");
 }
 
+/** Data de hoje no fuso local, formato YYYY-MM-DD. */
+export function todayLocalYyyyMmDd(): string {
+  return format(new Date(), "yyyy-MM-dd");
+}
+
+export type DeadlineDayStatus = "past" | "today" | "future" | "invalid";
+
+/** Compara prazo com o dia de hoje (calendário local, sem hora/fuso). */
+export function deadlineDayStatus(
+  dateStr: string | null | undefined
+): DeadlineDayStatus {
+  const ymd = toDateOnly(dateStr ?? null);
+  if (!ymd) return "invalid";
+  const today = todayLocalYyyyMmDd();
+  if (ymd < today) return "past";
+  if (ymd === today) return "today";
+  return "future";
+}
+
 /** Verifica se a data de fim já passou (hoje não conta como atrasado) */
 export function isPastDeadline(dateStr: string | null): boolean {
-  if (!dateStr) return false;
-  try {
-    const end = dateStr.includes("-")
-      ? parseLocalDate(dateStr)
-      : new Date(dateStr);
-    if (isNaN(end.getTime())) return false;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    end.setHours(0, 0, 0, 0);
-    return today > end;
-  } catch {
-    return false;
-  }
+  return deadlineDayStatus(dateStr) === "past";
+}
+
+/** Prazo cai no dia de hoje (horário local; hoje não é “atrasado”). */
+export function isTodayDeadline(dateStr: string | null): boolean {
+  return deadlineDayStatus(dateStr) === "today";
 }
 
 /**

@@ -247,13 +247,13 @@ export function OrderRow({
         title={
           traffic === "white"
             ? undefined
-            : sameDayAllDeadlines
-              ? "Atenção: prazo de vendas, PCP e produção na mesma data."
-              : traffic === "red"
-                ? "Alerta: PCP após vendas ou produção após vendas."
-                : traffic === "yellow"
-                  ? "Atenção: produção após o PCP e até a data de vendas (inclui término no limite)."
-                  : "OK: produção até o PCP, antes de vendas."
+            : traffic === "red"
+              ? "Atrasado: prazo de vendas, PCP ou produção já passou."
+              : traffic === "yellow"
+                ? "Atenção: algum prazo vence hoje."
+                : sameDayAllDeadlines
+                  ? "No prazo; vendas, PCP e produção na mesma data."
+                  : "No prazo: todos os prazos ainda no futuro."
         }
       >
         <div className="flex items-center justify-center shrink-0">

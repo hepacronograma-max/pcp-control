@@ -1,5 +1,9 @@
 import type { ItemStatus, OrderItem, OrderWithItems } from "@/lib/types/database";
-import { isPastDeadline, parseLocalDate } from "@/lib/utils/date";
+import {
+  deadlineDayStatus,
+  isPastDeadline,
+  parseLocalDate,
+} from "@/lib/utils/date";
 import { toDateOnly } from "@/lib/utils/supabase-data";
 
 /**
@@ -26,6 +30,15 @@ export function itemStatusAfterReopenCompleted(
 export function getOrderPrincipalStatus(order: OrderWithItems): OrderPrincipalStatus {
   const items = order.items;
   if (items.length === 0) return null;
+
+  if (order.status !== "finished") {
+    if (order.delivery_deadline && isPastDeadline(order.delivery_deadline)) {
+      return "atrasado";
+    }
+    if (order.pcp_deadline && isPastDeadline(order.pcp_deadline)) {
+      return "atrasado";
+    }
+  }
 
   const hasDelayed = items.some(
     (it) =>
@@ -189,11 +202,11 @@ export function areAllOrderDeadlinesSameDay(order: OrderWithItems): boolean {
 }
 
 /**
- * Farol na **linha do pedido** (datas normalizadas YYYY-MM-DD):
- * - **Branco**: falta prazo de vendas, PCP ou produção (maior fim entre itens).
- * - **Vermelho**: PCP > vendas **ou** produção > vendas.
- * - **Amarelo**: PCP < vendas **e** produção > PCP **e** produção ≤ vendas (inclui produção = vendas = atenção), **ou** as três datas iguais (atenção).
- * - **Verde**: PCP < vendas **e** produção ≤ PCP.
+ * Farol na **linha do pedido** (calendário local, pedidos em aberto):
+ * - **Branco**: falta prazo de vendas, PCP ou produção, ou pedido finalizado.
+ * - **Vermelho**: vendas, PCP ou produção **já passou** (ex.: vendas 18/05 e hoje 20/05 → vermelho mesmo com produção menor).
+ * - **Amarelo**: algum desses prazos **é hoje**.
+ * - **Verde**: todos os prazos ainda **no futuro**.
  */
 export function getOrderDeadlineTrafficLight(
   order: OrderWithItems
@@ -202,15 +215,16 @@ export function getOrderDeadlineTrafficLight(
   const p = toDateOnly(order.pcp_deadline);
   const pr = effectiveOrderProductionDeadline(order);
   if (!v || !p || !pr) return "white";
+  if (order.status === "finished") return "white";
 
-  /** Mesma data nos três prazos = atenção (cor amarela na tabela). */
-  if (v === p && p === pr) return "yellow";
+  const vDay = deadlineDayStatus(v);
+  const pDay = deadlineDayStatus(p);
+  const prDay = deadlineDayStatus(pr);
 
-  if (p > v) return "red";
-  if (pr > v) return "red";
-  if (p < v && pr > p && pr <= v) return "yellow";
-  if (p < v && pr <= p) return "green";
-  return "white";
+  if (vDay === "past") return "red";
+  if (pDay === "past" || prDay === "past") return "red";
+  if (vDay === "today" || pDay === "today" || prDay === "today") return "yellow";
+  return "green";
 }
 
 /**
