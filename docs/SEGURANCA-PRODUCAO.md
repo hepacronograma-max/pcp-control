@@ -76,6 +76,11 @@ npm run backup:weekly           # backup Supabase → OneDrive
 | | debug-operator | **404** |
 | | Rotas admin | Ver `docs/SEGURANCA-ADMIN-API-AUDIT.md` |
 
+## Supabase / SQL Editor
+
+- Abrir o painel com **Chrome** (perfil HEPA ou modo convidado). **Evitar Edge** com perfil pessoal — outro projeto Supabase pode abrir por engano.
+- Projeto correto = o de `NEXT_PUBLIC_SUPABASE_URL` no `.env.local` (script `npm run fase1:setup` lê isso automaticamente).
+
 ## Auditoria nativa (Fase 1)
 
 - Migration: `supabase/migrations/20260520_audit_log.sql` — **aplicar manualmente** no Supabase SQL Editor (após backup).

@@ -18,10 +18,21 @@ Alterações (INSERT / UPDATE / DELETE) nas tabelas:
 
 ## Aplicar em produção (uma vez)
 
+### Navegador correto (importante)
+
+O PCP Control usa o projeto Supabase da conta **HEPA**. Ao abrir o painel:
+
+- Use **Google Chrome** em modo convidado ou perfil HEPA (`npm run fase1:setup` abre o Chrome assim).
+- **Não** use Microsoft Edge com seu perfil pessoal — ele pode já estar logado em **outro** projeto Supabase e o SQL iria para o banco errado.
+
+O ID do projeto vem sempre de `NEXT_PUBLIC_SUPABASE_URL` no `.env.local` (não de links antigos em arquivos `.sql`).
+
 1. **Backup** antes: `npm run backup:weekly`
-2. Supabase → **SQL Editor** → colar o arquivo:
-   `supabase/migrations/20260520_audit_log.sql`
-3. Run → confirmar sem erro
+2. Uma das opções:
+   - **Automático:** `SUPABASE_ACCESS_TOKEN` ou `DATABASE_URL` no `.env.local` → `npm run db:apply-audit`
+   - **Assistido:** `npm run fase1:setup` (copia SQL + abre Chrome no SQL Editor do projeto certo)
+   - **Manual:** Chrome + login HEPA → SQL Editor → colar `supabase/migrations/20260520_audit_log.sql` → Run
+3. Confirmar sem erro
 4. Teste: atualizar um pedido no app → `SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 5;`
 
 ## Quem vê o log

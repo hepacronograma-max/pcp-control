@@ -15,7 +15,9 @@
     "backup:weekly": "node scripts/weekly-backup-supabase.js",
     "security:smoke": "powershell -ExecutionPolicy Bypass -File scripts/security-smoke-test.ps1",
     "security:secrets": "node scripts/generate-vercel-secrets.js",
-    "inventory:repo": "powershell -ExecutionPolicy Bypass -File scripts/repo-inventory.ps1"
+    "inventory:repo": "powershell -ExecutionPolicy Bypass -File scripts/repo-inventory.ps1",
+    "fase1:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-fase1-helader.ps1",
+    "db:apply-audit": "node scripts/apply-audit-migration.js"
   },
   "keywords": [],
   "author": "",
