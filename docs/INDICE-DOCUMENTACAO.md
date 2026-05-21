@@ -1,5 +1,11 @@
 # Índice da documentação — PCP Control
 
+## Plano mestre (7 fases — Cursor)
+
+| Documento | Conteúdo |
+|-----------|----------|
+| [./plano-mestre-hepa/README.md](./plano-mestre-hepa/README.md) | Índice do plano HEPA OS + 7 prompts para colar no Cursor |
+
 ## Operacional (use estes primeiro)
 
 | Documento | Conteúdo |
