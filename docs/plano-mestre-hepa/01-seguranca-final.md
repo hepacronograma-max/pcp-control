@@ -8,6 +8,8 @@
 - [x] Login local bloqueado em produção
 - [x] `backup-inicial.json` removido do repo
 - [x] `npm run security:smoke`
+- [x] Migration SQL + docs `AUDITORIA.md` + UI `/configuracoes/auditoria` (código no repo)
+- [ ] **Você:** aplicar SQL no Supabase + rotação chaves + branch protection
 
 ## Parte A — Manual (você, ~30 min)
 

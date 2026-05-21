@@ -66,4 +66,24 @@ npm run security:secrets        # gera CLEANUP_SECRET em secrets/ (gitignored)
 npm run backup:weekly           # backup Supabase → OneDrive
 ```
 
-Última execução dos smoke tests (produção): cleanup **503** sem secret, local-login **403**, `/api/me` **401**, cookie `pcp-local-auth` **307** (ignorado), backup público **307** (removido).
+## Última verificação (Fase 1 — automática)
+
+| Data | Comando | Resultado |
+|------|---------|-----------|
+| 2026-05-20 | `npm run security:smoke` | **10/10** em produção |
+| | cleanup sem header | **401** (secret configurado) |
+| | local-login | **403** |
+| | debug-operator | **404** |
+| | Rotas admin | Ver `docs/SEGURANCA-ADMIN-API-AUDIT.md` |
+
+## Auditoria nativa (Fase 1)
+
+- Migration: `supabase/migrations/20260520_audit_log.sql` — **aplicar manualmente** no Supabase SQL Editor (após backup).
+- Doc: `docs/AUDITORIA.md`
+- UI: `/configuracoes/auditoria` (manager / super_admin)
+
+### Pendente manual (você)
+
+- [ ] Rotacionar chaves Supabase + Vercel (se ainda não fez)
+- [ ] Branch protection no GitHub
+- [ ] Executar migration `20260520_audit_log.sql` em produção

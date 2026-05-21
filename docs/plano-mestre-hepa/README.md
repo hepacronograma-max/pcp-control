@@ -21,7 +21,7 @@
 
 | Fase | Status |
 |------|--------|
-| 1 | Parcial — segurança OK; falta auditoria + rotação keys + branch protection |
+| 1 | Código OK — falta **você** aplicar SQL audit no Supabase + rotação keys + branch protection |
 | 2 | Parcial — backup semanal OneDrive OK; falta diário opcional, Telegram, verify |
 | 3 | Não iniciado |
 | 4 | Parcial — CQ lazy + polls |

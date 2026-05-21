@@ -13,6 +13,7 @@ const links = [
   { href: "/configuracoes/empresa", label: "Empresa", description: "Logo da empresa e pasta matriz para PDFs dos pedidos." },
   { href: "/configuracoes/feriados", label: "Feriados", description: "Cadastro de feriados para o calendário." },
   { href: "/configuracoes/usuarios", label: "Usuários", description: "Cadastro de usuários PCP e operadores." },
+  { href: "/configuracoes/auditoria", label: "Auditoria", description: "Trilha de alterações em pedidos, compras, linhas e perfis (gestores)." },
 ];
 
 export default function ConfiguracoesPage() {
