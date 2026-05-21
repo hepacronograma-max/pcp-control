@@ -58,4 +58,4 @@ Não mover código PCP para portal. Portal só fachada.
 
 ## Próxima fase
 
-[06-engenharia-produto.md](./06-engenharia-produto.md)
+[06-modulo-engenharia.md](./06-modulo-engenharia.md)

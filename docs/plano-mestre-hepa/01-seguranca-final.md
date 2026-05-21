@@ -89,4 +89,4 @@ Não rotacionar chaves Supabase (isso é manual do usuário).
 
 ## Próxima fase
 
-[02-backup-local-reforçado.md](./02-backup-local-reforçado.md) — reforçar se algo faltar; senão marcar ✅ e ir para Fase 3.
+[02-backup-reforcado.md](./02-backup-reforcado.md) — reforçar se algo faltar; senão marcar ✅ e ir para Fase 3.

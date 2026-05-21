@@ -1,6 +1,6 @@
-# Fase 2 — Backup local reforçado (Supabase Free)
+# Fase 2 — Backup reforçado (Supabase Free)
 
-**Objetivo:** Rede de segurança de dados **sem** Supabase Pro/PITR.
+**Objetivo:** Rede de segurança de dados **sem** Supabase Pro/PITR — backup semanal + opção diária + alerta Telegram.
 
 ## Status já concluído
 
@@ -12,9 +12,10 @@
 
 ## Parte A — Manual (você, ~20 min)
 
-1. Confirmar no Agendador de Tarefas que a tarefa está **Pronta** e com histórico após domingo.
-2. (Opcional) Supabase → Settings → Database → copiar **Connection string** para `.env.local` como `DATABASE_URL` — habilita `pg_dump` no backup.
-3. **Teste de restore (obrigatório 1×):**
+1. Confirmar no Agendador de Tarefas que a tarefa **PCP Control - Backup Semanal** está **Pronta**.
+2. (Opcional) Criar bot Telegram (@BotFather) → guardar `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` no `.env.local` (não commitar).
+3. (Opcional) Supabase → Database → **Connection string** em `.env.local` como `DATABASE_URL` (habilita `pg_dump`).
+4. **Teste de restore (obrigatório 1×):**
    - Copiar pasta `2026-05-20_*` para ambiente de teste ou usar `scripts/restore-production-lines-from-backup.js` conforme doc.
    - Anotar tempo e se todos os JSON batem com contagens esperadas.
 
@@ -41,6 +42,14 @@ Melhorar backup sem perder dados:
 
 4) package.json: "backup:verify": "powershell ... verify-backup.ps1"
 
+5) Backup diário (opcional, leve)
+- scripts/run-daily-backup.ps1: copia só manifest + orders + order_items para subpasta daily/ (rápido)
+- Tarefa Windows separada 02:00 dias úteis OU rodar manualmente
+
+6) Telegram
+- Ao fim de weekly-backup-supabase.js: se TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID, POST mensagem curta (OK + pasta + contagens orders/items)
+- Em falha: mensagem com erro
+
 Não remover backup-pcp.json da máquina do usuário (gitignored).
 ```
 
@@ -54,7 +63,8 @@ Não remover backup-pcp.json da máquina do usuário (gitignored).
 | manifest | Arquivo com contagens presente |
 | verify | `npm run backup:verify` na última pasta → OK |
 | Restore | Teste documentado (você confirma) |
+| Telegram | Mensagem recebida após backup semanal (se configurado) |
 
 ## Próxima fase
 
-[03-integracao-omie-pcp.md](./03-integracao-omie-pcp.md)
+[03-integracao-omie.md](./03-integracao-omie.md)

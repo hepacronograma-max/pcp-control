@@ -87,4 +87,4 @@ Não commitar secrets. Atualizar .env.example apenas com nomes das variáveis.
 
 ## Próxima fase
 
-[04-performance-pcp.md](./04-performance-pcp.md)
+[04-performance.md](./04-performance.md)

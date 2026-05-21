@@ -126,6 +126,29 @@ Credenciais: criar em Omie → Integrações → API (você ainda não tem keys)
 | Antes do Portal SSO | Escolha Auth0 vs Supabase Auth compartilhado vs cookie federado |
 | Após Fase 4 | Validar métricas de performance reais |
 
+## Cronograma realista
+
+| Fase | Duração ativa | Espera/validação |
+|------|---------------|------------------|
+| 1 Segurança + auditoria | 1 dia | — |
+| 2 Backup reforçado | 0,5 dia | 1 semana rodando |
+| 3 Omie | 3–5 dias | 1 semana shadow |
+| 4 Performance | 2 dias | — |
+| 5 Portal | 3–5 dias | 1–2 semanas em uso |
+| 6 Engenharia | 5–7 dias | — |
+| 7 Template | 1 dia | — |
+
+**Total ativo:** ~3 semanas · **Calendário:** 6–8 semanas com validações.
+
+## Regras de ouro
+
+- Nunca commitar `.env` ou chaves
+- Nunca deletar dados sem backup pré-operação
+- Sempre dry-run antes de destruição
+- Audit log nas tabelas críticas
+- Cada módulo: banco e deploy independentes
+- Comunicação entre módulos só via API REST
+
 ## Próximo passo
 
 Abra **[01-seguranca-final.md](./01-seguranca-final.md)** e execute a Fase 1 (mesmo que parte já esteja feita — use o checklist).

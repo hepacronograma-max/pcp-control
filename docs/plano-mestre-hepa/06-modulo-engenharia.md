@@ -35,4 +35,4 @@ Não duplicar orders/pedidos aqui. Não apagar dados PCP.
 
 ## Próxima fase
 
-[07-template-microservico.md](./07-template-microservico.md)
+[07-template-novos-modulos.md](./07-template-novos-modulos.md)
