@@ -1,81 +1,99 @@
 # Auditoria nativa — PCP Control
 
-## O que registra
+## O que é o `audit_log`
 
-Alterações (INSERT / UPDATE / DELETE) nas tabelas:
+Registro automático de **INSERT**, **UPDATE** e **DELETE** em tabelas críticas. Cada linha guarda:
 
-| Tabela | Observação |
-|--------|------------|
-| `orders` | Pedidos de venda |
-| `order_items` | Itens; `company_id` resolvido via pedido |
-| `purchase_orders` | Pedidos de compras |
-| `profiles` | Só quando `role` ou `company_id` mudam |
-| `production_lines` | Linhas de produção |
-| `companies` | UPDATE e DELETE |
-| `cq_registros` | Ocorrências CQ |
+| Campo | Significado |
+|-------|-------------|
+| `table_name` | Tabela alterada |
+| `record_id` | ID do registro |
+| `action` | `INSERT` \| `UPDATE` \| `DELETE` |
+| `old_data` / `new_data` | JSON antes/depois |
+| `user_id` / `user_email` | Quem alterou (sessão Supabase) |
+| `company_id` | Empresa (multi-tenant) |
+| `created_at` | Quando |
 
-**Não auditado (por design):** `tasks`, `subtasks`, `holidays`, `user_preferences` — volume ou baixo risco; podem entrar na Fase 2 se necessário.
+Migration: `supabase/migrations/20260520_audit_log.sql`  
+Como aplicar: `docs/COMO-RODAR-MIGRATIONS.md`  
+Tabelas: `docs/FASE-1-TABELAS-AUDITORIA.md`
 
-## Aplicar em produção (uma vez)
+## Como ler o histórico de uma tabela
 
-### Navegador correto (importante)
+### No app
 
-O PCP Control usa o projeto Supabase da conta **HEPA**. Ao abrir o painel:
+**Configurações → Auditoria** ou `/admin/audit`
 
-- Use **Google Chrome** em modo convidado ou perfil HEPA (`npm run fase1:setup` abre o Chrome assim).
-- **Não** use Microsoft Edge com seu perfil pessoal — ele pode já estar logado em **outro** projeto Supabase e o SQL iria para o banco errado.
+- Filtros: tabela, operação, e-mail, datas
+- Paginação (50 por página)
+- Diff visual em UPDATE
+- Exportar CSV da página atual
 
-O ID do projeto vem sempre de `NEXT_PUBLIC_SUPABASE_URL` no `.env.local` (não de links antigos em arquivos `.sql`).
+### No SQL Editor
 
-1. **Backup** antes: `npm run backup:weekly`
-2. Uma das opções:
-   - **Automático:** `SUPABASE_ACCESS_TOKEN` ou `DATABASE_URL` no `.env.local` → `npm run db:apply-audit`
-   - **Assistido:** `npm run fase1:setup` (copia SQL + abre Chrome no SQL Editor do projeto certo)
-   - **Manual:** Chrome + login HEPA → SQL Editor → colar `supabase/migrations/20260520_audit_log.sql` → Run
-3. Confirmar sem erro
-4. Teste: atualizar um pedido no app → `SELECT * FROM audit_log ORDER BY created_at DESC LIMIT 5;`
+```sql
+SELECT created_at, action, user_email, record_id, old_data, new_data
+FROM audit_log
+WHERE table_name = 'orders'
+  AND company_id = 'SEU_COMPANY_UUID'
+ORDER BY created_at DESC
+LIMIT 50;
+```
+
+## Como reverter uma mudança (usando `old_data`)
+
+A auditoria **não desfaz** sozinha. Use `old_data` como referência:
+
+1. Localize o evento UPDATE/DELETE em `audit_log`.
+2. Copie o JSON de `old_data`.
+3. Monte um `UPDATE` manual na tabela original (teste em staging primeiro).
+4. Exemplo conceitual:
+
+```sql
+-- Exemplo: restaurar campo notes de um pedido (ajuste colunas reais)
+UPDATE orders
+SET notes = (old_row->>'notes')
+FROM (
+  SELECT old_data AS old_row
+  FROM audit_log
+  WHERE id = 'UUID_DO_EVENTO_AUDIT'
+) x
+WHERE orders.id = 'UUID_DO_PEDIDO';
+```
+
+Para DELETE, só é possível **re-INSERT** se você ainda tiver o `old_data` completo.
+
+Sempre: **backup antes** (`npm run backup:weekly`).
+
+## Exportar para análise externa
+
+- Botão **Exportar CSV** em `/admin/audit`
+- Ou SQL:
+
+```sql
+COPY (
+  SELECT * FROM audit_log
+  WHERE created_at >= now() - interval '7 days'
+) TO STDOUT WITH CSV HEADER;
+```
+
+(No Supabase use resultado da query → Download CSV.)
 
 ## Quem vê o log
 
-- **RLS:** apenas `manager` e `super_admin` da **mesma** `company_id`
-- **UI:** Configurações → [Auditoria](/configuracoes/auditoria)
-- **API:** `GET /api/audit-log?limit=100`
-
-Operadores e PCP **não** veem a trilha (por política).
-
-## Campos
-
-| Campo | Descrição |
-|-------|-----------|
-| `user_id` | `auth.uid()` na sessão do PostgREST |
-| `user_email` | E-mail do JWT |
-| `old_data` / `new_data` | Snapshot JSON da linha |
-
-Alterações via **service role** (scripts/admin) podem ter `user_id` nulo — normal para jobs automatizados.
+- **RLS:** `manager` e `super_admin` da mesma `company_id`
+- Não existe role `admin` no PCP — use `super_admin` / `manager`
 
 ## Retenção
 
-Sugestão: apagar logs com mais de **90 dias** (mensal):
+Apagar registros com mais de 90 dias (após backup):
 
-```sql
--- scripts/sql/purge-audit-log-older-than.sql
-DELETE FROM audit_log WHERE created_at < now() - interval '90 days';
-```
-
-Sempre rodar após backup semanal.
-
-## Volume
-
-Se `audit_log` crescer rápido (> 100k linhas/mês), revisar com Claude:
-
-- Reduzir tabelas com trigger
-- Gravar só diff em UPDATE (evolução futura)
-- Particionar por mês
+`scripts/sql/purge-audit-log-older-than.sql`
 
 ## Troubleshooting
 
-| Problema | Causa provável |
-|----------|----------------|
-| Nenhum log ao editar pedido | Migration não aplicada ou edição via service role sem sessão |
-| Erro ao aplicar SQL | Tabela ausente (`purchase_orders` etc.) — rodar migrations Compras/CQ antes |
-| Gestor não vê logs | `profiles.company_id` diferente do `audit_log.company_id` |
+| Problema | Solução |
+|----------|---------|
+| Página vazia / erro tabela | Rodar `20260520_audit_log.sql` |
+| Sem `user_email` | Alteração via service role (scripts) |
+| Muitos logs | Reduzir tabelas com trigger; ver FASE-1-TABELAS |
