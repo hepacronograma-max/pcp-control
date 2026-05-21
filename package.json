@@ -17,7 +17,8 @@
     "security:secrets": "node scripts/generate-vercel-secrets.js",
     "inventory:repo": "powershell -ExecutionPolicy Bypass -File scripts/repo-inventory.ps1",
     "fase1:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-fase1-helader.ps1",
-    "db:apply-audit": "node scripts/apply-audit-migration.js"
+    "db:apply-audit": "node scripts/apply-audit-migration.js",
+    "github:branch-protection": "node scripts/github-branch-protection.js"
   },
   "keywords": [],
   "author": "",
