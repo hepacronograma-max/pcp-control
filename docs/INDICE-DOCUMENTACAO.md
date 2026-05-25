@@ -12,6 +12,7 @@
 |-----------|----------|
 | [SEGURANCA-PRODUCAO.md](./SEGURANCA-PRODUCAO.md) | Vercel, `CLEANUP_SECRET`, chaves Supabase |
 | [AUDITORIA.md](./AUDITORIA.md) | Trilha audit_log + migration SQL |
+| [BACKUP-RESTORE.md](./BACKUP-RESTORE.md) | Arquitetura 3-2-1, restore, Telegram, GitHub Release |
 | [BACKUP-SEMANAL-WINDOWS.md](./BACKUP-SEMANAL-WINDOWS.md) | Backup automático → OneDrive |
 | [PARECER-PERFORMANCE-E-ARQUIVOS.md](./PARECER-PERFORMANCE-E-ARQUIVOS.md) | Velocidade e arquivos do projeto |
 | [ALMOXARIFADO.md](./ALMOXARIFADO.md) | Módulo almoxarifado |
