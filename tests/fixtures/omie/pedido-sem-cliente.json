@@ -1,0 +1,17 @@
+{
+  "cabecalho": {
+    "codigo_pedido": 100003,
+    "numero_pedido": "PV-100003",
+    "data_previsao": null,
+    "etapa": "60"
+  },
+  "det": [
+    {
+      "produto": {
+        "codigo_produto": "HF-XYZ",
+        "descricao": "Produto genérico",
+        "quantidade": 1
+      }
+    }
+  ]
+}

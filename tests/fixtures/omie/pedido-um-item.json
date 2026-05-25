@@ -1,0 +1,20 @@
+{
+  "cabecalho": {
+    "codigo_pedido": 100001,
+    "numero_pedido": "PV-100001",
+    "codigo_cliente": 3792227,
+    "data_previsao": "30/06/2026",
+    "etapa": "60",
+    "quantidade_itens": 1
+  },
+  "det": [
+    {
+      "produto": {
+        "codigo_produto": "HF-FFP-071",
+        "descricao": "Filtro ABSOLUTO teste",
+        "quantidade": 2,
+        "unidade": "UN"
+      }
+    }
+  ]
+}

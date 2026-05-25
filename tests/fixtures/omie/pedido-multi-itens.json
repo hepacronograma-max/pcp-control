@@ -1,0 +1,40 @@
+{
+  "cabecalho": {
+    "codigo_pedido": 100002,
+    "numero_pedido": "PV-100002",
+    "codigo_cliente": 3792227,
+    "data_previsao": "15/07/2026",
+    "etapa": "60",
+    "quantidade_itens": 4
+  },
+  "det": [
+    {
+      "produto": {
+        "codigo_produto": "HF-FFP-100",
+        "descricao": "Item FFP",
+        "quantidade": 1
+      }
+    },
+    {
+      "produto": {
+        "codigo_produto": "HF-BSF-200",
+        "descricao": "Item BSF",
+        "quantidade": 3
+      }
+    },
+    {
+      "produto": {
+        "codigo_produto": "HF-PL-300",
+        "descricao": "Item PL",
+        "quantidade": 1
+      }
+    },
+    {
+      "produto": {
+        "codigo_produto": "HF-MS",
+        "descricao": "MANTA ESPECIAL",
+        "quantidade": 5
+      }
+    }
+  ]
+}
