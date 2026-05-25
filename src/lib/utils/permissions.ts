@@ -40,6 +40,9 @@ export const PERMISSIONS = {
 
   editOrders: ["super_admin", "manager", "pcp"] as UserRole[],
 
+  /** Prazo de entrega (vendas) — somente Comercial na tela /comercial */
+  editComercialDeliveryDeadline: ["super_admin", "comercial"] as UserRole[],
+
   finishOrders: ["super_admin", "manager", "pcp"] as UserRole[],
 
   allocateItems: ["super_admin", "manager", "pcp"] as UserRole[],

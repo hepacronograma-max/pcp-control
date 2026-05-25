@@ -13,6 +13,9 @@ interface OrderItemsProps {
   orderPcpDeadline: string | null;
   onChangeLine: (itemId: string, lineId: string | null) => void;
   onChangeQuantity: (itemId: string, quantity: number) => void;
+  onChangeProductCode?: (itemId: string, productCode: string) => void;
+  onChangeDescription?: (itemId: string, description: string) => void;
+  canEditItemDetails?: boolean;
   onUpdateItemPc: (
     itemId: string,
     data: { pc_number: string | null; pc_delivery_date: string | null }
@@ -28,6 +31,9 @@ export function OrderItems({
   orderPcpDeadline,
   onChangeLine,
   onChangeQuantity,
+  onChangeProductCode,
+  onChangeDescription,
+  canEditItemDetails = false,
   onUpdateItemPc,
   canReopenCompletedItem,
   onReopenCompletedItem,
@@ -97,22 +103,47 @@ export function OrderItems({
             className={`grid ${gridCols} gap-1.5 px-3 py-2 text-[10px] sm:text-xs items-center`}
           >
             <div className="text-slate-400 text-center">{item.item_number}</div>
-            <div
-              className="font-mono text-[10px] text-slate-700 truncate text-center"
-              title={(item.product_code ?? "").trim() || undefined}
-            >
-              {(item.product_code ?? "").trim() || "—"}
+            <div className="min-w-0">
+              {canEditItemDetails && onChangeProductCode ? (
+                <input
+                  className="w-full rounded-md border border-slate-300 bg-white px-1 py-0.5 text-[10px] font-mono text-center"
+                  value={(item.product_code ?? "").trim()}
+                  placeholder="Código"
+                  maxLength={120}
+                  onBlur={(e) => onChangeProductCode(item.id, e.target.value)}
+                  title="Código do produto"
+                />
+              ) : (
+                <div
+                  className="font-mono text-[10px] text-slate-700 truncate text-center"
+                  title={(item.product_code ?? "").trim() || undefined}
+                >
+                  {(item.product_code ?? "").trim() || "—"}
+                </div>
+              )}
             </div>
-            <div
-              className={
-                isExpanded
-                  ? "cursor-pointer whitespace-normal break-words"
-                  : "truncate cursor-pointer hover:text-[#1B4F72]"
-              }
-              title={item.description}
-              onClick={() => toggleExpand(item.id)}
-            >
-              {item.description}
+            <div className="min-w-0">
+              {canEditItemDetails && onChangeDescription ? (
+                <input
+                  className="w-full rounded-md border border-slate-300 bg-white px-1 py-0.5 text-[10px]"
+                  value={item.description}
+                  maxLength={500}
+                  onBlur={(e) => onChangeDescription(item.id, e.target.value)}
+                  title="Descrição do item"
+                />
+              ) : (
+                <div
+                  className={
+                    isExpanded
+                      ? "cursor-pointer whitespace-normal break-words"
+                      : "truncate cursor-pointer hover:text-[#1B4F72]"
+                  }
+                  title={item.description}
+                  onClick={() => toggleExpand(item.id)}
+                >
+                  {item.description}
+                </div>
+              )}
             </div>
             <div>
               <input

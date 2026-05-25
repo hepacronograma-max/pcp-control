@@ -48,6 +48,12 @@ export function getOrderPrincipalStatus(order: OrderWithItems): OrderPrincipalSt
   );
   if (hasDelayed) return "atrasado";
 
+  const effectiveProd = effectiveOrderProductionDeadline(order);
+  if (effectiveProd && isPastDeadline(effectiveProd)) {
+    const anyOpen = items.some((it) => it.status !== "completed");
+    if (anyOpen) return "atrasado";
+  }
+
   const pcpDeadline = order.pcp_deadline;
   const hasWillDelay = items.some(
     (it) =>
