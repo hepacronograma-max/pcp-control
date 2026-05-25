@@ -302,18 +302,74 @@ export default function PedidosPage() {
     );
   }
 
+  async function handleUpdateItemProductCode(itemId: string, productCode: string) {
+    if (useApi) {
+      const r = await postOrderItemsUpdate({
+        action: "item_details",
+        itemId,
+        product_code: productCode,
+      });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+    } else if (supabase) {
+      const code = productCode.trim();
+      await supabase
+        .from("order_items")
+        .update({ product_code: code || null })
+        .eq("id", itemId);
+    } else return;
+    updateOrdersState((prev) =>
+      prev.map((o) => ({
+        ...o,
+        items: o.items.map((it) =>
+          it.id === itemId
+            ? { ...it, product_code: productCode.trim() || null }
+            : it
+        ),
+      }))
+    );
+  }
+
+  async function handleUpdateItemDescription(itemId: string, description: string) {
+    const desc = description.trim().slice(0, 500);
+    if (useApi) {
+      const r = await postOrderItemsUpdate({
+        action: "item_details",
+        itemId,
+        description: desc,
+      });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+    } else if (supabase) {
+      await supabase
+        .from("order_items")
+        .update({ description: desc })
+        .eq("id", itemId);
+    } else return;
+    updateOrdersState((prev) =>
+      prev.map((o) => ({
+        ...o,
+        items: o.items.map((it) =>
+          it.id === itemId ? { ...it, description: desc } : it
+        ),
+      }))
+    );
+  }
+
   async function handleUpdateOrder(
     orderId: string,
     data: {
       order_number?: string;
       client_name?: string;
-      delivery_deadline?: string | null;
     }
   ) {
     const update: Record<string, unknown> = {};
     if (data.order_number !== undefined) update.order_number = String(data.order_number).trim().slice(0, 50);
     if (data.client_name !== undefined) update.client_name = String(data.client_name).trim().slice(0, 255);
-    if (data.delivery_deadline !== undefined) update.delivery_deadline = toDateOnly(data.delivery_deadline);
     if (Object.keys(update).length === 0) return;
     if (useApi) {
       const r = await postOrderItemsUpdate({ action: "order", orderId, ...data });
@@ -854,6 +910,8 @@ export default function PedidosPage() {
           onUpdateOrderPcpDate={handleUpdateOrderPcpDate}
           onUpdateItemLine={handleUpdateItemLine}
           onUpdateItemQuantity={handleUpdateItemQuantity}
+          onUpdateItemProductCode={handleUpdateItemProductCode}
+          onUpdateItemDescription={handleUpdateItemDescription}
           onUpdateItemPc={handleUpdateItemPc}
           onUpdateOrder={handleUpdateOrder}
           onDeleteOrder={handleDeleteOrder}

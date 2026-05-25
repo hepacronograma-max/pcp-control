@@ -29,13 +29,15 @@ interface OrdersTableProps {
   onUpdateOrderPcpDate: (orderId: string, date: string | null) => void;
   onUpdateItemLine: (itemId: string, lineId: string | null) => void;
   onUpdateItemQuantity: (itemId: string, quantity: number) => void;
+  onUpdateItemProductCode?: (itemId: string, productCode: string) => void;
+  onUpdateItemDescription?: (itemId: string, description: string) => void;
   onUpdateItemPc: (
     itemId: string,
     data: { pc_number: string | null; pc_delivery_date: string | null }
   ) => void;
   onUpdateOrder: (
     orderId: string,
-    data: { order_number?: string; client_name?: string; delivery_deadline?: string | null }
+    data: { order_number?: string; client_name?: string }
   ) => void;
   onDeleteOrder: (orderId: string) => void;
   onFinishOrder: (orderId: string) => void;
@@ -58,6 +60,8 @@ export function OrdersTable({
   onUpdateOrderPcpDate,
   onUpdateItemLine,
   onUpdateItemQuantity,
+  onUpdateItemProductCode,
+  onUpdateItemDescription,
   onUpdateItemPc,
   onUpdateOrder,
   onDeleteOrder,
@@ -286,6 +290,8 @@ export function OrdersTable({
                 onUpdateOrderPcpDate={onUpdateOrderPcpDate}
                 onUpdateItemLine={onUpdateItemLine}
                 onUpdateItemQuantity={onUpdateItemQuantity}
+                onUpdateItemProductCode={onUpdateItemProductCode}
+                onUpdateItemDescription={onUpdateItemDescription}
                 onUpdateItemPc={onUpdateItemPc}
                 onUpdateOrder={onUpdateOrder}
                 onDeleteOrder={onDeleteOrder}

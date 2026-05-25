@@ -5,7 +5,46 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { syncAlmoxarifadoOnProgram } from "@/lib/supabase/sync-almoxarifado-on-program";
 import { syncAlmoxOnProductionEndChange } from "@/lib/supabase/sync-almox-on-production-end";
 import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
+import { hasPermission } from "@/lib/utils/permissions";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
+
+async function assertCanEditOrders(): Promise<
+  { ok: true } | { ok: false; response: NextResponse }
+> {
+  if (await hasServerLocalAuthCookie()) return { ok: true };
+  const authClient = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await authClient.auth.getUser();
+  if (!user) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { success: false, error: "Não autenticado" },
+        { status: 401 }
+      ),
+    };
+  }
+  const { data: profile } = await authClient
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  if (!profile || !hasPermission(profile.role, "editOrders")) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        {
+          success: false,
+          error:
+            "Sem permissão para editar itens. Prazo de vendas: altere em Comercial.",
+        },
+        { status: 403 }
+      ),
+    };
+  }
+  return { ok: true };
+}
 
 /**
  * Atualiza order_items ou orders no Supabase (service role).
@@ -34,7 +73,9 @@ export async function POST(request: NextRequest) {
       pcp_deadline,
       order_number,
       client_name,
-      delivery_deadline,
+      delivery_deadline: _delivery_deadline,
+      product_code,
+      description,
       production_start,
       production_end,
       notes,
@@ -50,7 +91,7 @@ export async function POST(request: NextRequest) {
       const update: Record<string, unknown> = {};
       if (order_number !== undefined) update.order_number = String(order_number).trim().slice(0, 50);
       if (client_name !== undefined) update.client_name = String(client_name).trim().slice(0, 255);
-      if (delivery_deadline !== undefined) update.delivery_deadline = toDateOnly(delivery_deadline);
+      /** Prazo de vendas: somente via /api/comercial-orders (perfil Comercial). */
       if (Object.keys(update).length === 0) {
         return NextResponse.json({ success: true });
       }
@@ -86,6 +127,42 @@ export async function POST(request: NextRequest) {
         .from("order_items")
         .update({ quantity: qty })
         .eq("id", itemId);
+      if (error) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "item_details" && itemId !== undefined) {
+      const gate = await assertCanEditOrders();
+      if (!gate.ok) return gate.response;
+
+      const update: Record<string, unknown> = {};
+      if (description !== undefined) {
+        update.description = String(description).trim().slice(0, 500);
+      }
+      if (product_code !== undefined) {
+        const code = String(product_code).trim();
+        update.product_code = code ? code.slice(0, 120) : null;
+      }
+      if (Object.keys(update).length === 0) {
+        return NextResponse.json({ success: true });
+      }
+      let { error } = await supabase.from("order_items").update(update).eq("id", itemId);
+      if (
+        error &&
+        /product_code|schema cache|column|does not exist/i.test(error.message)
+      ) {
+        const { product_code: _, ...rest } = update;
+        if (Object.keys(rest).length === 0) {
+          return NextResponse.json({
+            success: false,
+            error:
+              "Coluna product_code ausente. Rode supabase-add-columns.sql ou Configurações → Adicionar colunas.",
+          });
+        }
+        ({ error } = await supabase.from("order_items").update(rest).eq("id", itemId));
+      }
       if (error) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
       }

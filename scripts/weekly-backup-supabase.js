@@ -31,6 +31,8 @@ const { execFile } = require("child_process");
 const { promisify } = require("util");
 const { createClient } = require("@supabase/supabase-js");
 const { resolveBackupBaseDir } = require("./lib/resolve-backup-dir");
+const { buildFileEntry, formatBytes } = require("./lib/backup-common");
+const { notify } = require("./lib/notify-telegram");
 
 const execFileAsync = promisify(execFile);
 
@@ -259,8 +261,9 @@ async function main() {
       console.log("ignorada");
       continue;
     }
-    writeJson(path.join(outDir, `${table}.json`), rows);
-    manifest.tables[table] = { count: rows.length, file: `${table}.json` };
+    const tablePath = path.join(outDir, `${table}.json`);
+    writeJson(tablePath, rows);
+    manifest.tables[table] = buildFileEntry(tablePath, rows.length);
     console.log(rows.length, "registros");
   }
 
@@ -272,8 +275,9 @@ async function main() {
         console.log("não existe");
         continue;
       }
-      writeJson(path.join(outDir, `${table}.json`), rows);
-      manifest.tables[table] = { count: rows.length, file: `${table}.json` };
+      const optPath = path.join(outDir, `${table}.json`);
+      writeJson(optPath, rows);
+      manifest.tables[table] = buildFileEntry(optPath, rows.length);
       console.log(rows.length, "registros");
     } catch (e) {
       console.log("erro:", e.message);
@@ -305,13 +309,6 @@ async function main() {
     console.log("  pg_dump:", pgResult.reason);
   }
 
-  writeJson(path.join(outDir, "manifest.json"), manifest);
-  fs.writeFileSync(
-    path.join(baseDir, "latest.txt"),
-    outDir + "\n" + manifest.exportedAt,
-    "utf-8"
-  );
-
   if (pruneEnabled) {
     pruneOldBackups(baseDir, keepWeeks);
   } else {
@@ -320,11 +317,43 @@ async function main() {
     );
   }
 
+  const totalRecords = Object.values(manifest.tables).reduce(
+    (s, t) => s + (t.count || 0),
+    0
+  );
+  const totalBytes = Object.values(manifest.tables).reduce(
+    (s, t) => s + (t.sizeBytes || 0),
+    0
+  );
+  manifest.totalRecords = totalRecords;
+  manifest.totalBytes = totalBytes;
+
+  writeJson(path.join(outDir, "manifest.json"), manifest);
+  fs.writeFileSync(
+    path.join(baseDir, "latest.txt"),
+    outDir + "\n" + manifest.exportedAt,
+    "utf-8"
+  );
+
   console.log("\nConcluído:", outDir);
   console.log("Último backup registrado em:", path.join(baseDir, "latest.txt"));
+
+  const tableCount = Object.keys(manifest.tables).filter((t) => !manifest.tables[t].skipped)
+    .length;
+  const summary = `✅ Backup semanal concluído. ${tableCount} tabelas, ${totalRecords} registros, ${formatBytes(totalBytes)}. Pasta: ${path.basename(outDir)}`;
+  console.log(summary);
+  const tg = await notify(summary, "info");
+  if (!tg.sent && process.env.TELEGRAM_BOT_TOKEN) {
+    console.log("Telegram:", tg.reason);
+  }
+
+  return { outDir, manifest, summary };
 }
 
-main().catch((err) => {
+main()
+  .then(() => process.exit(0))
+  .catch(async (err) => {
   console.error(err);
+  await notify(`❌ Backup semanal falhou: ${err.message}`, "error");
   process.exit(1);
 });

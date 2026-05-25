@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
+import { hasPermission } from "@/lib/utils/permissions";
+import { toDateOnly } from "@/lib/utils/supabase-data";
 
 function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -26,6 +28,10 @@ function canRoleEditComercialObservation(role: string | null | undefined): boole
     role === "admin" ||
     role === "comercial"
   );
+}
+
+function canRoleEditComercialDelivery(role: string | null | undefined): boolean {
+  return hasPermission(role, "editComercialDeliveryDeadline");
 }
 
 function canRolePcpReplyToComercialObservation(
@@ -335,6 +341,10 @@ export async function PATCH(request: NextRequest) {
       body,
       "pcp_reply_comercial_observation"
     );
+    const hasDeliveryKey = Object.prototype.hasOwnProperty.call(
+      body,
+      "delivery_deadline"
+    );
 
     if (!isUuid(orderId)) {
       return NextResponse.json(
@@ -343,22 +353,15 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    if (hasComercialKey && hasPcpReplyKey) {
+    const patchKinds = [hasComercialKey, hasPcpReplyKey, hasDeliveryKey].filter(
+      Boolean
+    ).length;
+    if (patchKinds !== 1) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "Envie só uma alteração por vez: observação do Comercial ou resposta do PCP.",
-        },
-        { status: 400 }
-      );
-    }
-    if (!hasComercialKey && !hasPcpReplyKey) {
-      return NextResponse.json(
-        {
-          success: false,
-          error:
-            "Indique `comercial_pcp_observation` (Comercial) ou `pcp_reply_comercial_observation` (PCP).",
+            "Envie só uma alteração por vez: prazo de vendas, observação do Comercial ou resposta do PCP.",
         },
         { status: 400 }
       );
@@ -396,6 +399,78 @@ export async function PATCH(request: NextRequest) {
     }
 
     const nowIso = new Date().toISOString();
+
+    if (hasDeliveryKey) {
+      if (!isLocalAuth) {
+        const supabaseAuth = await createServerSupabaseClient();
+        const {
+          data: { user },
+        } = await supabaseAuth.auth.getUser();
+        if (!user) {
+          return NextResponse.json(
+            { success: false, error: "Não autenticado" },
+            { status: 401 }
+          );
+        }
+        const { data: profile } = await supabaseAuth
+          .from("profiles")
+          .select("company_id, role")
+          .eq("id", user.id)
+          .single();
+
+        if (!profile || !canRoleEditComercialDelivery(profile.role)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "Somente Comercial pode alterar o prazo de entrega (vendas).",
+            },
+            { status: 403 }
+          );
+        }
+        const cid = profile.company_id as string | null;
+        if (profile.role !== "super_admin" && cid !== orderCompanyId) {
+          return NextResponse.json(
+            { success: false, error: "Pedido de outra empresa" },
+            { status: 403 }
+          );
+        }
+      }
+
+      const delivery = toDateOnly(body.delivery_deadline);
+      const payload: Record<string, unknown> = {
+        delivery_deadline: delivery,
+        updated_at: nowIso,
+      };
+
+      let { error: updErr } = await supabaseAdmin
+        .from("orders")
+        .update(payload)
+        .eq("id", orderId);
+
+      if (
+        updErr &&
+        /updated_at|schema cache|column|does not exist/i.test(updErr.message)
+      ) {
+        delete payload.updated_at;
+        ({ error: updErr } = await supabaseAdmin
+          .from("orders")
+          .update(payload)
+          .eq("id", orderId));
+      }
+
+      if (updErr) {
+        return NextResponse.json(
+          { success: false, error: updErr.message },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        delivery_deadline: delivery,
+      });
+    }
 
     if (hasComercialKey) {
       const rawObs = body.comercial_pcp_observation;
