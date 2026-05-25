@@ -108,6 +108,10 @@ export default function ComercialPage() {
     roleNorm === "comercial" ||
     roleNorm === "manager" ||
     roleNorm === "super_admin";
+  const canEditDeliveryDeadline = hasPermission(
+    profile!.role,
+    "editComercialDeliveryDeadline"
+  );
 
   return (
     <ComercialOrdersView
@@ -117,9 +121,17 @@ export default function ComercialPage() {
       lastAt={lastAt}
       onRefresh={() => void load()}
       canEditObservation={canEditObservation}
+      canEditDeliveryDeadline={canEditDeliveryDeadline}
       onObservationSaved={(orderId, patch: OrderComercialThreadPatch) =>
         setRows((prev) =>
           prev.map((o) => (o.id === orderId ? { ...o, ...patch } : o))
+        )
+      }
+      onDeliveryDeadlineSaved={(orderId, delivery_deadline) =>
+        setRows((prev) =>
+          prev.map((o) =>
+            o.id === orderId ? { ...o, delivery_deadline } : o
+          )
         )
       }
     />

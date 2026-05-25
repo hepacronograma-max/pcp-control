@@ -64,6 +64,16 @@ interface ExtractedData {
   }[];
 }
 
+function mapOmieItemsToExtracted(
+  items: { description: string; quantity: number; productCode?: string | null }[]
+): ExtractedData["items"] {
+  return items.map((it) => ({
+    description: it.description,
+    quantity: it.quantity,
+    product_code: it.productCode ?? null,
+  }));
+}
+
 async function insertImportedOrderItems(
   supabase: SupabaseClient,
   orderId: string,
@@ -181,7 +191,7 @@ async function extractFromPdf(
         orderNumber: omie.orderNumber,
         clientName: omie.clientName,
         deliveryDate: omie.deliveryDate ?? null,
-        items: omie.items,
+        items: mapOmieItemsToExtracted(omie.items),
         _rawText: text,
       };
     }
@@ -204,7 +214,7 @@ async function extractFromPdf(
       orderNumber: omie.orderNumber,
       clientName: omie.clientName,
       deliveryDate: omie.deliveryDate ?? null,
-      items: omie.items,
+      items: mapOmieItemsToExtracted(omie.items),
       _rawText: text,
     };
   }
@@ -214,7 +224,7 @@ async function extractFromPdf(
     orderNumber: fallback.orderNumber,
     clientName: fallback.clientName,
     deliveryDate: fallback.deliveryDate ?? null,
-    items: fallback.items,
+    items: mapOmieItemsToExtracted(fallback.items),
     _rawText: text,
   };
 }

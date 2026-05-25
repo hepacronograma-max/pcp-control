@@ -34,6 +34,42 @@ function parsearData(str: string): string | null {
 export interface ParsedOmieItem {
   description: string;
   quantity: number;
+  productCode?: string | null;
+}
+
+/** HF-071 (TOTVS) ou PRD02136 (legado Omie / compras). */
+const PRODUCT_CODE_TOKEN =
+  /^(?:[A-Z]{2,}-\d+[A-Z0-9.-]*|(?:PRD|PRU|PRO|PR0)\d{3,})$/i;
+
+function isProductCodeToken(token: string): boolean {
+  return PRODUCT_CODE_TOKEN.test(token.trim());
+}
+
+function normalizeOmieItem(
+  codigo: string,
+  desc: string,
+  quantity: number
+): ParsedOmieItem {
+  const c = codigo.trim();
+  const d = desc.trim();
+  if (c && isProductCodeToken(c)) {
+    return {
+      productCode: c.toUpperCase(),
+      description: d || c,
+      quantity,
+    };
+  }
+  if (!c && d && isProductCodeToken(d) && !/\s/.test(d)) {
+    return {
+      productCode: d.toUpperCase(),
+      description: d,
+      quantity,
+    };
+  }
+  if (c && d) {
+    return { description: `${c} ${d}`.trim(), quantity };
+  }
+  return { description: d || c, quantity };
 }
 
 export interface ParsedOmieResult {
@@ -190,10 +226,7 @@ function extrairItens(linhas: string[], textoCompleto: string): ParsedOmieItem[]
       const codigo = m[2];
       const desc = m[3].trim();
       if (!Number.isNaN(qtd) && qtd > 0 && desc.length > 1) {
-        items.push({
-          description: codigo ? `${codigo} ${desc}` : desc,
-          quantity: qtd,
-        });
+        items.push(normalizeOmieItem(codigo, desc, qtd));
         continue;
       }
     }

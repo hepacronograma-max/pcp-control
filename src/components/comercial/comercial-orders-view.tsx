@@ -16,6 +16,7 @@ import {
   type OrderPrincipalStatus,
 } from "@/lib/utils/order-aggregates";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
+import { CompactDateCell } from "@/components/ui/compact-date-cell";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -195,7 +196,13 @@ interface ComercialOrdersViewProps {
   onRefresh: () => void;
   /** Comercial / gestão pode editar recado ao PCP */
   canEditObservation: boolean;
+  /** Comercial (e super_admin) pode alterar prazo de entrega (vendas) */
+  canEditDeliveryDeadline?: boolean;
   onObservationSaved?: (orderId: string, patch: OrderComercialThreadPatch) => void;
+  onDeliveryDeadlineSaved?: (
+    orderId: string,
+    delivery_deadline: string | null
+  ) => void;
 }
 
 export function ComercialOrdersView({
@@ -205,8 +212,11 @@ export function ComercialOrdersView({
   lastAt,
   onRefresh,
   canEditObservation,
+  canEditDeliveryDeadline = false,
   onObservationSaved,
+  onDeliveryDeadlineSaved,
 }: ComercialOrdersViewProps) {
+  const [savingDeliveryId, setSavingDeliveryId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<TabKey>("open");
   const [sortKey, setSortKey] = useState<SortKey>("delivery_deadline");
@@ -214,6 +224,33 @@ export function ComercialOrdersView({
   const [obsExpandedId, setObsExpandedId] = useState<string | null>(null);
   const [obsDraft, setObsDraft] = useState("");
   const [savingObs, setSavingObs] = useState(false);
+
+  async function saveDeliveryDeadline(orderId: string, date: string | null) {
+    setSavingDeliveryId(orderId);
+    try {
+      const res = await fetch("/api/comercial-orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ orderId, delivery_deadline: date }),
+      });
+      const j = (await res.json()) as {
+        success?: boolean;
+        error?: string;
+        delivery_deadline?: string | null;
+      };
+      if (!res.ok || j.success === false) {
+        toast.error(j.error || `Erro ao salvar (${res.status})`);
+        return;
+      }
+      onDeliveryDeadlineSaved?.(orderId, j.delivery_deadline ?? date);
+      toast.success("Prazo de vendas atualizado.");
+    } catch {
+      toast.error("Erro de rede ao salvar prazo.");
+    } finally {
+      setSavingDeliveryId(null);
+    }
+  }
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) setSortAsc((v) => !v);
@@ -531,8 +568,18 @@ export function ComercialOrdersView({
                       <div className="text-center tabular-nums text-slate-600">
                         {formatShortDate(row.created_at)}
                       </div>
-                      <div className="text-center tabular-nums text-slate-600">
-                        {formatShortDate(row.delivery_deadline)}
+                      <div className="flex justify-center min-w-0">
+                        {canEditDeliveryDeadline ? (
+                          <CompactDateCell
+                            value={row.delivery_deadline}
+                            disabled={savingDeliveryId === row.id}
+                            onChange={(val) => void saveDeliveryDeadline(row.id, val)}
+                          />
+                        ) : (
+                          <span className="text-center tabular-nums text-slate-600">
+                            {formatShortDate(row.delivery_deadline)}
+                          </span>
+                        )}
                       </div>
                       <div className="text-center tabular-nums text-[#1B4F72] font-medium">
                         {formatShortDate(row.pcp_deadline)}

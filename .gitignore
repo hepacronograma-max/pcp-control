@@ -21,6 +21,7 @@ backup-pcp.json
 public/backup-inicial.json
 public/*-backup*.json
 secrets/
+scripts/logs/
 
 # PDF de teste (dados de cliente)
 public/test-pedido.pdf

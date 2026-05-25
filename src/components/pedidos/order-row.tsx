@@ -35,13 +35,15 @@ export interface OrderRowProps {
   onUpdateOrderPcpDate: (orderId: string, date: string | null) => void;
   onUpdateItemLine: (itemId: string, lineId: string | null) => void;
   onUpdateItemQuantity: (itemId: string, quantity: number) => void;
+  onUpdateItemProductCode?: (itemId: string, productCode: string) => void;
+  onUpdateItemDescription?: (itemId: string, description: string) => void;
   onUpdateItemPc: (
     itemId: string,
     data: { pc_number: string | null; pc_delivery_date: string | null }
   ) => void;
   onUpdateOrder: (
     orderId: string,
-    data: { order_number?: string; client_name?: string; delivery_deadline?: string | null }
+    data: { order_number?: string; client_name?: string }
   ) => void;
   onDeleteOrder: (orderId: string) => void;
   onFinishOrder: (orderId: string) => void;
@@ -74,6 +76,8 @@ export function OrderRow({
   onUpdateOrderPcpDate,
   onUpdateItemLine,
   onUpdateItemQuantity,
+  onUpdateItemProductCode,
+  onUpdateItemDescription,
   onUpdateItemPc,
   onUpdateOrder,
   onDeleteOrder,
@@ -91,7 +95,6 @@ export function OrderRow({
   const [showEditModal, setShowEditModal] = useState(false);
   const [editNumber, setEditNumber] = useState(order.order_number);
   const [editClient, setEditClient] = useState(order.client_name);
-  const [editDelivery, setEditDelivery] = useState(order.delivery_deadline ?? "");
   const [pcpReplyDraft, setPcpReplyDraft] = useState(
     order.pcp_reply_comercial_observation ?? ""
   );
@@ -115,6 +118,7 @@ export function OrderRow({
   const canReopenCompletedItem =
     hasPermission(userRole, "finishOrders") && !!onReopenCompletedItem;
   const canEdit = hasPermission(userRole, "viewOrders");
+  const canEditItemDetails = hasPermission(userRole, "editOrders");
   const canReplyAsPcp =
     canPatchPcpReplyRole(userRole) && hasPermission(userRole, "viewOrders");
   const obsText = (order.comercial_pcp_observation ?? "").trim();
@@ -175,7 +179,6 @@ export function OrderRow({
   function openEditModal() {
     setEditNumber(order.order_number);
     setEditClient(order.client_name);
-    setEditDelivery(order.delivery_deadline ?? "");
     setShowEditModal(true);
   }
 
@@ -183,7 +186,6 @@ export function OrderRow({
     onUpdateOrder(order.id, {
       order_number: editNumber.trim() || order.order_number,
       client_name: editClient.trim() || order.client_name,
-      delivery_deadline: editDelivery || null,
     });
     setShowEditModal(false);
   }
@@ -248,7 +250,7 @@ export function OrderRow({
           traffic === "white"
             ? undefined
             : traffic === "red"
-              ? "Atrasado: prazo de vendas, PCP ou produção já passou."
+              ? "Atrasado: prazo de vendas, PCP ou produção (fim programado) já passou."
               : traffic === "yellow"
                 ? "Atenção: algum prazo vence hoje."
                 : sameDayAllDeadlines
@@ -437,13 +439,11 @@ export function OrderRow({
                 value={editClient}
                 onChange={(e) => setEditClient(e.target.value)}
               />
-              <label className="text-xs font-medium text-slate-700">Prazo de Entrega (Vendas)</label>
-              <input
-                type="date"
-                className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
-                value={editDelivery}
-                onChange={(e) => setEditDelivery(e.target.value)}
-              />
+              <p className="text-[11px] text-slate-500">
+                Prazo de entrega (vendas):{" "}
+                <strong>{formatShortDate(order.delivery_deadline)}</strong> — alteração
+                somente na área <strong>Comercial</strong>.
+              </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -560,6 +560,9 @@ export function OrderRow({
             orderPcpDeadline={order.pcp_deadline}
             onChangeLine={onUpdateItemLine}
             onChangeQuantity={onUpdateItemQuantity}
+            onChangeProductCode={onUpdateItemProductCode}
+            onChangeDescription={onUpdateItemDescription}
+            canEditItemDetails={canEditItemDetails}
             onUpdateItemPc={onUpdateItemPc}
             canReopenCompletedItem={canReopenCompletedItem}
             onReopenCompletedItem={onReopenCompletedItem}
