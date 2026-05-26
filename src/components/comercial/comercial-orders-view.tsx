@@ -16,8 +16,8 @@ import {
   type OrderPrincipalStatus,
 } from "@/lib/utils/order-aggregates";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
-import { CompactDateCell } from "@/components/ui/compact-date-cell";
 import { Button } from "@/components/ui/button";
+import { toDateOnly } from "@/lib/utils/supabase-data";
 import { toast } from "sonner";
 
 export type ComercialItemLite = {
@@ -370,8 +370,11 @@ export function ComercialOrdersView({
         <div>
           <h1 className="text-lg font-semibold text-slate-900">Prazos de venda</h1>
           <p className="text-sm text-slate-600">
-            Visualização dos pedidos — prazos e situação. Use o ícone à direita para registrar um recado ao PCP
-            (visível na tela Pedidos).
+            Visualização dos pedidos — prazos e situação.
+            {canEditDeliveryDeadline
+              ? " Clique na data em Prazo vendas para alterar o prazo de entrega."
+              : ""}{" "}
+            Use o ícone à direita para registrar um recado ao PCP (visível na tela Pedidos).
           </p>
           {lastAt && (
             <p className="text-[11px] text-slate-400 mt-0.5">
@@ -568,12 +571,20 @@ export function ComercialOrdersView({
                       <div className="text-center tabular-nums text-slate-600">
                         {formatShortDate(row.created_at)}
                       </div>
-                      <div className="flex justify-center min-w-0">
+                      <div className="flex justify-center min-w-0 px-0.5">
                         {canEditDeliveryDeadline ? (
-                          <CompactDateCell
-                            value={row.delivery_deadline}
+                          <input
+                            type="date"
+                            title="Prazo de vendas (clique para alterar)"
                             disabled={savingDeliveryId === row.id}
-                            onChange={(val) => void saveDeliveryDeadline(row.id, val)}
+                            className="w-full max-w-[7.5rem] rounded-md border border-slate-300 bg-white px-1 py-0.5 text-[10px] sm:text-[11px] text-slate-800 tabular-nums disabled:opacity-50"
+                            value={toDateOnly(row.delivery_deadline) ?? ""}
+                            onChange={(e) =>
+                              void saveDeliveryDeadline(
+                                row.id,
+                                e.target.value.trim() || null
+                              )
+                            }
                           />
                         ) : (
                           <span className="text-center tabular-nums text-slate-600">
