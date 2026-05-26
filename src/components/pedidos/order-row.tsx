@@ -93,8 +93,17 @@ export function OrderRow({
 }: OrderRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [editNumber, setEditNumber] = useState(order.order_number);
   const [editClient, setEditClient] = useState(order.client_name);
+  const [editItems, setEditItems] = useState<
+    Array<{
+      product_code: string;
+      description: string;
+      quantity: number;
+      line_id: string;
+    }>
+  >([]);
   const [pcpReplyDraft, setPcpReplyDraft] = useState(
     order.pcp_reply_comercial_observation ?? ""
   );
@@ -179,15 +188,78 @@ export function OrderRow({
   function openEditModal() {
     setEditNumber(order.order_number);
     setEditClient(order.client_name);
+    setEditItems(
+      order.items.map((it) => ({
+        product_code: (it.product_code ?? "").trim(),
+        description: it.description ?? "",
+        quantity: it.quantity,
+        line_id: it.line_id ?? "",
+      }))
+    );
+    setExpanded(true);
     setShowEditModal(true);
   }
 
-  function submitEdit() {
-    onUpdateOrder(order.id, {
-      order_number: editNumber.trim() || order.order_number,
-      client_name: editClient.trim() || order.client_name,
-    });
-    setShowEditModal(false);
+  function patchEditItem(
+    index: number,
+    patch: Partial<{
+      product_code: string;
+      description: string;
+      quantity: number;
+      line_id: string;
+    }>
+  ) {
+    setEditItems((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, ...patch } : row))
+    );
+  }
+
+  async function submitEdit() {
+    setSavingEdit(true);
+    try {
+      await Promise.resolve(
+        onUpdateOrder(order.id, {
+          order_number: editNumber.trim() || order.order_number,
+          client_name: editClient.trim() || order.client_name,
+        })
+      );
+
+      if (canEditItemDetails) {
+        for (let i = 0; i < order.items.length; i++) {
+          const it = order.items[i];
+          const d = editItems[i];
+          if (!d) continue;
+
+          const code = d.product_code.trim();
+          const savedCode = (it.product_code ?? "").trim();
+          if (code !== savedCode && onUpdateItemProductCode) {
+            await Promise.resolve(onUpdateItemProductCode(it.id, code));
+          }
+
+          const desc = d.description.trim().slice(0, 500);
+          if (desc !== (it.description ?? "").trim() && onUpdateItemDescription) {
+            await Promise.resolve(onUpdateItemDescription(it.id, desc));
+          }
+
+          const qty = Math.max(1, Number(d.quantity) || 1);
+          if (qty !== it.quantity) {
+            await Promise.resolve(onUpdateItemQuantity(it.id, qty));
+          }
+
+          const lineId = d.line_id.trim() || null;
+          if (lineId !== (it.line_id ?? null)) {
+            await Promise.resolve(onUpdateItemLine(it.id, lineId));
+          }
+        }
+      }
+
+      toast.success("Pedido atualizado.");
+      setShowEditModal(false);
+    } catch {
+      toast.error("Erro ao salvar alterações.");
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   function handleDelete() {
@@ -423,40 +495,143 @@ export function OrderRow({
       </div>
 
       {showEditModal && (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-lg space-y-3 text-sm">
-            <h3 className="text-sm font-semibold text-slate-800">Editar pedido</h3>
-            <div className="grid gap-2">
-              <label className="text-xs font-medium text-slate-700">Nº do Pedido</label>
-              <input
-                className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
-                value={editNumber}
-                onChange={(e) => setEditNumber(e.target.value)}
-              />
-              <label className="text-xs font-medium text-slate-700">Cliente</label>
-              <input
-                className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
-                value={editClient}
-                onChange={(e) => setEditClient(e.target.value)}
-              />
-              <p className="text-[11px] text-slate-500">
-                Prazo de entrega (vendas):{" "}
-                <strong>{formatShortDate(order.delivery_deadline)}</strong> — alteração
-                somente na área <strong>Comercial</strong>.
-              </p>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => !savingEdit && setShowEditModal(false)}
+        >
+          <div
+            className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-lg bg-white p-4 shadow-xl space-y-4 text-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-slate-900">Editar pedido</h3>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium text-slate-700">Nº do Pedido</label>
+                <input
+                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"
+                  value={editNumber}
+                  onChange={(e) => setEditNumber(e.target.value)}
+                  disabled={savingEdit}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-700">Cliente</label>
+                <input
+                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"
+                  value={editClient}
+                  onChange={(e) => setEditClient(e.target.value)}
+                  disabled={savingEdit}
+                />
+              </div>
             </div>
-            <div className="flex justify-end gap-2 pt-2">
+
+            <p className="text-[11px] text-slate-500">
+              Prazo de entrega (vendas):{" "}
+              <strong>{formatShortDate(order.delivery_deadline)}</strong> — altere na área{" "}
+              <strong>Comercial</strong>.
+            </p>
+
+            {canEditItemDetails && editItems.length > 0 && (
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <div className="bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                  Itens do pedido
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {order.items.map((it, idx) => {
+                    const d = editItems[idx];
+                    if (!d) return null;
+                    return (
+                      <div
+                        key={it.id}
+                        className="grid gap-2 px-3 py-2 sm:grid-cols-[2rem_1fr_2fr_4rem_1fr] items-start"
+                      >
+                        <span className="text-xs text-slate-500 pt-1.5 text-center">
+                          {it.item_number}
+                        </span>
+                        <div>
+                          <label className="text-[10px] text-slate-500">Código</label>
+                          <input
+                            className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1 text-xs font-mono"
+                            value={d.product_code}
+                            maxLength={120}
+                            disabled={savingEdit}
+                            onChange={(e) =>
+                              patchEditItem(idx, { product_code: e.target.value })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500">Descrição</label>
+                          <input
+                            className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+                            value={d.description}
+                            maxLength={500}
+                            disabled={savingEdit}
+                            onChange={(e) =>
+                              patchEditItem(idx, { description: e.target.value })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500">Qtd</label>
+                          <input
+                            type="number"
+                            min={1}
+                            className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-center"
+                            value={d.quantity}
+                            disabled={savingEdit}
+                            onChange={(e) =>
+                              patchEditItem(idx, {
+                                quantity:
+                                  e.target.value === ""
+                                    ? 1
+                                    : Math.max(1, Number(e.target.value)),
+                              })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500">Linha</label>
+                          <select
+                            className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1 text-xs"
+                            value={d.line_id}
+                            disabled={savingEdit}
+                            onChange={(e) =>
+                              patchEditItem(idx, { line_id: e.target.value })
+                            }
+                          >
+                            <option value="">Linha...</option>
+                            {lines.map((line) => (
+                              <option key={line.id} value={line.id}>
+                                {line.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
               <button
+                type="button"
                 className="px-3 py-1.5 rounded-md border border-slate-300 text-xs"
+                disabled={savingEdit}
                 onClick={() => setShowEditModal(false)}
               >
                 Cancelar
               </button>
               <button
-                className="px-3 py-1.5 rounded-md bg-[#1B4F72] text-white text-xs"
-                onClick={submitEdit}
+                type="button"
+                className="px-3 py-1.5 rounded-md bg-[#1B4F72] text-white text-xs disabled:opacity-50"
+                disabled={savingEdit}
+                onClick={() => void submitEdit()}
               >
-                Salvar
+                {savingEdit ? "Salvando…" : "Salvar tudo"}
               </button>
             </div>
           </div>

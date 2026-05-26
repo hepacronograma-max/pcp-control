@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   OrderItemWithLine,
   ProductionLine,
 } from "@/lib/types/database";
 import { formatShortDate } from "@/lib/utils/date";
 import { ItemStatusBadge } from "./order-status-badge";
+
+type ItemTextDraft = { product_code: string; description: string };
 
 interface OrderItemsProps {
   items: OrderItemWithLine[];
@@ -42,6 +44,20 @@ export function OrderItems({
   const [pcModalItemId, setPcModalItemId] = useState<string | null>(null);
   const [pcFormNumber, setPcFormNumber] = useState("");
   const [pcFormDate, setPcFormDate] = useState("");
+  const [textDrafts, setTextDrafts] = useState<Record<string, ItemTextDraft>>({});
+
+  useEffect(() => {
+    setTextDrafts((prev) => {
+      const next: Record<string, ItemTextDraft> = { ...prev };
+      for (const item of items) {
+        next[item.id] = {
+          product_code: (item.product_code ?? "").trim(),
+          description: item.description ?? "",
+        };
+      }
+      return next;
+    });
+  }, [items]);
 
   const toggleExpand = (id: string) => {
     setExpandedItems((prev) => {
@@ -75,6 +91,26 @@ export function OrderItems({
     closePcModal();
   }
 
+  function patchDraft(itemId: string, patch: Partial<ItemTextDraft>) {
+    setTextDrafts((prev) => ({
+      ...prev,
+      [itemId]: { ...prev[itemId], ...patch },
+    }));
+  }
+
+  function commitTextDraft(item: OrderItemWithLine) {
+    const draft = textDrafts[item.id];
+    if (!draft) return;
+    const savedCode = (item.product_code ?? "").trim();
+    const savedDesc = item.description ?? "";
+    if (onChangeProductCode && draft.product_code !== savedCode) {
+      void onChangeProductCode(item.id, draft.product_code);
+    }
+    if (onChangeDescription && draft.description !== savedDesc) {
+      void onChangeDescription(item.id, draft.description);
+    }
+  }
+
   const gridCols =
     "grid-cols-[26px_minmax(0,0.55fr)_minmax(0,1.75fr)_40px_minmax(0,0.85fr)_minmax(0,0.7fr)_76px_minmax(0,1.05fr)]";
 
@@ -97,6 +133,10 @@ export function OrderItems({
         const effectivePcp = item.pcp_deadline ?? orderPcpDeadline;
         const hasPc =
           !!(item.pc_number?.trim()) || !!(item.pc_delivery_date?.trim());
+        const draft = textDrafts[item.id] ?? {
+          product_code: (item.product_code ?? "").trim(),
+          description: item.description ?? "",
+        };
         return (
           <div
             key={item.id}
@@ -107,10 +147,13 @@ export function OrderItems({
               {canEditItemDetails && onChangeProductCode ? (
                 <input
                   className="w-full rounded-md border border-slate-300 bg-white px-1 py-0.5 text-[10px] font-mono text-center"
-                  value={(item.product_code ?? "").trim()}
+                  value={draft.product_code}
                   placeholder="Código"
                   maxLength={120}
-                  onBlur={(e) => onChangeProductCode(item.id, e.target.value)}
+                  onChange={(e) =>
+                    patchDraft(item.id, { product_code: e.target.value })
+                  }
+                  onBlur={() => commitTextDraft(item)}
                   title="Código do produto"
                 />
               ) : (
@@ -126,9 +169,12 @@ export function OrderItems({
               {canEditItemDetails && onChangeDescription ? (
                 <input
                   className="w-full rounded-md border border-slate-300 bg-white px-1 py-0.5 text-[10px]"
-                  value={item.description}
+                  value={draft.description}
                   maxLength={500}
-                  onBlur={(e) => onChangeDescription(item.id, e.target.value)}
+                  onChange={(e) =>
+                    patchDraft(item.id, { description: e.target.value })
+                  }
+                  onBlur={() => commitTextDraft(item)}
                   title="Descrição do item"
                 />
               ) : (

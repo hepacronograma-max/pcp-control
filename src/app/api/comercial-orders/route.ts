@@ -3,7 +3,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
-import { hasPermission } from "@/lib/utils/permissions";
 import { toDateOnly } from "@/lib/utils/supabase-data";
 
 function isUuid(s: string): boolean {
@@ -31,7 +30,13 @@ function canRoleEditComercialObservation(role: string | null | undefined): boole
 }
 
 function canRoleEditComercialDelivery(role: string | null | undefined): boolean {
-  return hasPermission(role, "editComercialDeliveryDeadline");
+  const r = String(role ?? "").trim();
+  return (
+    r === "super_admin" ||
+    r === "manager" ||
+    r === "admin" ||
+    r === "comercial"
+  );
 }
 
 function canRolePcpReplyToComercialObservation(
