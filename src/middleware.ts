@@ -4,6 +4,7 @@ import { allowLocalAuth } from "@/lib/allow-local-auth";
 
 export async function middleware(request: NextRequest) {
   if (
+    request.nextUrl.pathname.startsWith("/api/cron/") ||
     request.nextUrl.pathname === "/api/auth/local-login" ||
     request.nextUrl.pathname === "/api/cleanup" ||
     request.nextUrl.pathname === "/api/debug-operator" ||

@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/omie-import-diario",
+      "schedule": "0 10 * * *"
+    }
+  ]
+}
