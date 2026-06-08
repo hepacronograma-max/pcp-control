@@ -9,6 +9,7 @@
     "build:with-backup-import": "next build && node import-backup-to-supabase.js public/backup-inicial.json || true",
     "start": "next start",
     "lint": "tsc --noEmit",
+    "test:omie": "npx tsx --test tests/omie-*.test.ts",
     "import-backup": "node import-backup-to-supabase.js",
     "cleanup": "node scripts/run-cleanup.js",
     "cleanup:dry": "node scripts/run-cleanup.js --dry-run",
@@ -23,6 +24,7 @@
     "inventory:repo": "powershell -ExecutionPolicy Bypass -File scripts/repo-inventory.ps1",
     "fase1:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-fase1-helader.ps1",
     "db:apply-audit": "node scripts/apply-audit-migration.js",
+    "db:apply-omie-item-sync": "node scripts/apply-omie-item-sync-migration.js",
     "github:branch-protection": "node scripts/github-branch-protection.js"
   },
   "keywords": [],

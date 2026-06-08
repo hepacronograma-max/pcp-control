@@ -19,6 +19,8 @@ export interface OmiePedidoCabecalho {
 }
 
 export interface OmiePedidoItemProduto {
+  /** Código de negócio (ex. HF-1579) — preferido para product_code no PCP. */
+  codigo?: string;
   codigo_produto?: string | number;
   descricao?: string;
   quantidade?: number;
@@ -57,19 +59,37 @@ export interface PcpOrderImportDraft {
   deliveryDeadline: string | null;
   status: "imported";
   items: Array<{
+    omieCodigoItem: number | null;
     description: string;
     quantity: number;
     productCode: string | null;
   }>;
 }
 
+/** Relatório da importação / sync incremental (Entrega 1.5). */
 export interface OmieImportReport {
   modo: "shadow" | "active";
+  pedidos_novos: number;
+  pedidos_sincronizados: number;
+  itens_adicionados: number;
+  itens_atualizados: number;
+  itens_removidos: number;
+  itens_marcados_removido_no_omie: number;
+  erros: Array<{ omie_codigo_pedido?: number; message: string }>;
+  /** Pedidos na etapa 20 listados no Omie nesta execução. */
   encontrados: number;
+  skipped: number;
+  skipped_reason?: "locked";
+  shadow_logs?: string[];
+  /** Campos legados (Entrega 1) — derivados para compatibilidade. */
   criados: number;
   shadow_detectados: number;
-  skipped: number;
-  erros: Array<{ omie_codigo_pedido?: number; message: string }>;
-  /** Presente quando lock omie-import já está ativo. */
-  skipped_reason?: "locked";
 }
+
+export type OmieSyncIncrementalCounters = Pick<
+  OmieImportReport,
+  | "itens_adicionados"
+  | "itens_atualizados"
+  | "itens_removidos"
+  | "itens_marcados_removido_no_omie"
+>;
