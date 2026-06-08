@@ -6,6 +6,9 @@
  *   node scripts/omie-backfill-inicial.js --apply  # grava omie_order_links
  *
  * Somente leitura no Omie (ListarPedidos + ConsultarPedido opcional).
+ *
+ * Pedidos marcados sync_status = 'backfill_skipped' são ignorados pela sync incremental
+ * (importarPedidosDaFabricacao) — não reprocessa itens nem cabeçalho desses vínculos.
  */
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });

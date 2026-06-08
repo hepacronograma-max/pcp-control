@@ -92,12 +92,29 @@ export function extractClientNameFromPedido(omie: OmiePedidoCompleto): string {
 }
 
 function extractProductCode(
-  produto: { codigo_produto?: string | number; descricao?: string } | undefined
+  produto:
+    | {
+        codigo?: string;
+        codigo_produto?: string | number;
+        descricao?: string;
+      }
+    | undefined
 ): string | null {
   if (!produto) return null;
-  const code = String(produto.codigo_produto ?? "").trim();
-  if (!code) return null;
-  return truncate(code, PRODUCT_CODE_MAX);
+  const business = String(produto.codigo ?? "").trim();
+  if (business) {
+    return truncate(business, PRODUCT_CODE_MAX) ?? business.slice(0, PRODUCT_CODE_MAX);
+  }
+  const internal = String(produto.codigo_produto ?? "").trim();
+  if (!internal) return null;
+  return truncate(internal, PRODUCT_CODE_MAX) ?? internal.slice(0, PRODUCT_CODE_MAX);
+}
+
+function extractOmieCodigoItem(
+  row: { ide?: { codigo_item?: number } } | undefined
+): number | null {
+  const id = row?.ide?.codigo_item;
+  return typeof id === "number" && Number.isFinite(id) ? id : null;
 }
 
 /**
@@ -126,6 +143,7 @@ export function mapOmiePedidoToPcp(
             truncate(String(p.descricao ?? `Item ${idx + 1}`).trim(), DESCRIPTION_MAX) ??
             `Item ${idx + 1}`;
           return {
+            omieCodigoItem: extractOmieCodigoItem(row),
             description,
             quantity: toQuantity(p.quantidade),
             productCode: extractProductCode(p),
@@ -133,6 +151,7 @@ export function mapOmiePedidoToPcp(
         })
       : [
           {
+            omieCodigoItem: null,
             description: `Item Omie pedido ${orderNumber}`,
             quantity: 1,
             productCode: null,

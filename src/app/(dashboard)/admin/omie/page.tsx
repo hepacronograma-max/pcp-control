@@ -17,6 +17,16 @@ type OmieLink = {
   pcp_order_id: string | null;
 };
 
+type RemovedOmieItem = {
+  id: string;
+  description: string;
+  quantity: number;
+  product_code: string | null;
+  omie_codigo_item: number | null;
+  order_id: string;
+  orders: { order_number: string; client_name: string } | null;
+};
+
 type DashboardData = {
   mode: "shadow" | "active";
   links: OmieLink[];
@@ -24,6 +34,10 @@ type DashboardData = {
     shadow_detected: { today: number; yesterday: number; last7days: number };
     synced: { today: number; yesterday: number; last7days: number };
     backfill_skipped: { today: number; yesterday: number; last7days: number };
+  };
+  removedInOmie?: {
+    items: RemovedOmieItem[];
+    error?: string;
   };
   lastImport: { at: string; report: unknown } | null;
 };
@@ -100,7 +114,7 @@ export default function AdminOmiePage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Integração Omie</h1>
           <p className="text-sm text-slate-600">
-            Entrega 1 — importação etapa Fabricação (20). Somente leitura no Omie.
+            Entrega 1.5 — importação e sync incremental etapa Fabricação (20). Somente leitura no Omie.
           </p>
         </div>
         <Link href="/configuracoes" className="text-sm text-blue-700 hover:underline">
@@ -146,6 +160,58 @@ export default function AdminOmiePage() {
           <MetricCard title="Backfill ignorados" m={data.metrics.backfill_skipped} />
         </div>
       )}
+
+      <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4">
+        <h2 className="font-semibold text-red-900">
+          Itens marcados como removidos no Omie (preservados)
+        </h2>
+        <p className="mt-1 text-sm text-red-800">
+          Estes itens sumiram no Omie mas estão em produção no PCP — revisão manual necessária.
+        </p>
+        {data?.removedInOmie?.error && (
+          <p className="mt-2 text-sm text-red-700">
+            {data.removedInOmie.error.includes("omie_sync_flag")
+              ? "Coluna omie_sync_flag ausente — aplique supabase/migrations/20260608_omie_item_sync.sql"
+              : data.removedInOmie.error}
+          </p>
+        )}
+        <div className="mt-3 overflow-x-auto rounded border border-red-200 bg-white">
+          <table className="min-w-full text-left text-sm">
+            <thead className="border-b bg-red-100/50 text-red-900">
+              <tr>
+                <th className="px-3 py-2">Pedido</th>
+                <th className="px-3 py-2">Cliente</th>
+                <th className="px-3 py-2">Item</th>
+                <th className="px-3 py-2">Código Omie</th>
+                <th className="px-3 py-2">Qtd</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data?.removedInOmie?.items ?? []).length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-4 text-center text-slate-500">
+                    Nenhum item com flag removido_no_omie.
+                  </td>
+                </tr>
+              ) : (
+                data?.removedInOmie?.items.map((row) => (
+                  <tr key={row.id} className="border-b border-slate-100">
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {row.orders?.order_number ?? row.order_id.slice(0, 8)}
+                    </td>
+                    <td className="px-3 py-2">{row.orders?.client_name ?? "—"}</td>
+                    <td className="px-3 py-2">{row.description}</td>
+                    <td className="px-3 py-2 font-mono text-xs">
+                      {row.omie_codigo_item ?? "—"}
+                    </td>
+                    <td className="px-3 py-2">{row.quantity}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       <div className="flex flex-wrap gap-3">
         <button

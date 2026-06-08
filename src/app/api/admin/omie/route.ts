@@ -89,6 +89,15 @@ export async function GET() {
     .limit(1)
     .maybeSingle();
 
+  const { data: removedItems, error: removedErr } = await admin
+    .from("order_items")
+    .select(
+      "id, description, quantity, product_code, omie_codigo_item, omie_sync_flag, order_id, orders(order_number, client_name)"
+    )
+    .eq("omie_sync_flag", "removido_no_omie")
+    .order("id", { ascending: false })
+    .limit(200);
+
   return NextResponse.json({
     mode: getOmieIntegrationMode(),
     links: links ?? [],
@@ -98,6 +107,9 @@ export async function GET() {
       backfill_skipped: countByDay("backfill_skipped"),
       all: countByDay(),
     },
+    removedInOmie: removedErr
+      ? { error: removedErr.message, items: [] }
+      : { items: removedItems ?? [] },
     lastImport: lastAudit
       ? {
           at: lastAudit.created_at,
