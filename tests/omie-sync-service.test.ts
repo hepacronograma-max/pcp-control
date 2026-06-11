@@ -10,6 +10,8 @@ function createMockSupabase(initial: { orderItems: Row[]; orders?: Row }) {
   let orders = initial.orders ?? {
     client_name: "Cliente A",
     delivery_deadline: "2026-06-15",
+    status: "imported",
+    order_number: "260161/1",
   };
 
   const supabase = {
@@ -174,5 +176,122 @@ describe("sincronizarItensDoPedido — active", () => {
 
     assert.equal(counters.itens_removidos, 1);
     assert.equal(getOrderItems().length, 0);
+  });
+
+  it("fallback preenche omie_codigo_item em active sem tocar line_id", async () => {
+    const { supabase, getOrderItems } = createMockSupabase({
+      orderItems: [
+        {
+          id: "pcp-fb",
+          order_id: "order-1",
+          description: "Filtro",
+          quantity: 4,
+          product_code: "HF-24852",
+          omie_codigo_item: null,
+          line_id: "linha-z",
+          production_start: "2026-06-01T08:00:00Z",
+          production_end: null,
+          status: "completed",
+          completed_at: "2026-06-02T10:00:00Z",
+          almox_supplied_at: null,
+          omie_sync_flag: null,
+        },
+      ],
+      orders: {
+        client_name: "Cliente A",
+        delivery_deadline: "2026-06-15",
+        status: "imported",
+        order_number: "260268",
+      },
+    });
+    const draft = draftBase();
+    draft.orderNumber = "260268";
+    draft.items = [
+      {
+        omieCodigoItem: 692001,
+        description: "Filtro",
+        quantity: 4,
+        omieQuantidadeBruta: 4,
+        productCode: "HF-24852",
+      },
+    ];
+
+    const result = await sincronizarItensDoPedido(supabase, {
+      pcpOrderId: "order-1",
+      omieCodigoPedido: 6925370521,
+      draft,
+      modo: "active",
+      shadowLogs: [],
+    });
+
+    assert.equal(result.itens_adicionados, 0);
+    assert.equal(result.itens_atualizados, 1);
+    assert.equal(getOrderItems()[0].omie_codigo_item, 692001);
+    assert.equal(getOrderItems()[0].line_id, "linha-z");
+    assert.ok(result.summary);
+    assert.equal(result.summary!.omie_codigo_item_preenchidos, 1);
+    assert.equal(result.summary!.casados_fallback_identico, 1);
+  });
+
+  it("shadow em pedido finalizado nao insere e reporta alerta", async () => {
+    const { supabase, getOrderItems } = createMockSupabase({
+      orderItems: [
+        {
+          id: "done-1",
+          order_id: "order-1",
+          description: "Item ok",
+          quantity: 1,
+          product_code: "HF-1",
+          omie_codigo_item: 50,
+          line_id: "L1",
+          production_start: null,
+          production_end: null,
+          status: "completed",
+          completed_at: "2026-06-01T00:00:00Z",
+          almox_supplied_at: null,
+          omie_sync_flag: null,
+        },
+      ],
+      orders: {
+        client_name: "Cliente",
+        delivery_deadline: "2026-06-15",
+        status: "imported",
+        order_number: "260268",
+      },
+    });
+    const draft = draftBase();
+    draft.orderNumber = "260268";
+    draft.items = [
+      {
+        omieCodigoItem: 50,
+        description: "Item ok",
+        quantity: 1,
+        omieQuantidadeBruta: 1,
+        productCode: "HF-1",
+      },
+      {
+        omieCodigoItem: 9999,
+        description: "Extra Omie",
+        quantity: 2,
+        omieQuantidadeBruta: 2,
+        productCode: "HF-NEW",
+      },
+    ];
+
+    const logs: string[] = [];
+    const result = await sincronizarItensDoPedido(supabase, {
+      pcpOrderId: "order-1",
+      omieCodigoPedido: 6925370521,
+      draft,
+      modo: "shadow",
+      shadowLogs: logs,
+    });
+
+    assert.equal(getOrderItems().length, 1);
+    assert.equal(result.itens_adicionados, 0);
+    assert.equal(result.summary!.itens_alertados, 1);
+    assert.equal(result.summary!.itens_qty_atualizados, 0);
+    assert.equal(result.summary!.itens_marcados_removido_no_omie, 0);
+    assert.equal(result.summary!.itens_adicionados, 0);
   });
 });
