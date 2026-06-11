@@ -146,6 +146,9 @@ export function mapOmiePedidoToPcp(
             omieCodigoItem: extractOmieCodigoItem(row),
             description,
             quantity: toQuantity(p.quantidade),
+            // Bruto para sync incremental — ver isOmieQuantityReliableForSync (pedido 260268).
+            omieQuantidadeBruta:
+              p.quantidade != null ? Number(p.quantidade) : null,
             productCode: extractProductCode(p),
           };
         })

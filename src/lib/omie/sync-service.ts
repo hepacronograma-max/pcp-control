@@ -5,14 +5,17 @@ import { OmieClient } from "./client";
 import { getOmieIntegrationMode } from "./integration-mode";
 import {
   diffOrderHeader,
+  isOrderClosedForOmieAdds,
   planItemSync,
   type PcpItemRow,
+  type PerOrderMatchStats,
 } from "./incremental-sync";
 import { mapOmiePedidoToPcp } from "./mapper";
 import type {
   OmieImportReport,
   OmiePedidoCompleto,
   OmieSyncIncrementalCounters,
+  PerOrderSyncSummary,
   PcpOrderImportDraft,
 } from "./types";
 
@@ -54,6 +57,7 @@ export function createEmptyOmieReport(modo: "shadow" | "active"): OmieImportRepo
     criados: 0,
     shadow_detectados: 0,
     shadow_logs: [],
+    pedido_sync_resumos: [],
   };
 }
 
@@ -173,6 +177,44 @@ async function fetchPcpItems(
  * Sincroniza itens Omie ↔ PCP para pedido já vinculado.
  * Preserva line_id, produção, almox e demais campos operacionais.
  */
+function statsToSummary(
+  stats: PerOrderMatchStats,
+  meta: {
+    omieCodigoPedido: number;
+    orderNumber?: string;
+    pcpOrderId: string | null;
+  }
+): PerOrderSyncSummary {
+  return {
+    omie_codigo_pedido: meta.omieCodigoPedido,
+    order_number: meta.orderNumber,
+    pcp_order_id: meta.pcpOrderId,
+    ...stats,
+  };
+}
+
+function logPerOrderSummary(
+  summary: PerOrderSyncSummary,
+  modo: "shadow" | "active"
+) {
+  console.info(`[omie ${modo}] resumo casamento pedido ${summary.order_number ?? summary.omie_codigo_pedido}:`, {
+    total_itens_omie: summary.total_itens_omie,
+    total_itens_pcp: summary.total_itens_pcp,
+    casados_chave_forte: summary.casados_chave_forte,
+    casados_fallback_identico: summary.casados_fallback_identico,
+    casados_fallback_ordem: summary.casados_fallback_ordem,
+    omie_codigo_item_preenchidos: summary.omie_codigo_item_preenchidos,
+    itens_adicionados: summary.itens_adicionados,
+    itens_atualizados: summary.itens_atualizados,
+    itens_alertados: summary.itens_alertados,
+    itens_marcados_removido_no_omie: summary.itens_marcados_removido_no_omie,
+    itens_qty_atualizados: summary.itens_qty_atualizados,
+    itens_qty_divergentes_alertados: summary.itens_qty_divergentes_alertados,
+    itens_qty_ignorados_nao_confiavel: summary.itens_qty_ignorados_nao_confiavel,
+    alertas: summary.alertas,
+  });
+}
+
 export async function sincronizarItensDoPedido(
   supabase: SupabaseClient,
   opts: {
@@ -182,26 +224,23 @@ export async function sincronizarItensDoPedido(
     modo: "shadow" | "active";
     shadowLogs: string[];
   }
-): Promise<OmieSyncIncrementalCounters> {
+): Promise<OmieSyncIncrementalCounters & { summary?: PerOrderSyncSummary }> {
   const counters = emptyCounters();
-  const { pcpOrderId, draft, modo, shadowLogs } = opts;
+  const { pcpOrderId, omieCodigoPedido, draft, modo, shadowLogs } = opts;
 
   const existingItems = pcpOrderId ? await fetchPcpItems(supabase, pcpOrderId) : [];
-  const plan = planItemSync(existingItems, draft.items, modo);
 
-  for (const log of plan.shadowLogs) {
-    shadowLogs.push(log);
-    console.info(log);
-  }
-
+  let orderNumber = draft.orderNumber;
+  let orderStatus: string | null = null;
   if (pcpOrderId) {
     const { data: orderRow } = await supabase
       .from("orders")
-      .select("client_name, delivery_deadline")
+      .select("client_name, delivery_deadline, status, order_number")
       .eq("id", pcpOrderId)
       .maybeSingle();
-
     if (orderRow) {
+      orderNumber = String(orderRow.order_number ?? orderNumber);
+      orderStatus = orderRow.status as string | null;
       const headerPatch = diffOrderHeader(
         {
           client_name: String(orderRow.client_name ?? ""),
@@ -221,7 +260,28 @@ export async function sincronizarItensDoPedido(
     }
   }
 
+  const orderClosed = isOrderClosedForOmieAdds(orderStatus, existingItems);
+  const plan = planItemSync(existingItems, draft.items, modo, {
+    orderClosed,
+    orderNumber,
+  });
+
+  for (const log of plan.shadowLogs) {
+    shadowLogs.push(log);
+    console.info(log);
+  }
+
+  const summary = statsToSummary(plan.stats, {
+    omieCodigoPedido,
+    orderNumber,
+    pcpOrderId,
+  });
+  logPerOrderSummary(summary, modo);
+
   for (const action of plan.actions) {
+    if (action.type === "alert") {
+      continue;
+    }
     if (action.type === "add") {
       counters.itens_adicionados += 1;
       if (modo === "active" && pcpOrderId) {
@@ -242,6 +302,9 @@ export async function sincronizarItensDoPedido(
       counters.itens_atualizados += 1;
       if (modo === "active" && pcpOrderId) {
         const patch: Record<string, unknown> = {};
+        if (action.setOmieCodigoItem) {
+          patch.omie_codigo_item = action.omieCodigoItem;
+        }
         for (const ch of action.changes) {
           if (ch.field === "description") patch.description = ch.to;
           if (ch.field === "quantity") patch.quantity = toQuantity(ch.to as number);
@@ -282,7 +345,7 @@ export async function sincronizarItensDoPedido(
     }
   }
 
-  return counters;
+  return { ...counters, summary };
 }
 
 function mergeCounters(
@@ -355,14 +418,18 @@ async function processOnePedido(
 
   if (existingLink) {
     try {
-      const counters = await sincronizarItensDoPedido(supabase, {
+      const result = await sincronizarItensDoPedido(supabase, {
         pcpOrderId: existingLink.pcp_order_id as string | null,
         omieCodigoPedido: codigo,
         draft,
         modo,
         shadowLogs,
       });
-      mergeCounters(report, counters);
+      mergeCounters(report, result);
+      if (result.summary) {
+        report.pedido_sync_resumos = report.pedido_sync_resumos ?? [];
+        report.pedido_sync_resumos.push(result.summary);
+      }
 
       await supabase
         .from("omie_order_links")
@@ -397,7 +464,10 @@ async function processOnePedido(
       return { outcome: "error", message: linkErr.message };
     }
 
-    const plan = planItemSync([], draft.items, "shadow");
+    const plan = planItemSync([], draft.items, "shadow", {
+      orderClosed: false,
+      orderNumber: numero,
+    });
     for (const log of plan.shadowLogs) {
       shadowLogs.push(log);
       console.info(log);
