@@ -110,6 +110,12 @@ export interface OrderItem {
   pc_number: string | null;
   /** Data prevista de entrega do PC (matéria-prima) — início/fim de produção não podem ser antes */
   pc_delivery_date: string | null;
+  /** Alerta de sync Omie: null | removido_no_omie | divergente_no_omie */
+  omie_sync_flag?: string | null;
+  /** Texto do alerta Omie para o operador (tela /pedidos) */
+  omie_sync_detail?: string | null;
+  /** Chave Omie do item (sync incremental) */
+  omie_codigo_item?: number | null;
   created_at: string;
   updated_at: string;
 }

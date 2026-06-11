@@ -143,6 +143,51 @@ describe("sincronizarItensDoPedido — active", () => {
     assert.equal(getOrderItems()[0].omie_sync_flag, "removido_no_omie");
   });
 
+  it("marca divergente_no_omie quando qty Omie muda em item scheduled", async () => {
+    const { supabase, getOrderItems } = createMockSupabase({
+      orderItems: [
+        {
+          id: "pcp-sched",
+          order_id: "order-1",
+          description: "Programado",
+          quantity: 2,
+          product_code: "HF-9",
+          omie_codigo_item: 201,
+          line_id: "linha-x",
+          production_start: null,
+          production_end: null,
+          status: "scheduled",
+          completed_at: null,
+          almox_supplied_at: null,
+          omie_sync_flag: null,
+        },
+      ],
+    });
+    const draft = draftBase();
+    draft.items = [
+      {
+        omieCodigoItem: 201,
+        description: "Programado",
+        quantity: 5,
+        omieQuantidadeBruta: 5,
+        productCode: "HF-9",
+      },
+    ];
+
+    const counters = await sincronizarItensDoPedido(supabase, {
+      pcpOrderId: "order-1",
+      omieCodigoPedido: 123,
+      draft,
+      modo: "active",
+      shadowLogs: [],
+    });
+
+    assert.equal(counters.itens_marcados_divergente_no_omie, 1);
+    assert.equal(getOrderItems()[0].quantity, 2);
+    assert.equal(getOrderItems()[0].omie_sync_flag, "divergente_no_omie");
+    assert.ok(String(getOrderItems()[0].omie_sync_detail ?? "").includes("mediar"));
+  });
+
   it("remove item nao tocado ausente no Omie", async () => {
     const { supabase, getOrderItems } = createMockSupabase({
       orderItems: [

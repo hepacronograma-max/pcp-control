@@ -49,11 +49,12 @@ describe("planItemSync — item novo", () => {
 });
 
 describe("planItemSync — quantidade alterada", () => {
-  it("atualiza qty e preserva line_id/producao (nao inclui no patch)", () => {
+  it("atualiza qty quando item waiting (Omie fonte da verdade)", () => {
     const existing = basePcpItem({
       line_id: "line-a",
       production_start: "2026-06-01T10:00:00Z",
       quantity: 2,
+      status: "waiting",
     });
     const plan = planItemSync(
       [existing],
@@ -76,7 +77,66 @@ describe("planItemSync — quantidade alterada", () => {
     assert.equal(qtyCh!.from, 2);
     assert.equal(qtyCh!.to, 5);
     assert.equal(plan.stats.itens_qty_atualizados, 1);
-    assert.match(plan.shadowLogs.join("\n"), /preserva line_id/);
+    assert.equal(plan.stats.itens_marcados_divergente_no_omie, 0);
+  });
+
+  it("NAO atualiza qty em item scheduled — alerta e mark_divergent", () => {
+    const existing = basePcpItem({
+      line_id: "line-a",
+      quantity: 2,
+      status: "scheduled",
+    });
+    const plan = planItemSync(
+      [existing],
+      [
+        {
+          omieCodigoItem: 6935884757,
+          description: "Filtro HEPA",
+          quantity: 5,
+          omieQuantidadeBruta: 5,
+          productCode: "HF-1579",
+        },
+      ],
+      "active",
+      { orderClosed: false, orderNumber: "260001" }
+    );
+    assert.equal(plan.actions.some((a) => a.type === "update"), false);
+    assert.equal(plan.stats.itens_qty_atualizados, 0);
+    assert.equal(plan.stats.itens_marcados_divergente_no_omie, 1);
+    assert.ok(plan.actions.some((a) => a.type === "mark_divergent"));
+    assert.ok(
+      plan.stats.alertas.some((a) => a.motivo.includes("mediar com vendas/produção"))
+    );
+  });
+
+  it("NAO atualiza codigo/descricao em item completed — alerta", () => {
+    const existing = basePcpItem({
+      status: "completed",
+      completed_at: "2026-05-01T12:00:00Z",
+      product_code: "HF-OLD",
+      description: "Desc antiga",
+    });
+    const plan = planItemSync(
+      [existing],
+      [
+        {
+          omieCodigoItem: 6935884757,
+          description: "Desc nova Omie",
+          quantity: 2,
+          omieQuantidadeBruta: 2,
+          productCode: "HF-NEW",
+        },
+      ],
+      "shadow"
+    );
+    const upd = plan.actions.find((a) => a.type === "update");
+    assert.equal(upd, undefined);
+    assert.equal(plan.stats.itens_marcados_divergente_no_omie, 1);
+    assert.ok(
+      plan.stats.alertas.some((a) =>
+        a.motivo.includes("product_code") || a.motivo.includes("description")
+      )
+    );
   });
 });
 
@@ -99,9 +159,10 @@ describe("planItemSync — item removido em producao", () => {
     });
     assert.ok(isItemTouchedByOperator(existing));
     const plan = planItemSync([existing], [], "shadow");
-    assert.equal(plan.actions.length, 1);
-    assert.equal(plan.actions[0].type, "mark_removed");
-    assert.match(plan.shadowLogs[0], /NAO deleta/);
+    assert.equal(plan.actions.length, 2);
+    assert.ok(plan.actions.some((a) => a.type === "mark_removed"));
+    assert.ok(plan.actions.some((a) => a.type === "alert"));
+    assert.match(plan.shadowLogs.join("\n"), /NAO deleta/);
   });
 
   it("considera tocado com production_start mesmo sem line_id", () => {
@@ -335,9 +396,9 @@ describe("política de quantidade no sync", () => {
         {
           omieCodigoItem: 200,
           description: "Filtro HEPA",
-          quantity: 1,
-          omieQuantidadeBruta: 0,
-          productCode: "HF-1579",
+          quantity: 9,
+          omieQuantidadeBruta: 9,
+          productCode: "HF-30537",
         },
       ],
       "shadow",
@@ -354,7 +415,12 @@ describe("política de quantidade no sync", () => {
     assert.equal(plan.stats.itens_qty_divergentes_alertados, 1);
     assert.ok(
       plan.stats.alertas.some((a) =>
-        a.motivo.includes("diverge do PCP (12)")
+        a.motivo.includes("quantity") || a.motivo.includes("qty Omie")
+      )
+    );
+    assert.ok(
+      plan.stats.alertas.some((a) =>
+        a.motivo.includes("mediar com vendas/produção")
       )
     );
   });

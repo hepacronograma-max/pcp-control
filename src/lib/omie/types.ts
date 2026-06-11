@@ -87,6 +87,7 @@ export interface PerOrderSyncSummary {
   itens_atualizados: number;
   itens_removidos: number;
   itens_marcados_removido_no_omie: number;
+  itens_marcados_divergente_no_omie: number;
   itens_alertados: number;
   itens_qty_atualizados: number;
   itens_qty_divergentes_alertados: number;
@@ -107,6 +108,7 @@ export interface OmieImportReport {
   itens_atualizados: number;
   itens_removidos: number;
   itens_marcados_removido_no_omie: number;
+  itens_marcados_divergente_no_omie: number;
   erros: Array<{ omie_codigo_pedido?: number; message: string }>;
   /** Pedidos na etapa 20 listados no Omie nesta execução. */
   encontrados: number;
@@ -126,4 +128,5 @@ export type OmieSyncIncrementalCounters = Pick<
   | "itens_atualizados"
   | "itens_removidos"
   | "itens_marcados_removido_no_omie"
+  | "itens_marcados_divergente_no_omie"
 >;

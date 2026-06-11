@@ -6,4 +6,4 @@ CREATE INDEX IF NOT EXISTS idx_order_items_omie_codigo_item ON order_items(omie_
 
 -- Item sumiu no Omie mas permanece no PCP (regra de segurança em produção)
 ALTER TABLE order_items ADD COLUMN IF NOT EXISTS omie_sync_flag TEXT;
--- NULL = normal | 'removido_no_omie' = ausente no Omie, preservado no PCP
+-- NULL = normal | 'removido_no_omie' = ausente no Omie | 'divergente_no_omie' = Omie mudou, PCP preservado

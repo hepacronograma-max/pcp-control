@@ -5,6 +5,7 @@ import type {
 } from "@/lib/types/database";
 import { formatShortDate } from "@/lib/utils/date";
 import { ItemStatusBadge } from "./order-status-badge";
+import { OmieSyncItemAlert } from "./omie-sync-alert";
 
 type ItemTextDraft = { product_code: string; description: string };
 
@@ -272,6 +273,7 @@ export function OrderItems({
                     Reabrir item
                   </button>
                 )}
+              <OmieSyncItemAlert item={item} />
             </div>
             </div>
           </div>
