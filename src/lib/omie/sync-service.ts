@@ -42,6 +42,7 @@ function emptyCounters(): OmieSyncIncrementalCounters {
     itens_atualizados: 0,
     itens_removidos: 0,
     itens_marcados_removido_no_omie: 0,
+    itens_marcados_divergente_no_omie: 0,
   };
 }
 
@@ -163,7 +164,7 @@ async function fetchPcpItems(
   const { data, error } = await supabase
     .from("order_items")
     .select(
-      "id, order_id, description, quantity, product_code, omie_codigo_item, omie_sync_flag, line_id, production_start, production_end, status, completed_at, almox_supplied_at"
+      "id, order_id, description, quantity, product_code, omie_codigo_item, omie_sync_flag, omie_sync_detail, line_id, production_start, production_end, status, completed_at, almox_supplied_at"
     )
     .eq("order_id", orderId);
 
@@ -208,6 +209,7 @@ function logPerOrderSummary(
     itens_atualizados: summary.itens_atualizados,
     itens_alertados: summary.itens_alertados,
     itens_marcados_removido_no_omie: summary.itens_marcados_removido_no_omie,
+    itens_marcados_divergente_no_omie: summary.itens_marcados_divergente_no_omie,
     itens_qty_atualizados: summary.itens_qty_atualizados,
     itens_qty_divergentes_alertados: summary.itens_qty_divergentes_alertados,
     itens_qty_ignorados_nao_confiavel: summary.itens_qty_ignorados_nao_confiavel,
@@ -332,13 +334,52 @@ export async function sincronizarItensDoPedido(
     } else if (action.type === "mark_removed") {
       counters.itens_marcados_removido_no_omie += 1;
       if (modo === "active" && pcpOrderId) {
-        const { error } = await supabase
+        const detail =
+          "Item sumiu no Omie mas permanece no PCP (em produção) — mediar com vendas/produção";
+        let { error } = await supabase
           .from("order_items")
-          .update({ omie_sync_flag: "removido_no_omie" })
+          .update({
+            omie_sync_flag: "removido_no_omie",
+            omie_sync_detail: detail,
+          })
           .eq("id", action.pcpItemId);
+        if (
+          error &&
+          /omie_sync_detail|schema cache|column|does not exist/i.test(error.message)
+        ) {
+          ({ error } = await supabase
+            .from("order_items")
+            .update({ omie_sync_flag: "removido_no_omie" })
+            .eq("id", action.pcpItemId));
+        }
         if (error) {
           throw new Error(
             `mark removido_no_omie ${action.omieCodigoItem}: ${error.message}`
+          );
+        }
+      }
+    } else if (action.type === "mark_divergent") {
+      counters.itens_marcados_divergente_no_omie += 1;
+      if (modo === "active" && pcpOrderId) {
+        let { error } = await supabase
+          .from("order_items")
+          .update({
+            omie_sync_flag: "divergente_no_omie",
+            omie_sync_detail: action.motivo,
+          })
+          .eq("id", action.pcpItemId);
+        if (
+          error &&
+          /omie_sync_detail|schema cache|column|does not exist/i.test(error.message)
+        ) {
+          ({ error } = await supabase
+            .from("order_items")
+            .update({ omie_sync_flag: "divergente_no_omie" })
+            .eq("id", action.pcpItemId));
+        }
+        if (error) {
+          throw new Error(
+            `mark divergente_no_omie ${action.omieCodigoItem}: ${error.message}`
           );
         }
       }
@@ -356,6 +397,8 @@ function mergeCounters(
   report.itens_atualizados += c.itens_atualizados;
   report.itens_removidos += c.itens_removidos;
   report.itens_marcados_removido_no_omie += c.itens_marcados_removido_no_omie;
+  report.itens_marcados_divergente_no_omie =
+    (report.itens_marcados_divergente_no_omie ?? 0) + c.itens_marcados_divergente_no_omie;
 }
 
 async function resolveFullPedido(

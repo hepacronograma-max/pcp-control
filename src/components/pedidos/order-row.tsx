@@ -25,6 +25,7 @@ import {
 } from "@/lib/utils/order-aggregates";
 import { CQField } from "@/components/cq/CQField";
 import { CQList } from "@/components/cq/CQList";
+import { orderOmieSyncAlertCount } from "@/lib/utils/omie-sync-alerts";
 
 export interface OrderRowProps {
   order: OrderWithItems;
@@ -128,6 +129,7 @@ export function OrderRow({
     hasPermission(userRole, "finishOrders") && !!onReopenCompletedItem;
   const canEdit = hasPermission(userRole, "viewOrders");
   const canEditItemDetails = hasPermission(userRole, "editOrders");
+  const omieAlertCount = orderOmieSyncAlertCount(order);
   const canReplyAsPcp =
     canPatchPcpReplyRole(userRole) && hasPermission(userRole, "viewOrders");
   const obsText = (order.comercial_pcp_observation ?? "").trim();
@@ -386,6 +388,14 @@ export function OrderRow({
               }
             >
               Obs. Comercial
+            </span>
+          )}
+          {omieAlertCount > 0 && (
+            <span
+              className="inline-flex shrink-0 max-w-[12rem] truncate rounded-full bg-red-100 text-red-900 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap border border-red-300"
+              title={`${omieAlertCount} item(ns) com alerta Omie — expanda o pedido para ver detalhes`}
+            >
+              Alerta Omie ({omieAlertCount})
             </span>
           )}
           {pcpReplyText.length > 0 && !comercialObsPendingForPcp && (

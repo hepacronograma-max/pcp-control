@@ -9,6 +9,7 @@ export type PcpItemRow = {
   product_code: string | null;
   omie_codigo_item: number | null;
   omie_sync_flag: string | null;
+  omie_sync_detail?: string | null;
   line_id: string | null;
   production_start: string | null;
   production_end: string | null;
@@ -46,6 +47,12 @@ export type PlannedItemAction =
       reason: "em_producao";
     }
   | {
+      type: "mark_divergent";
+      omieCodigoItem: number | null;
+      pcpItemId: string;
+      motivo: string;
+    }
+  | {
       type: "alert";
       motivo: string;
       omieCodigoItem?: number;
@@ -69,6 +76,7 @@ export type PerOrderMatchStats = {
   itens_atualizados: number;
   itens_removidos: number;
   itens_marcados_removido_no_omie: number;
+  itens_marcados_divergente_no_omie: number;
   itens_alertados: number;
   itens_qty_atualizados: number;
   itens_qty_divergentes_alertados: number;
@@ -98,6 +106,11 @@ export function isItemTouchedByOperator(row: PcpItemRow): boolean {
   const st = String(row.status ?? "waiting");
   if (st !== "waiting") return true;
   return false;
+}
+
+/** Item já saiu de waiting — sync Omie não sobrescreve campos operacionais. */
+export function isItemStartedInPcp(row: PcpItemRow): boolean {
+  return String(row.status ?? "waiting") !== "waiting";
 }
 
 /** Pedido fechado para inclusão de itens novos do Omie. */
@@ -139,6 +152,7 @@ function emptyStats(
     itens_atualizados: 0,
     itens_removidos: 0,
     itens_marcados_removido_no_omie: 0,
+    itens_marcados_divergente_no_omie: 0,
     itens_alertados: 0,
     itens_qty_atualizados: 0,
     itens_qty_divergentes_alertados: 0,
@@ -220,6 +234,7 @@ export function diffOmieItemFields(
 function resolveQuantitySyncForPair(
   pair: { omie: OmieMappedItem; pcp: PcpItemRow },
   orderClosed: boolean,
+  itemStarted: boolean,
   orderLabel: string
 ): {
   qtyChange: ItemFieldChange | null;
@@ -234,14 +249,22 @@ function resolveQuantitySyncForPair(
   const omieQty = reliable ? normQty(Number(raw)) : null;
   const code = pair.omie.productCode ?? pair.pcp.product_code ?? "?";
   const key = pair.omie.omieCodigoItem;
+  const blockQtyWrite = orderClosed || itemStarted;
+  const statusLabel = String(pair.pcp.status ?? "waiting");
 
-  if (orderClosed) {
+  if (blockQtyWrite) {
     const omieDisplay = formatOmieQtyForAlert(raw);
+    const context =
+      orderClosed && itemStarted
+        ? `pedido finalizado ${orderLabel}, item ${code} (${statusLabel})`
+        : orderClosed
+          ? `pedido finalizado ${orderLabel}, item ${code}`
+          : `item ${code} (${statusLabel}) em produção/concluído no pedido ${orderLabel}`;
     if (reliable && omieQty !== pcpQty) {
       return {
         qtyChange: null,
         qtyAlert: {
-          motivo: `qty Omie (${omieDisplay}) diverge do PCP (${pcpQty}) no pedido finalizado ${orderLabel}, item ${code} — revisar manualmente`,
+          motivo: `qty Omie (${omieDisplay}) diverge do PCP (${pcpQty}) no ${context} — mediar com vendas/produção`,
           omie_codigo_item: key ?? undefined,
           product_code: code,
         },
@@ -250,15 +273,15 @@ function resolveQuantitySyncForPair(
         qtyWouldUpdate: false,
       };
     }
-    if (!reliable && pcpQty !== omieQty) {
+    if (!reliable && pcpQty > 0) {
       return {
         qtyChange: null,
         qtyAlert: {
-          motivo: `qty Omie (${omieDisplay}) diverge do PCP (${pcpQty}) no pedido finalizado ${orderLabel}, item ${code} — revisar manualmente`,
+          motivo: `qty Omie não confiável (${omieDisplay}; saldo pendente) vs PCP (${pcpQty}) no ${context} — mediar com vendas/produção`,
           omie_codigo_item: key ?? undefined,
           product_code: code,
         },
-        qtyIgnoredUnreliable: false,
+        qtyIgnoredUnreliable: !orderClosed,
         qtyDivergentAlert: true,
         qtyWouldUpdate: false,
       };
@@ -479,6 +502,23 @@ export function matchOmieToPcpItems(
   return { pairs, unmatchedOmie, unmatchedPcp, alerts };
 }
 
+function formatFieldChangeSummary(changes: ItemFieldChange[]): string {
+  return changes
+    .map((c) => `${c.field}: PCP ${String(c.from)} ≠ Omie ${String(c.to)}`)
+    .join("; ");
+}
+
+function buildDivergenceMotivo(
+  pair: ItemPair,
+  changes: ItemFieldChange[],
+  orderLabel: string
+): string {
+  const code = pair.omie.productCode ?? pair.pcp.product_code ?? "?";
+  const statusLabel = String(pair.pcp.status ?? "waiting");
+  const detail = formatFieldChangeSummary(changes);
+  return `Omie diverge no pedido ${orderLabel}, item ${code} (${statusLabel}): ${detail} — mediar com vendas/produção`;
+}
+
 export function planItemSync(
   existingPcpItems: PcpItemRow[],
   omieItems: OmieMappedItem[],
@@ -510,28 +550,91 @@ export function planItemSync(
     const key = pair.omie.omieCodigoItem!;
     const setOmieCodigoItem =
       pair.matchKind !== "strong_key" && pair.pcp.omie_codigo_item == null;
+    const itemStarted = isItemStartedInPcp(pair.pcp);
 
     if (pair.matchKind === "strong_key") stats.casados_chave_forte += 1;
     if (pair.matchKind === "fallback_identical") stats.casados_fallback_identico += 1;
     if (pair.matchKind === "fallback_order") stats.casados_fallback_ordem += 1;
     if (setOmieCodigoItem) stats.omie_codigo_item_preenchidos += 1;
 
-    const qtySync = resolveQuantitySyncForPair(pair, orderClosed, orderLabel);
+    const qtySync = resolveQuantitySyncForPair(
+      pair,
+      orderClosed,
+      itemStarted,
+      orderLabel
+    );
     if (qtySync.qtyIgnoredUnreliable) {
       stats.itens_qty_ignorados_nao_confiavel += 1;
     }
     if (qtySync.qtyDivergentAlert) {
       stats.itens_qty_divergentes_alertados += 1;
     }
-    if (qtySync.qtyAlert) {
+    if (qtySync.qtyAlert && !itemStarted) {
       pushAlert(actions, stats, shadowLogs, modo, qtySync.qtyAlert);
     }
 
-    const changes = diffOmieItemFieldsExcludingQty(pair.pcp, pair.omie);
+    const textChanges = diffOmieItemFieldsExcludingQty(pair.pcp, pair.omie);
+
+    if (itemStarted) {
+      const divergentChanges: ItemFieldChange[] = [...textChanges];
+      const rawQty = pair.omie.omieQuantidadeBruta;
+      if (
+        isOmieQuantityReliableForSync(rawQty) &&
+        normQty(pair.pcp.quantity) !== normQty(Number(rawQty))
+      ) {
+        divergentChanges.push({
+          field: "quantity",
+          from: pair.pcp.quantity,
+          to: Number(rawQty),
+        });
+      }
+
+      if (divergentChanges.length > 0 || qtySync.qtyAlert) {
+        const motivo =
+          divergentChanges.length > 0
+            ? buildDivergenceMotivo(pair, divergentChanges, orderLabel)
+            : qtySync.qtyAlert!.motivo;
+        pushAlert(actions, stats, shadowLogs, modo, {
+          motivo,
+          omie_codigo_item: key,
+          product_code: pair.omie.productCode ?? pair.pcp.product_code ?? undefined,
+        });
+        actions.push({
+          type: "mark_divergent",
+          omieCodigoItem: key,
+          pcpItemId: pair.pcp.id,
+          motivo,
+        });
+        stats.itens_marcados_divergente_no_omie += 1;
+        shadowLogs.push(
+          `[omie ${modo}] item ${key} em producao/concluido — divergencia Omie (NAO sobrescreve): ${motivo}`
+        );
+      }
+
+      if (setOmieCodigoItem) {
+        actions.push({
+          type: "update",
+          omieCodigoItem: key,
+          pcpItemId: pair.pcp.id,
+          matchKind: pair.matchKind,
+          changes: [],
+          setOmieCodigoItem: true,
+        });
+        stats.itens_atualizados += 1;
+        shadowLogs.push(
+          `[omie ${modo}] reconciliaria omie_codigo_item ${key} na linha ${pair.pcp.id} (sem alterar dados operacionais)`
+        );
+      }
+      continue;
+    }
+
+    const operationalChanges: ItemFieldChange[] = [...textChanges];
     if (qtySync.qtyChange) {
-      changes.push(qtySync.qtyChange);
+      operationalChanges.push(qtySync.qtyChange);
       stats.itens_qty_atualizados += 1;
     }
+
+    const changes = operationalChanges;
 
     if (changes.length > 0 || setOmieCodigoItem) {
       actions.push({
@@ -554,7 +657,7 @@ export function planItemSync(
         .join("; ");
 
       shadowLogs.push(
-        `[omie ${modo}] atualizaria item ${key} (${pair.matchKind}): ${detail} (preserva line_id/producao; qty conforme política sync)`
+        `[omie ${modo}] atualizaria item ${key} (${pair.matchKind}): ${detail} (Omie fonte da verdade — item waiting)`
       );
     }
   }
@@ -589,6 +692,7 @@ export function planItemSync(
     const omieKey = pcpRow.omie_codigo_item;
 
     if (isItemTouchedByOperator(pcpRow)) {
+      const motivo = `Item sumiu no Omie mas permanece no PCP (em produção) — mediar com vendas/produção`;
       actions.push({
         type: "mark_removed",
         omieCodigoItem: omieKey,
@@ -596,6 +700,11 @@ export function planItemSync(
         reason: "em_producao",
       });
       stats.itens_marcados_removido_no_omie += 1;
+      pushAlert(actions, stats, shadowLogs, modo, {
+        motivo,
+        omie_codigo_item: omieKey ?? undefined,
+        product_code: pcpRow.product_code ?? undefined,
+      });
       shadowLogs.push(
         `[omie ${modo}] item ${omieKey ?? pcpRow.id} sumiu do Omie mas esta em producao — marcaria removido_no_omie (NAO deleta)`
       );

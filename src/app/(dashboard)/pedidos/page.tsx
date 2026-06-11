@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import { totalOmieSyncAlertCount } from "@/lib/utils/omie-sync-alerts";
 
 type TabKey = "open" | "finished";
 
@@ -157,6 +158,10 @@ export default function PedidosPage() {
   );
   const finishedCount = useMemo(
     () => orders.filter((o) => o.status === "finished").length,
+    [orders]
+  );
+  const omieSyncAlertTotal = useMemo(
+    () => totalOmieSyncAlertCount(orders),
     [orders]
   );
 
@@ -812,6 +817,20 @@ export default function PedidosPage() {
 
   return (
     <div className="space-y-4 w-full max-w-[100vw] min-w-0">
+      {omieSyncAlertTotal > 0 && (
+        <div className="rounded-lg border-2 border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <p className="font-semibold">
+            {omieSyncAlertTotal === 1
+              ? "1 item com alerta Omie"
+              : `${omieSyncAlertTotal} itens com alerta Omie`}
+          </p>
+          <p className="mt-1 text-xs text-red-800">
+            O Omie divergiu de itens em produção ou concluídos (ou sumiu no Omie).
+            O PCP não foi alterado automaticamente — medie com vendas/produção e
+            corrija no Omie quando aplicável.
+          </p>
+        </div>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2 flex-wrap">
           <button
