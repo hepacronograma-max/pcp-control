@@ -25,6 +25,7 @@ import {
 import {
   type LineItemWithOrder,
 } from "@/components/linha/gantt-calendar";
+import { GerarEtiquetaModal } from "@/components/linha/gerar-etiqueta-modal";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { fetchLineDataRequest } from "@/lib/api/fetch-line-data";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
@@ -118,6 +119,9 @@ export default function LinePage() {
   }, [allLines]);
 
   const [refreshKey, setRefreshKey] = useState(0);
+  const [etiquetaItem, setEtiquetaItem] = useState<LineItemWithOrder | null>(
+    null
+  );
 
   useEffect(() => {
     function onFocus() {
@@ -1141,6 +1145,11 @@ export default function LinePage() {
                     almoxGroupByDay={almoxGroupByDay}
                     almoxTab={tab}
                     onAlmoxSupply={isAlmoxarifado ? handleAlmoxSupply : undefined}
+                    onGerarEtiqueta={
+                      isAlmoxarifado
+                        ? undefined
+                        : (item) => setEtiquetaItem(item)
+                    }
                     allLines={allLines}
                     columnWidths={
                       linePrefs.columnWidths.length > 0
@@ -1199,6 +1208,12 @@ export default function LinePage() {
           </div>
         </div>
       )}
+
+      <GerarEtiquetaModal
+        item={etiquetaItem}
+        open={etiquetaItem != null}
+        onClose={() => setEtiquetaItem(null)}
+      />
     </div>
   );
 }

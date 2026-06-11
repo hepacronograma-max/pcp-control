@@ -200,6 +200,8 @@ interface LineTableProps {
   almoxTab?: "all" | "in_progress" | "finished";
   /** Marcar como abastecido (só na aba em aberto). */
   onAlmoxSupply?: (itemId: string) => void;
+  /** Abrir modal de etiqueta de filtro (linha de produção). */
+  onGerarEtiqueta?: (item: LineItemWithOrder) => void;
 }
 
 export function LineTable({
@@ -222,20 +224,26 @@ export function LineTable({
   almoxGroupByDay = false,
   almoxTab = "in_progress",
   onAlmoxSupply,
+  onGerarEtiqueta,
 }: LineTableProps) {
   /**
    * Início/Fim precisam de ~104–116px: o seletor de data usa área mínima ~96px;
    * valores menores encavalam colunas e o clique só pega no canto.
    */
   const selectCol = Boolean(onToggleItemSelected);
+  const showEtq = Boolean(onGerarEtiqueta);
   const defaultWidths = useMemo(
     () =>
       isAlmoxarifado
         ? [100, 88, 72, 200, 44, 88, 88, 88, 56]
         : selectCol
-          ? [32, 54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 40]
-          : [54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 40],
-    [isAlmoxarifado, selectCol]
+          ? showEtq
+            ? [32, 54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 44, 40]
+            : [32, 54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 40]
+          : showEtq
+            ? [54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 44, 40]
+            : [54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 40],
+    [isAlmoxarifado, selectCol, showEtq]
   );
 
   /** Migra prefs antigas (sem Cód., sem “Ocorrências”, etc.). */
@@ -632,9 +640,19 @@ export function LineTable({
           >
             Ocorrências
           </HeaderCell>
+          {onGerarEtiqueta ? (
+            <HeaderCell
+              className="text-center px-0.5"
+              onResizeStart={(e) => handleResizeStart(12 + colOff, e)}
+            >
+              Etq.
+            </HeaderCell>
+          ) : null}
           <HeaderCell
             className="text-center px-0.5"
-            onResizeStart={(e) => handleResizeStart(11 + colOff, e)}
+            onResizeStart={(e) =>
+              handleResizeStart((onGerarEtiqueta ? 13 : 12) + colOff, e)
+            }
           >
             ✓
           </HeaderCell>
@@ -793,6 +811,18 @@ export function LineTable({
                   <span className="text-[10px] text-slate-300">—</span>
                 )}
               </Cell>
+              {onGerarEtiqueta ? (
+                <Cell className="text-center px-0.5 flex items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={() => onGerarEtiqueta(item)}
+                    className="rounded border border-[#1B4F72]/40 bg-[#1B4F72]/5 px-1 py-0.5 text-[9px] font-semibold text-[#1B4F72] hover:bg-[#1B4F72]/10 whitespace-nowrap touch-manipulation"
+                    title="Gerar etiqueta de filtro"
+                  >
+                    Etiqueta
+                  </button>
+                </Cell>
+              ) : null}
               <Cell className="text-center px-0.5 flex items-center justify-center z-[10]">
                 {item.status === "completed" && canReopenCompleted ? (
                   <button
