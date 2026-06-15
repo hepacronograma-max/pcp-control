@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/hooks/use-user";
@@ -21,6 +21,8 @@ import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 import { totalOmieSyncAlertCount } from "@/lib/utils/omie-sync-alerts";
+import type { OmieImportReport } from "@/lib/omie/types";
+import { summarizeOmieImportReport } from "@/components/omie/import-report-summary";
 
 type TabKey = "open" | "finished";
 
@@ -96,57 +98,43 @@ export default function PedidosPage() {
   const [lines, setLines] = useState<ProductionLine[]>([]);
   const [tab, setTab] = useState<TabKey>("open");
   const [loadingData, setLoadingData] = useState(false);
+  const [importingOmie, setImportingOmie] = useState(false);
 
-  function updateOrdersState(
-    updater: (prev: OrderWithItems[]) => OrderWithItems[]
-  ) {
-    setOrders((prev) => updater(prev));
-  }
+  const useApi = shouldUseLocalServiceApi(profile);
+
+  const reloadOrders = useCallback(async () => {
+    if (!profile || !effectiveCompanyId) return;
+    setLoadingData(true);
+    try {
+      const res = await fetch(
+        `/api/company-data?companyId=${encodeURIComponent(effectiveCompanyId)}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) {
+        setOrders([]);
+        setLines([]);
+        return;
+      }
+      const json = await res.json();
+      setOrders((json.orders ?? []) as OrderWithItems[]);
+      const raw = (json.lines ?? []) as ProductionLine[];
+      setLines(raw.filter((l) => l.is_active !== false));
+    } catch {
+      setOrders([]);
+      setLines([]);
+    } finally {
+      setLoadingData(false);
+    }
+  }, [profile, effectiveCompanyId]);
 
   useEffect(() => {
     if (!profile) return;
-    const useApi = shouldUseLocalServiceApi(profile);
     if (useApi && profile.company_id === "local-company" && !effectiveLoaded) {
       return;
     }
     if (!effectiveCompanyId) return;
-    const companyId = effectiveCompanyId;
-
-    async function loadData() {
-      setLoadingData(true);
-
-      /** Login Supabase: mesmo endpoint que o modo local — service role evita RLS a bloquear pedidos (ex.: role PCP). */
-      if (useApi || supabase) {
-        try {
-          const res = await fetch(
-            `/api/company-data?companyId=${encodeURIComponent(companyId)}`,
-            { credentials: "include" }
-          );
-          if (!res.ok) {
-            setOrders([]);
-            setLines([]);
-            setLoadingData(false);
-            return;
-          }
-          const json = await res.json();
-          setOrders((json.orders ?? []) as OrderWithItems[]);
-          const raw = (json.lines ?? []) as ProductionLine[];
-          setLines(raw.filter((l) => l.is_active !== false));
-        } catch {
-          setOrders([]);
-          setLines([]);
-        }
-        setLoadingData(false);
-        return;
-      }
-
-      setOrders([]);
-      setLines([]);
-      setLoadingData(false);
-    }
-
-    loadData();
-  }, [profile, supabase, effectiveCompanyId, effectiveLoaded]);
+    void reloadOrders();
+  }, [profile, effectiveCompanyId, effectiveLoaded, useApi, reloadOrders]);
 
   const userRole: UserRole | null = profile ? profile.role : null;
   const canImport =
@@ -165,7 +153,60 @@ export default function PedidosPage() {
     [orders]
   );
 
-  const useApi = shouldUseLocalServiceApi(profile);
+  function updateOrdersState(
+    updater: (prev: OrderWithItems[]) => OrderWithItems[]
+  ) {
+    setOrders((prev) => updater(prev));
+  }
+
+  async function handleImportOmie() {
+    setImportingOmie(true);
+    const loadingToast = toast.loading("Importando pedidos do Omie…");
+    try {
+      const res = await fetch("/api/admin/omie", {
+        method: "POST",
+        credentials: "include",
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        skipped?: boolean;
+        report?: OmieImportReport;
+        error?: string;
+      };
+      if (!res.ok) {
+        toast.error(json.error ?? `Erro ${res.status}`, { id: loadingToast });
+        return;
+      }
+      if (json.report) {
+        const summary = summarizeOmieImportReport(json.report);
+        if (summary.level === "warning") {
+          toast.warning(summary.title, {
+            id: loadingToast,
+            description: summary.description,
+          });
+        } else if (summary.level === "success") {
+          toast.success(summary.title, {
+            id: loadingToast,
+            description: summary.description,
+          });
+        } else {
+          toast.info(summary.title, {
+            id: loadingToast,
+            description: summary.description,
+          });
+        }
+      } else {
+        toast.success("Importação Omie concluída", { id: loadingToast });
+      }
+      await reloadOrders();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao importar do Omie", {
+        id: loadingToast,
+      });
+    } finally {
+      setImportingOmie(false);
+    }
+  }
 
   async function handleUpdateOrderPcpDate(orderId: string, date: string | null) {
     const dateVal = toDateOnly(date);
@@ -908,9 +949,10 @@ export default function PedidosPage() {
           {canImport && (
             <Button
               className="text-xs"
-              onClick={() => (window.location.href = "/importar")}
+              disabled={importingOmie}
+              onClick={() => void handleImportOmie()}
             >
-              Importar PDFs
+              {importingOmie ? "Importando…" : "Importar do Omie"}
             </Button>
           )}
         </div>

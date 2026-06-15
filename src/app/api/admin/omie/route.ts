@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { hasPermission } from "@/lib/utils/permissions";
 import type { UserRole } from "@/lib/types/database";
 import { importarPedidosDaFabricacao } from "@/lib/omie/sync-service";
@@ -24,6 +25,39 @@ async function requireManager() {
   const role = profile?.role as UserRole | undefined;
   if (!role || !hasPermission(role, "viewSettings")) {
     return { error: NextResponse.json({ error: "Sem permissão" }, { status: 403 }) };
+  }
+
+  return { profile, admin: createSupabaseAdminClient() };
+}
+
+/** Mesma permissão do antigo "Importar PDFs" em /pedidos (gestor + PCP). */
+async function requireOmieImport() {
+  if (await hasServerLocalAuthCookie()) {
+    return { admin: createSupabaseAdminClient() };
+  }
+
+  const supabase = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: NextResponse.json({ error: "Não autenticado" }, { status: 401 }) };
+  }
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role, company_id")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const role = profile?.role as UserRole | undefined;
+  if (!role || !hasPermission(role, "importOrders")) {
+    return {
+      error: NextResponse.json(
+        { error: "Sem permissão para importar pedidos do Omie" },
+        { status: 403 }
+      ),
+    };
   }
 
   return { profile, admin: createSupabaseAdminClient() };
@@ -119,9 +153,9 @@ export async function GET() {
   });
 }
 
-/** Importação sob demanda — mesma lógica incremental da etapa 20 (gestor autenticado). */
+/** Importação sob demanda — etapa 20; gestor (admin) ou PCP (/pedidos). */
 export async function POST() {
-  const gate = await requireManager();
+  const gate = await requireOmieImport();
   if ("error" in gate && gate.error) return gate.error;
 
   try {
