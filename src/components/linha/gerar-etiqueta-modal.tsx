@@ -33,7 +33,7 @@ const QR_OPTS = {
   color: { dark: "#000000", light: "#FFFFFF" },
 };
 
-/** Exemplo na coluna “completa” do preview dual quando campos técnicos estão vazios. */
+/** Valores de exemplo no preview completa quando campos técnicos estão vazios. */
 const PREVIEW_DEMO_FAIXA = {
   vazao: "280",
   perdaInicial: "250",
@@ -101,16 +101,14 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
     };
   }, [open]);
 
-  const buildEtiquetaBase = useCallback(
-    (modeloOverride?: "completa" | "simples") => {
+  const buildEtiquetaBase = useCallback(() => {
       if (!previewQr || !item) return null;
-      const m = modeloOverride ?? modelo;
       return {
         codigo,
         descricaoEtiqueta,
         medida,
         classe: classe.trim() || null,
-        modelo: m,
+        modelo,
         lote,
         vazao: vazao.trim(),
         perdaInicial: perdaInicial.trim(),
@@ -133,31 +131,30 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
     ]
   );
 
-  const buildEtiquetaData = useCallback(
-    (modeloOverride?: "completa" | "simples"): EtiquetaFiltroData | null => {
-      const base = buildEtiquetaBase(modeloOverride);
+  const buildEtiquetaData = useCallback((): EtiquetaFiltroData | null => {
+      const base = buildEtiquetaBase();
       if (!base) return null;
       return { ...base, serie: 1, serieTotal: quantidade };
     },
     [buildEtiquetaBase, quantidade]
   );
 
-  const previewSimples = buildEtiquetaData("simples");
-  const previewCompletaBase = buildEtiquetaData("completa");
-  const previewCompleta = previewCompletaBase
-    ? {
-        ...previewCompletaBase,
-        classe:
-          previewCompletaBase.classe?.trim() ||
-          detected ||
-          PREVIEW_DEMO_FAIXA.classe,
-        vazao: previewCompletaBase.vazao || PREVIEW_DEMO_FAIXA.vazao,
-        perdaInicial:
-          previewCompletaBase.perdaInicial || PREVIEW_DEMO_FAIXA.perdaInicial,
-        perdaFinal:
-          previewCompletaBase.perdaFinal || PREVIEW_DEMO_FAIXA.perdaFinal,
-      }
-    : null;
+  const previewBase = buildEtiquetaData();
+  const previewEtiqueta =
+    previewBase && modelo === "completa"
+      ? {
+          ...previewBase,
+          classe:
+            previewBase.classe?.trim() ||
+            detected ||
+            PREVIEW_DEMO_FAIXA.classe,
+          vazao: previewBase.vazao || PREVIEW_DEMO_FAIXA.vazao,
+          perdaInicial:
+            previewBase.perdaInicial || PREVIEW_DEMO_FAIXA.perdaInicial,
+          perdaFinal:
+            previewBase.perdaFinal || PREVIEW_DEMO_FAIXA.perdaFinal,
+        }
+      : previewBase;
 
   const handlePrint = useCallback(async () => {
     if (!item || quantidade < 1) return;
@@ -284,31 +281,25 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
               </div>
             ) : null}
 
-            {previewSimples && previewCompleta ? (
+            {previewEtiqueta ? (
               <div className="space-y-2">
                 <p className="text-[10px] text-slate-600">
-                  Impressão deste item:{" "}
+                  Pré-visualização 100×20 mm —{" "}
                   <strong>
-                    {modelo === "completa" ? "completa (F/H)" : "simples"}
+                    {modelo === "completa"
+                      ? "modelo completa (F/H)"
+                      : "modelo simples (G/M)"}
                   </strong>
-                  . Pré-visualização 100×20 mm (escala ajustada · logo original).
+                  {modelo === "completa" &&
+                  !vazao.trim() &&
+                  !perdaInicial.trim() &&
+                  !perdaFinal.trim()
+                    ? " · faixa técnica com valores de exemplo enquanto campos vazios"
+                    : null}
+                  {" · "}escala ajustada · logo original.
                 </p>
                 <div className="rounded-md border border-dashed border-slate-300 bg-white p-3 overflow-hidden">
-                  <div className="etiqueta-preview-dual">
-                    <div className="etiqueta-preview-dual__col">
-                      <p className="etiqueta-preview-dual__label">Modelo simples</p>
-                      <EtiquetaPrintSheets etiquetas={[previewSimples]} preview />
-                    </div>
-                    <div className="etiqueta-preview-dual__col">
-                      <p className="etiqueta-preview-dual__label">
-                        Modelo completa (F/H)
-                        <span className="block font-normal text-slate-500 normal-case">
-                          Preview com valores de exemplo quando campos vazios
-                        </span>
-                      </p>
-                      <EtiquetaPrintSheets etiquetas={[previewCompleta]} preview />
-                    </div>
-                  </div>
+                  <EtiquetaPrintSheets etiquetas={[previewEtiqueta]} preview />
                 </div>
               </div>
             ) : null}
