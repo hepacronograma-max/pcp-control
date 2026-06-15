@@ -120,6 +120,8 @@ export interface OmieImportReport {
   /** Campos legados (Entrega 1) — derivados para compatibilidade. */
   criados: number;
   shadow_detectados: number;
+  /** Itens que o shadow detectaria/simularia — nunca gravados (modo shadow). */
+  itens_simulados_shadow?: number;
 }
 
 export type OmieSyncIncrementalCounters = Pick<

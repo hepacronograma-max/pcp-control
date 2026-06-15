@@ -138,6 +138,58 @@ async function insertOrderItems(
   return { error: res.error?.message ?? null };
 }
 
+function countersFromStats(stats: PerOrderMatchStats): OmieSyncIncrementalCounters {
+  return {
+    itens_adicionados: stats.itens_adicionados,
+    itens_atualizados: stats.itens_atualizados,
+    itens_removidos: stats.itens_removidos,
+    itens_marcados_removido_no_omie: stats.itens_marcados_removido_no_omie,
+    itens_marcados_divergente_no_omie: stats.itens_marcados_divergente_no_omie,
+  };
+}
+
+function mergeSimulatedShadowCounters(
+  report: OmieImportReport,
+  c: OmieSyncIncrementalCounters
+) {
+  const prev = report.itens_simulados_shadow ?? 0;
+  report.itens_simulados_shadow =
+    prev +
+    c.itens_adicionados +
+    c.itens_atualizados +
+    c.itens_removidos +
+    c.itens_marcados_removido_no_omie +
+    c.itens_marcados_divergente_no_omie;
+}
+
+async function createPcpOrderFromDraft(
+  supabase: SupabaseClient,
+  draft: PcpOrderImportDraft,
+  companyId: string
+): Promise<{ orderId: string } | { error: string }> {
+  const orderPayload = {
+    company_id: companyId,
+    order_number: draft.orderNumber,
+    client_name: draft.clientName,
+    delivery_deadline: toDateOnly(draft.deliveryDeadline),
+    status: draft.status,
+  };
+
+  let ordersRes = await supabase.from("orders").insert(orderPayload).select("id");
+  if (ordersRes.error?.message?.includes("delivery_deadline")) {
+    const { delivery_deadline: _, ...without } = orderPayload;
+    ordersRes = await supabase.from("orders").insert(without).select("id");
+  }
+
+  if (ordersRes.error || !ordersRes.data?.[0]?.id) {
+    return {
+      error: ordersRes.error?.message ?? "falha ao criar order",
+    };
+  }
+
+  return { orderId: ordersRes.data[0].id as string };
+}
+
 async function recordAuditSummary(
   supabase: SupabaseClient,
   companyId: string,
@@ -226,7 +278,12 @@ export async function sincronizarItensDoPedido(
     modo: "shadow" | "active";
     shadowLogs: string[];
   }
-): Promise<OmieSyncIncrementalCounters & { summary?: PerOrderSyncSummary }> {
+): Promise<
+  OmieSyncIncrementalCounters & {
+    summary?: PerOrderSyncSummary;
+    simulatedCounters?: OmieSyncIncrementalCounters;
+  }
+> {
   const counters = emptyCounters();
   const { pcpOrderId, omieCodigoPedido, draft, modo, shadowLogs } = opts;
 
@@ -285,7 +342,6 @@ export async function sincronizarItensDoPedido(
       continue;
     }
     if (action.type === "add") {
-      counters.itens_adicionados += 1;
       if (modo === "active" && pcpOrderId) {
         const row: Record<string, unknown> = {
           order_id: pcpOrderId,
@@ -299,9 +355,9 @@ export async function sincronizarItensDoPedido(
         if (error) {
           throw new Error(`insert item ${action.omieCodigoItem}: ${error.message}`);
         }
+        counters.itens_adicionados += 1;
       }
     } else if (action.type === "update") {
-      counters.itens_atualizados += 1;
       if (modo === "active" && pcpOrderId) {
         const patch: Record<string, unknown> = {};
         if (action.setOmieCodigoItem) {
@@ -319,9 +375,9 @@ export async function sincronizarItensDoPedido(
         if (error) {
           throw new Error(`update item ${action.omieCodigoItem}: ${error.message}`);
         }
+        counters.itens_atualizados += 1;
       }
     } else if (action.type === "delete") {
-      counters.itens_removidos += 1;
       if (modo === "active" && pcpOrderId) {
         const { error } = await supabase
           .from("order_items")
@@ -330,9 +386,9 @@ export async function sincronizarItensDoPedido(
         if (error) {
           throw new Error(`delete item ${action.omieCodigoItem}: ${error.message}`);
         }
+        counters.itens_removidos += 1;
       }
     } else if (action.type === "mark_removed") {
-      counters.itens_marcados_removido_no_omie += 1;
       if (modo === "active" && pcpOrderId) {
         const detail =
           "Item sumiu no Omie mas permanece no PCP (em produção) — mediar com vendas/produção";
@@ -357,9 +413,9 @@ export async function sincronizarItensDoPedido(
             `mark removido_no_omie ${action.omieCodigoItem}: ${error.message}`
           );
         }
+        counters.itens_marcados_removido_no_omie += 1;
       }
     } else if (action.type === "mark_divergent") {
-      counters.itens_marcados_divergente_no_omie += 1;
       if (modo === "active" && pcpOrderId) {
         let { error } = await supabase
           .from("order_items")
@@ -382,11 +438,15 @@ export async function sincronizarItensDoPedido(
             `mark divergente_no_omie ${action.omieCodigoItem}: ${error.message}`
           );
         }
+        counters.itens_marcados_divergente_no_omie += 1;
       }
     }
   }
 
-  return { ...counters, summary };
+  const simulatedCounters =
+    modo === "shadow" ? countersFromStats(plan.stats) : undefined;
+
+  return { ...counters, summary, simulatedCounters };
 }
 
 function mergeCounters(
@@ -415,7 +475,7 @@ async function resolveFullPedido(
   }
 }
 
-async function processOnePedido(
+export async function processOnePedido(
   supabase: SupabaseClient,
   omie: OmiePedidoCompleto,
   companyId: string,
@@ -461,30 +521,63 @@ async function processOnePedido(
 
   if (existingLink) {
     try {
+      let pcpOrderId = existingLink.pcp_order_id as string | null;
+      let materializedFromShadow = false;
+
+      if (!pcpOrderId && modo === "active") {
+        const created = await createPcpOrderFromDraft(supabase, draft, companyId);
+        if ("error" in created) {
+          return { outcome: "error", message: created.error };
+        }
+        pcpOrderId = created.orderId;
+        materializedFromShadow = true;
+
+        const { error: linkMatErr } = await supabase
+          .from("omie_order_links")
+          .update({
+            pcp_order_id: pcpOrderId,
+            sync_status: "synced",
+            omie_numero_pedido: numero,
+            omie_etapa: etapa,
+            omie_payload_original: payloadOriginal,
+            last_synced_at: new Date().toISOString(),
+          })
+          .eq("id", existingLink.id);
+
+        if (linkMatErr) {
+          return { outcome: "error", message: linkMatErr.message };
+        }
+      }
+
       const result = await sincronizarItensDoPedido(supabase, {
-        pcpOrderId: existingLink.pcp_order_id as string | null,
+        pcpOrderId,
         omieCodigoPedido: codigo,
         draft,
         modo,
         shadowLogs,
       });
       mergeCounters(report, result);
+      if (result.simulatedCounters) {
+        mergeSimulatedShadowCounters(report, result.simulatedCounters);
+      }
       if (result.summary) {
         report.pedido_sync_resumos = report.pedido_sync_resumos ?? [];
         report.pedido_sync_resumos.push(result.summary);
       }
 
-      await supabase
-        .from("omie_order_links")
-        .update({
-          omie_numero_pedido: numero,
-          omie_etapa: etapa,
-          omie_payload_original: payloadOriginal,
-          last_synced_at: new Date().toISOString(),
-        })
-        .eq("id", existingLink.id);
+      if (!materializedFromShadow) {
+        await supabase
+          .from("omie_order_links")
+          .update({
+            omie_numero_pedido: numero,
+            omie_etapa: etapa,
+            omie_payload_original: payloadOriginal,
+            last_synced_at: new Date().toISOString(),
+          })
+          .eq("id", existingLink.id);
+      }
 
-      return { outcome: "synced" };
+      return { outcome: materializedFromShadow ? "created" : "synced" };
     } catch (e) {
       return {
         outcome: "error",
@@ -515,7 +608,7 @@ async function processOnePedido(
       shadowLogs.push(log);
       console.info(log);
     }
-    report.itens_adicionados += plan.actions.filter((a) => a.type === "add").length;
+    mergeSimulatedShadowCounters(report, countersFromStats(plan.stats));
 
     console.info("[omie shadow] Importaria pedido:", {
       codigo,
@@ -528,32 +621,18 @@ async function processOnePedido(
     return { outcome: "shadow" };
   }
 
-  const orderPayload = {
-    company_id: companyId,
-    order_number: draft.orderNumber,
-    client_name: draft.clientName,
-    delivery_deadline: toDateOnly(draft.deliveryDeadline),
-    status: draft.status,
-  };
-
-  let ordersRes = await supabase.from("orders").insert(orderPayload).select("id");
-  if (ordersRes.error?.message?.includes("delivery_deadline")) {
-    const { delivery_deadline: _, ...without } = orderPayload;
-    ordersRes = await supabase.from("orders").insert(without).select("id");
+  const created = await createPcpOrderFromDraft(supabase, draft, companyId);
+  if ("error" in created) {
+    return { outcome: "error", message: created.error };
   }
 
-  if (ordersRes.error || !ordersRes.data?.[0]?.id) {
-    return {
-      outcome: "error",
-      message: ordersRes.error?.message ?? "falha ao criar order",
-    };
-  }
-
-  const orderId = ordersRes.data[0].id as string;
+  const orderId = created.orderId;
   const itemsRes = await insertOrderItems(supabase, orderId, draft.items, modo);
   if (itemsRes.error) {
     return { outcome: "error", message: itemsRes.error };
   }
+
+  report.itens_adicionados += draft.items.length;
 
   const { error: linkErr } = await supabase.from("omie_order_links").insert({
     pcp_order_id: orderId,

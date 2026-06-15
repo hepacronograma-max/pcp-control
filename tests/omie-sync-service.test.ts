@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { sincronizarItensDoPedido } from "../src/lib/omie/sync-service";
-import type { PcpOrderImportDraft } from "../src/lib/omie/types";
+import {
+  createEmptyOmieReport,
+  processOnePedido,
+  sincronizarItensDoPedido,
+} from "../src/lib/omie/sync-service";
+import type { OmiePedidoCompleto, PcpOrderImportDraft } from "../src/lib/omie/types";
 
 type Row = Record<string, unknown>;
 
@@ -82,6 +86,30 @@ const draftBase = (): PcpOrderImportDraft => ({
 });
 
 describe("sincronizarItensDoPedido — active", () => {
+  it("nao conta nem insere item quando pcpOrderId e null", async () => {
+    const { supabase, getOrderItems } = createMockSupabase({
+      orderItems: [],
+    });
+    const draft = draftBase();
+    draft.items = [
+      {
+        omieCodigoItem: 100,
+        description: "Novo",
+        quantity: 1,
+        productCode: "HF-1",
+      },
+    ];
+    const counters = await sincronizarItensDoPedido(supabase, {
+      pcpOrderId: null,
+      omieCodigoPedido: 123,
+      draft,
+      modo: "active",
+      shadowLogs: [],
+    });
+    assert.equal(counters.itens_adicionados, 0);
+    assert.equal(getOrderItems().length, 0);
+  });
+
   it("insere item novo com omie_codigo_item", async () => {
     const { supabase, getOrderItems } = createMockSupabase({
       orderItems: [],
@@ -338,5 +366,217 @@ describe("sincronizarItensDoPedido — active", () => {
     assert.equal(result.summary!.itens_qty_atualizados, 0);
     assert.equal(result.summary!.itens_marcados_removido_no_omie, 0);
     assert.equal(result.summary!.itens_adicionados, 0);
+  });
+
+  it("shadow com link existente reporta simulacao sem gravar", async () => {
+    const { supabase, getOrderItems } = createMockSupabase({
+      orderItems: [],
+    });
+    const draft = draftBase();
+    draft.items = [
+      {
+        omieCodigoItem: 501,
+        description: "Item shadow",
+        quantity: 2,
+        productCode: "HF-S",
+      },
+    ];
+    const result = await sincronizarItensDoPedido(supabase, {
+      pcpOrderId: null,
+      omieCodigoPedido: 999,
+      draft,
+      modo: "shadow",
+      shadowLogs: [],
+    });
+    assert.equal(result.itens_adicionados, 0);
+    assert.equal(getOrderItems().length, 0);
+    assert.ok(result.simulatedCounters);
+    assert.equal(result.simulatedCounters!.itens_adicionados, 1);
+  });
+});
+
+function createProcessOnePedidoMock() {
+  type Row = Record<string, unknown>;
+  const orderItems: Row[] = [];
+  const orders: Row[] = [];
+  const links: Row[] = [
+    {
+      id: 1,
+      omie_codigo_pedido: 6922905311,
+      pcp_order_id: null,
+      sync_status: "shadow_detected",
+    },
+  ];
+
+  const supabase = {
+    from(table: string) {
+      if (table === "omie_order_links") {
+        return {
+          select: () => ({
+            eq: (_col: string, codigo: unknown) => ({
+              maybeSingle: async () => ({
+                data: links.find((l) => l.omie_codigo_pedido === codigo) ?? null,
+                error: null,
+              }),
+            }),
+          }),
+          update: (patch: Row) => ({
+            eq: async (_col: string, id: unknown) => {
+              const idx = links.findIndex((l) => l.id === id);
+              if (idx >= 0) links[idx] = { ...links[idx], ...patch };
+              return { error: null };
+            },
+          }),
+          insert: async (row: Row) => {
+            links.push({ id: links.length + 1, ...row });
+            return { error: null };
+          },
+        };
+      }
+      if (table === "orders") {
+        return {
+          insert: (row: Row) => ({
+            select: async () => {
+              const id = `order-${orders.length + 1}`;
+              orders.push({ id, ...row });
+              return { data: [{ id }], error: null };
+            },
+          }),
+          select: () => ({
+            eq: (_col: string, orderId: unknown) => ({
+              maybeSingle: async () => ({
+                data: orders.find((o) => o.id === orderId) ?? null,
+                error: null,
+              }),
+            }),
+          }),
+          update: (patch: Row) => ({
+            eq: async (_col: string, orderId: unknown) => {
+              const idx = orders.findIndex((o) => o.id === orderId);
+              if (idx >= 0) orders[idx] = { ...orders[idx], ...patch };
+              return { error: null };
+            },
+          }),
+        };
+      }
+      if (table === "order_items") {
+        return {
+          select: () => ({
+            eq: async (_col: string, orderId: unknown) => ({
+              data: orderItems.filter((r) => r.order_id === orderId),
+              error: null,
+            }),
+          }),
+          insert: async (row: Row | Row[]) => {
+            const rows = Array.isArray(row) ? row : [row];
+            for (const r of rows) {
+              orderItems.push({ id: `item-${orderItems.length}`, ...r });
+            }
+            return { error: null };
+          },
+          update: (patch: Row) => ({
+            eq: async (_col: string, id: unknown) => {
+              const idx = orderItems.findIndex((r) => r.id === id);
+              if (idx >= 0) orderItems[idx] = { ...orderItems[idx], ...patch };
+              return { error: null };
+            },
+          }),
+          delete: () => ({
+            eq: async (_col: string, id: unknown) => {
+              const idx = orderItems.findIndex((r) => r.id === id);
+              if (idx >= 0) orderItems.splice(idx, 1);
+              return { error: null };
+            },
+          }),
+        };
+      }
+      throw new Error(`tabela mock nao suportada: ${table}`);
+    },
+  };
+
+  return {
+    supabase: supabase as unknown as Parameters<typeof processOnePedido>[0],
+    getOrders: () => orders,
+    getOrderItems: () => orderItems,
+    getLinks: () => links,
+  };
+}
+
+describe("processOnePedido — link shadow orfao", () => {
+  const omiePedido: OmiePedidoCompleto = {
+    cabecalho: {
+      codigo_pedido: 6922905311,
+      numero_pedido: "260209",
+      etapa: "20",
+      nome_cliente: "Cliente Teste",
+      data_previsao: "15/06/2026",
+    },
+    det: [
+      {
+        ide: { codigo_item: 6922905312 },
+        produto: {
+          descricao: "FILTRO HF-TEST",
+          quantidade: 3,
+          codigo: "HF-TEST",
+        },
+      },
+      {
+        ide: { codigo_item: 6922905313 },
+        produto: {
+          descricao: "FILTRO HF-TEST-2",
+          quantidade: 1,
+          codigo: "HF-TEST-2",
+        },
+      },
+    ],
+  };
+
+  it("modo active materializa orders, vincula link e grava itens", async () => {
+    const { supabase, getOrders, getOrderItems, getLinks } =
+      createProcessOnePedidoMock();
+    const report = createEmptyOmieReport("active");
+    const client = {
+      consultarPedido: async () => omiePedido,
+    };
+
+    const result = await processOnePedido(
+      supabase,
+      omiePedido,
+      "company-1",
+      client as never,
+      "active",
+      report
+    );
+
+    assert.equal(result.outcome, "created");
+    assert.equal(getOrders().length, 1);
+    assert.equal(getOrders()[0].order_number, "260209");
+    assert.equal(getOrders()[0].status, "imported");
+    assert.equal(getOrderItems().length, 2);
+    assert.equal(getLinks()[0].sync_status, "synced");
+    assert.ok(getLinks()[0].pcp_order_id);
+    assert.equal(report.itens_adicionados, 2);
+    assert.equal(report.pedidos_novos, 0);
+  });
+
+  it("modo shadow nao grava e acumula simulacao", async () => {
+    const { supabase, getOrders, getOrderItems } = createProcessOnePedidoMock();
+    const report = createEmptyOmieReport("shadow");
+    const client = { consultarPedido: async () => omiePedido };
+
+    const result = await processOnePedido(
+      supabase,
+      omiePedido,
+      "company-1",
+      client as never,
+      "shadow",
+      report
+    );
+
+    assert.equal(result.outcome, "synced");
+    assert.equal(getOrders().length, 0);
+    assert.equal(getOrderItems().length, 0);
+    assert.equal(report.itens_adicionados, 0);
+    assert.ok((report.itens_simulados_shadow ?? 0) >= 2);
   });
 });
