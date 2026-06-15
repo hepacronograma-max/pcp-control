@@ -1,15 +1,28 @@
 "use client";
 
-import type { ModeloEtiqueta } from "@/lib/utils/etiqueta-filtro";
+import { useLayoutEffect, useRef, useState } from "react";
+import {
+  decidirLayoutFaixaTecnica,
+  formatSerieEtiqueta,
+  ROTULO_DPI_FAIXA,
+  ROTULO_DPF_FAIXA,
+  type ModeloEtiqueta,
+} from "@/lib/utils/etiqueta-filtro";
+import {
+  FluxoDeArSeta,
+  HEPA_LOGO_ETIQUETA_SRC,
+} from "@/components/linha/etiqueta-filtro-assets";
 import "./etiqueta-filtro.css";
 
 export type EtiquetaFiltroData = {
   codigo: string;
-  dimensoes: string | null;
+  descricaoEtiqueta: string;
+  medida: string | null;
   classe: string | null;
   modelo: ModeloEtiqueta;
-  dataFabricacao: string;
-  garantia: string;
+  lote: string;
+  serie: number;
+  serieTotal: number;
   vazao?: string;
   perdaInicial?: string;
   perdaFinal?: string;
@@ -22,11 +35,13 @@ type Props = EtiquetaFiltroData & {
 
 export function EtiquetaFiltro100x20({
   codigo,
-  dimensoes,
+  descricaoEtiqueta,
+  medida,
   classe,
   modelo,
-  dataFabricacao,
-  garantia,
+  lote,
+  serie,
+  serieTotal,
   vazao,
   perdaInicial,
   perdaFinal,
@@ -34,63 +49,138 @@ export function EtiquetaFiltro100x20({
   className = "",
 }: Props) {
   const isCompleta = modelo === "completa";
+  const layoutFaixa =
+    isCompleta
+      ? decidirLayoutFaixaTecnica({
+          vazao,
+          perdaInicial,
+          perdaFinal,
+          classe,
+        })
+      : null;
 
   return (
     <div
       className={`etiqueta-filtro ${isCompleta ? "etiqueta-filtro--completa" : "etiqueta-filtro--simples"} ${className}`}
     >
       <div className="etiqueta-filtro__main">
-        <div className="etiqueta-filtro__fluxo" aria-hidden>
-          <span className="etiqueta-filtro__fluxo-arrow">▼</span>
-          <span className="etiqueta-filtro__fluxo-text">FLUXO DE AR</span>
+        <div className="etiqueta-filtro__logo-wrap">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={HEPA_LOGO_ETIQUETA_SRC}
+            alt=""
+            className="etiqueta-filtro__logo-img"
+          />
         </div>
 
-        <div className="etiqueta-filtro__brand">
-          <span className="etiqueta-filtro__logo">HEPA</span>
-          <span className="etiqueta-filtro__airflow">AIR FLOW</span>
+        <div className="etiqueta-filtro__center-col">
+          {isCompleta ? (
+            <>
+              <div className="etiqueta-filtro__text-block">
+                <div className="etiqueta-filtro__line etiqueta-filtro__line--code-desc">
+                  {codigo} {descricaoEtiqueta}
+                </div>
+                {medida ? (
+                  <div className="etiqueta-filtro__line">{medida}</div>
+                ) : null}
+              </div>
+
+              <div
+                className={`etiqueta-filtro__specs${
+                  layoutFaixa === "duas-linhas"
+                    ? " etiqueta-filtro__specs--duas-linhas"
+                    : ""
+                }`}
+              >
+                <span>
+                  <strong>Vazão:</strong> {vazao || "—"} m³/h
+                </span>
+                <span>
+                  <strong>Classe:</strong> {classe || "—"}
+                </span>
+                <span>
+                  <strong>{ROTULO_DPI_FAIXA}:</strong> {perdaInicial || "—"} Pa
+                </span>
+                <span>
+                  <strong>{ROTULO_DPF_FAIXA}:</strong> {perdaFinal || "—"} Pa
+                </span>
+              </div>
+
+              <div className="etiqueta-filtro__trace">
+                <span>LOTE: {lote}</span>
+                <span>SÉRIE: {formatSerieEtiqueta(serie, serieTotal)}</span>
+              </div>
+
+              <div className="etiqueta-filtro__warn">
+                <span>NÃO TORCER OU TOCAR</span>
+                <span>NO MEIO FILTRANTE</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="etiqueta-filtro__text-block">
+                <div className="etiqueta-filtro__line">{codigo}</div>
+                <div className="etiqueta-filtro__line">{descricaoEtiqueta}</div>
+                {medida ? (
+                  <div className="etiqueta-filtro__line">{medida}</div>
+                ) : null}
+              </div>
+
+              <div className="etiqueta-filtro__trace">
+                <span>LOTE: {lote}</span>
+                <span>SÉRIE: {formatSerieEtiqueta(serie, serieTotal)}</span>
+              </div>
+            </>
+          )}
         </div>
 
-        <div className="etiqueta-filtro__center">
-          <div className="etiqueta-filtro__code-box">
-            <div className="etiqueta-filtro__code">{codigo}</div>
-            {dimensoes ? (
-              <div className="etiqueta-filtro__dims">{dimensoes}</div>
-            ) : null}
+        <div className="etiqueta-filtro__right">
+          <div className="etiqueta-filtro__qr">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={qrDataUrl} alt="QR hepafiltros.com.br" />
           </div>
         </div>
 
-        <div className="etiqueta-filtro__meta">
-          <div className="etiqueta-filtro__meta-label">Fabricação</div>
-          <div className="etiqueta-filtro__meta-val">{dataFabricacao}</div>
-          <div className="etiqueta-filtro__meta-label">Garantia</div>
-          <div className="etiqueta-filtro__meta-val">{garantia}</div>
-        </div>
-
-        <div className="etiqueta-filtro__qr">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={qrDataUrl} alt="QR hepafiltros.com.br" />
+        <div className="etiqueta-filtro__fluxo" aria-hidden>
+          <FluxoDeArSeta className="etiqueta-filtro__fluxo-svg" />
         </div>
       </div>
+    </div>
+  );
+}
 
-      {isCompleta ? (
-        <div className="etiqueta-filtro__specs">
-          <span>
-            <strong>Vazão:</strong> {vazao || "—"} m³/h
-          </span>
-          <span>
-            <strong>Classe:</strong> {classe || "—"}
-          </span>
-          <span>
-            <strong>Perda ini:</strong> {perdaInicial || "—"} Pa
-          </span>
-          <span>
-            <strong>Perda fin:</strong> {perdaFinal || "—"} Pa
-          </span>
-          <span className="etiqueta-filtro__specs-warn">
-            NÃO TORCER OU TOCAR NO MEIO FILTRANTE
-          </span>
-        </div>
-      ) : null}
+const LABEL_W_MM = 100;
+const LABEL_H_MM = 20;
+const MM_TO_PX = 96 / 25.4;
+
+function EtiquetaPreviewSheet({ data }: { data: EtiquetaFiltroData }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+
+    const update = () => {
+      const w = host.clientWidth;
+      const targetPx = LABEL_W_MM * MM_TO_PX;
+      setScale(w > 0 ? w / targetPx : 1);
+    };
+
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(host);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div ref={hostRef} className="etiqueta-sheet etiqueta-sheet--preview">
+      <div
+        className="etiqueta-preview-scale"
+        style={{ transform: `scale(${scale})` }}
+      >
+        <EtiquetaFiltro100x20 {...data} />
+      </div>
     </div>
   );
 }
@@ -102,13 +192,23 @@ export function EtiquetaPrintSheets({
   etiquetas: EtiquetaFiltroData[];
   preview?: boolean;
 }) {
+  if (preview) {
+    return (
+      <div className="etiqueta-preview-wrap etiqueta-preview-wrap--fit">
+        {etiquetas.map((data, index) => (
+          <EtiquetaPreviewSheet key={index} data={data} />
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className={preview ? "etiqueta-preview-wrap" : undefined}>
+    <>
       {etiquetas.map((data, index) => (
-        <div key={index} className="etiqueta-sheet">
+        <div key={`${data.lote}-${data.serie}`} className="etiqueta-sheet">
           <EtiquetaFiltro100x20 {...data} />
         </div>
       ))}
-    </div>
+    </>
   );
 }
