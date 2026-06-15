@@ -1,0 +1,343 @@
+.etiqueta-print-host {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.etiqueta-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  background: #fff;
+}
+
+.etiqueta-preview-wrap--fit {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.etiqueta-sheet--preview {
+  width: 100%;
+  aspect-ratio: 100 / 20;
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+}
+
+.etiqueta-preview-scale {
+  width: 100mm;
+  height: 20mm;
+  transform-origin: top left;
+}
+
+.etiqueta-preview-dual {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+}
+
+.etiqueta-preview-dual__col {
+  min-width: 0;
+}
+
+.etiqueta-preview-dual__label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+@media print {
+  @page {
+    size: 100mm 20mm;
+    margin: 0;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100mm;
+  }
+
+  body > *:not(.etiqueta-print-host) {
+    display: none !important;
+  }
+
+  body.printing-etiquetas * {
+    visibility: hidden;
+  }
+
+  body.printing-etiquetas .etiqueta-print-host,
+  body.printing-etiquetas .etiqueta-print-host * {
+    visibility: visible;
+  }
+
+  body.printing-etiquetas > *:not(.etiqueta-print-host) {
+    display: none !important;
+  }
+
+  .etiqueta-print-host {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+    display: block !important;
+  }
+
+  .etiqueta-sheet {
+    width: 100mm;
+    height: 20mm;
+    page-break-after: always;
+    break-after: page;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .etiqueta-sheet:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+}
+
+.etiqueta-filtro,
+.etiqueta-filtro * {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/*
+ * Larguras fixas (100 mm): logo 26 | centro 46 | direita 20 | seta 8
+ */
+.etiqueta-filtro {
+  width: 100mm;
+  height: 20mm;
+  box-sizing: border-box;
+  border: none;
+  font-family: Arial, Helvetica, sans-serif;
+  color: #000;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.etiqueta-filtro__main {
+  width: 100mm;
+  height: 20mm;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+.etiqueta-filtro__logo-wrap {
+  width: 26mm;
+  flex: 0 0 26mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5mm 0.4mm;
+  box-sizing: border-box;
+}
+
+.etiqueta-filtro__logo-img {
+  display: block;
+  max-width: 100%;
+  max-height: 16mm;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.etiqueta-filtro__center-col {
+  width: 46mm;
+  flex: 0 0 46mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.3mm;
+  padding: 0.5mm 1mm;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.etiqueta-filtro__text-block {
+  line-height: 1.08;
+  flex-shrink: 0;
+}
+
+.etiqueta-filtro__line {
+  font-size: 7.5pt;
+  font-weight: 700;
+  color: #000;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.etiqueta-filtro__trace {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.8mm 2mm;
+  margin-top: 0.35mm;
+  font-size: 7.5pt;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #000;
+  text-transform: uppercase;
+}
+
+.etiqueta-filtro__trace span {
+  white-space: nowrap;
+}
+
+.etiqueta-filtro__specs {
+  flex-shrink: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: start;
+  font-size: 4.8pt;
+  line-height: 1.2;
+  padding-top: 0.4mm;
+  gap: 0.35mm 1mm;
+  width: 100%;
+  color: #000;
+}
+
+.etiqueta-filtro__specs span {
+  white-space: nowrap;
+  color: #000;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__specs span {
+  overflow: visible;
+  text-overflow: unset;
+}
+
+.etiqueta-filtro:not(.etiqueta-filtro--completa) .etiqueta-filtro__specs span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.etiqueta-filtro__specs strong {
+  font-weight: 800;
+}
+
+.etiqueta-filtro__right {
+  width: 20mm;
+  flex: 0 0 20mm;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4mm 0.3mm;
+  box-sizing: border-box;
+}
+
+.etiqueta-filtro__qr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.etiqueta-filtro__qr img {
+  width: 12mm;
+  height: 12mm;
+  display: block;
+}
+
+.etiqueta-filtro__fluxo {
+  width: 8mm;
+  flex: 0 0 8mm;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 0.4mm 0.3mm 0.4mm 0.1mm;
+  box-sizing: border-box;
+}
+
+.etiqueta-filtro__fluxo-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Completa: mesma fonte da simples; faixa 2×2; aviso abaixo do lote/série */
+.etiqueta-filtro--completa .etiqueta-filtro__center-col {
+  justify-content: flex-start;
+  padding-top: 0.3mm;
+  padding-bottom: 0.25mm;
+  gap: 0.1mm;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__line,
+.etiqueta-filtro--completa .etiqueta-filtro__trace,
+.etiqueta-filtro--completa .etiqueta-filtro__specs,
+.etiqueta-filtro--completa .etiqueta-filtro__warn {
+  line-height: 1.02;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__specs {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  font-size: 7.5pt;
+  padding-top: 0;
+  gap: 0 0.6mm;
+}
+
+/* Valores reais: 1 linha se couber; senão Vazão+Classe / ΔPi+ΔPf em 2 linhas */
+.etiqueta-filtro--completa .etiqueta-filtro__specs--duas-linhas {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  row-gap: 0.08mm;
+  column-gap: 1mm;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__trace {
+  margin-top: 0;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__warn {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  font-size: 7.5pt;
+  font-weight: 700;
+  line-height: 1;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__warn span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__logo-img {
+  max-height: 15mm;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__qr img {
+  width: 10.5mm;
+  height: 10.5mm;
+}

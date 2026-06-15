@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "tsc --noEmit",
     "test:omie": "npx tsx --test tests/omie-*.test.ts",
+    "test:etiqueta": "npx tsx --test tests/etiqueta-filtro.test.ts",
     "import-backup": "node import-backup-to-supabase.js",
     "cleanup": "node scripts/run-cleanup.js",
     "cleanup:dry": "node scripts/run-cleanup.js --dry-run",
@@ -50,6 +51,7 @@
     "pdf-parse": "^2.4.5",
     "pdfjs-serverless": "^1.1.0",
     "pg": "^8.20.0",
+    "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-dropzone": "^15.0.0",
@@ -62,6 +64,7 @@
   "devDependencies": {
     "@types/node": "^25.3.0",
     "@types/pg": "^8.18.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.24",
