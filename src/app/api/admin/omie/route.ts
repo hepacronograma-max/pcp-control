@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasPermission } from "@/lib/utils/permissions";
@@ -119,24 +119,21 @@ export async function GET() {
   });
 }
 
-/** Força importação (mesma função do cron; gestor autenticado). */
-export async function POST(request: NextRequest) {
+/** Importação sob demanda — mesma lógica incremental da etapa 20 (gestor autenticado). */
+export async function POST() {
   const gate = await requireManager();
   if ("error" in gate && gate.error) return gate.error;
 
-  const body = await request.json().catch(() => ({}));
-  const useCronSecret = body?.useCronSecret === true;
-
-  if (useCronSecret) {
-    const cronSecret = process.env.CRON_SECRET?.trim();
-    const header = request.headers.get("x-cron-secret");
-    if (!cronSecret || header !== cronSecret) {
-      return NextResponse.json({ error: "Cron secret inválido" }, { status: 401 });
-    }
-  }
-
   try {
     const report = await importarPedidosDaFabricacao();
+    if (report.skipped_reason === "locked") {
+      return NextResponse.json({
+        ok: true,
+        skipped: true,
+        reason: "locked",
+        report,
+      });
+    }
     return NextResponse.json({ ok: true, report });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

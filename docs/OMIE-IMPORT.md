@@ -10,9 +10,8 @@ Substitui a importação manual de PDF por leitura automática da API Omie (etap
 Omie (etapa 20 — Ordem de Fabricação)
         │
         ▼
-Cron Vercel 7h Brasília (10h UTC)
-  GET /api/cron/omie-import-diario
-  header: X-Cron-Secret
+Botão em /admin/omie (gestor autenticado)
+  POST /api/admin/omie
         │
         ▼
 importarPedidosDaFabricacao()
@@ -73,20 +72,19 @@ node scripts/omie-backfill-inicial.js --apply  # grava backfill_skipped
 | `OMIE_CODIGO_EMPRESA_HEPA` | Sim | UUID `company_id` da HEPA no PCP |
 | `OMIE_INTEGRATION_MODE` | Não | `shadow` (default) ou `active` |
 | `OMIE_ETAPA_FABRICACAO` | Não | Default `20` |
-| `CRON_SECRET` | Sim (cron) | Protege `/api/cron/omie-import-diario` |
 
 ## Vercel (Production)
 
 1. Settings → Environment Variables: variáveis acima
-2. `vercel.json` agenda cron `0 10 * * *` (7h Brasília)
-3. Aplicar migration `supabase/migrations/20260604_omie_import.sql` no SQL Editor
-4. Rodar backfill antes de ativar `active`
-5. Validar em **shadow** pelo painel `/admin/omie`
-6. Só então `OMIE_INTEGRATION_MODE=active` + redeploy
+2. Aplicar migration `supabase/migrations/20260604_omie_import.sql` no SQL Editor
+3. Rodar backfill antes de ativar `active`
+4. Validar em **shadow** pelo painel `/admin/omie`
+5. Só então `OMIE_INTEGRATION_MODE=active` + redeploy
+6. Importar pedidos pelo botão em `/admin/omie` quando necessário
 
 ## Painel admin
 
-`/admin/omie` — modo atual, última importação, métricas, tabela de vínculos, botão **Forçar importação**.
+`/admin/omie` — modo atual, última importação, métricas, tabela de vínculos, botão **Importar pedidos do Omie** (sob demanda; não há cron automático).
 
 ## Migration
 
@@ -98,5 +96,5 @@ node scripts/omie-backfill-inicial.js --apply  # grava backfill_skipped
 # .env com credenciais Omie + OMIE_CODIGO_EMPRESA_HEPA
 npm run lint
 node -e "require('./scripts/omie-descobrir-etapas.js')"  # opcional: etapas
-# POST autenticado como gestor em /api/admin/omie ou cron com CRON_SECRET
+# POST autenticado como gestor em /admin/omie (botão Importar)
 ```

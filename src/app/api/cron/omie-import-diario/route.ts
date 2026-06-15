@@ -5,8 +5,9 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 /**
- * Cron diário — importação Omie etapa Fabricação (somente leitura no Omie).
- * Protegido por X-Cron-Secret (mesmo padrão de outros crons do projeto).
+ * Importação Omie etapa Fabricação — endpoint legado (sem agendamento Vercel).
+ * Uso normal: POST /api/admin/omie via botão em /admin/omie (sessão de gestor).
+ * Esta rota permanece para disparo manual com CRON_SECRET, se necessário.
  */
 export async function GET(request: NextRequest) {
   const cronSecret = process.env.CRON_SECRET?.trim();
