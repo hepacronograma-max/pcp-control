@@ -123,7 +123,8 @@ function extractOmieCodigoItem(
  */
 export function mapOmiePedidoToPcp(
   omie: OmiePedidoCompleto,
-  companyId: string
+  companyId: string,
+  opts?: { clientName?: string }
 ): PcpOrderImportDraft {
   const codigo = omie.cabecalho?.codigo_pedido;
   if (!codigo) {
@@ -131,7 +132,7 @@ export function mapOmiePedidoToPcp(
   }
 
   const orderNumber = normalizeOmieOrderNumber(omie);
-  const clientName = extractClientNameFromPedido(omie);
+  const clientName = opts?.clientName?.trim() || extractClientNameFromPedido(omie);
   const deliveryDeadline = brDateToIso(omie.cabecalho?.data_previsao);
 
   const det = omie.det ?? [];

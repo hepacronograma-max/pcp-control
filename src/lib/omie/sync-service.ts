@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 import { OmieClient } from "./client";
+import { resolveClientNameForPedido, type OmieClientNameCache } from "./client-name-resolver";
 import { getOmieIntegrationMode } from "./integration-mode";
 import {
   diffOrderHeader,
@@ -481,7 +482,8 @@ export async function processOnePedido(
   companyId: string,
   client: OmieClient,
   modo: "shadow" | "active",
-  report: OmieImportReport
+  report: OmieImportReport,
+  clientNameCache: OmieClientNameCache = new Map()
 ): Promise<{ outcome: "created" | "shadow" | "synced" | "skipped" | "error"; message?: string }> {
   const codigo = omie.cabecalho?.codigo_pedido;
   if (!codigo) {
@@ -506,7 +508,8 @@ export async function processOnePedido(
 
   let draft: PcpOrderImportDraft;
   try {
-    draft = mapOmiePedidoToPcp(full, companyId);
+    const clientName = await resolveClientNameForPedido(full, client, clientNameCache);
+    draft = mapOmiePedidoToPcp(full, companyId, { clientName });
   } catch (e) {
     return {
       outcome: "error",
@@ -674,6 +677,7 @@ export async function importarPedidosDaFabricacao(): Promise<OmieImportReport> {
     report.encontrados = resumos.length;
 
     let hasIncremental = false;
+    const clientNameCache: OmieClientNameCache = new Map();
 
     for (const resumo of resumos) {
       const codigo = resumo.cabecalho?.codigo_pedido;
@@ -689,7 +693,8 @@ export async function importarPedidosDaFabricacao(): Promise<OmieImportReport> {
           companyId,
           client,
           modo,
-          report
+          report,
+          clientNameCache
         );
 
         if (result.outcome === "created") {

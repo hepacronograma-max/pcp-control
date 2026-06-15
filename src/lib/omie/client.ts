@@ -6,6 +6,7 @@ import type {
 } from "./types";
 
 const PEDIDO_URL = "https://app.omie.com.br/api/v1/produtos/pedido/";
+const CLIENTES_URL = "https://app.omie.com.br/api/v1/geral/clientes/";
 const MIN_INTERVAL_MS = 1000;
 const MAX_RETRIES = 3;
 const TIMEOUT_MS = 30_000;
@@ -68,7 +69,8 @@ export class OmieClient {
   private async call<T>(
     call: string,
     param: Record<string, unknown>,
-    attempt = 0
+    attempt = 0,
+    baseUrl = PEDIDO_URL
   ): Promise<T> {
     if (BLOCKED_CALLS.has(call)) {
       throw new Error(`Método Omie bloqueado (somente leitura): ${call}`);
@@ -81,7 +83,7 @@ export class OmieClient {
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
-      const res = await fetch(PEDIDO_URL, {
+      const res = await fetch(baseUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -109,7 +111,7 @@ export class OmieClient {
         if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
           const delay = Math.min(30_000, 1000 * 2 ** attempt);
           await new Promise((r) => setTimeout(r, delay));
-          return this.call<T>(call, param, attempt + 1);
+          return this.call<T>(call, param, attempt + 1, baseUrl);
         }
         throw new Error(`Omie ${call} HTTP ${res.status}`);
       }
@@ -127,7 +129,7 @@ export class OmieClient {
         if (retryable) {
           const delay = Math.min(30_000, 1000 * 2 ** attempt);
           await new Promise((r) => setTimeout(r, delay));
-          return this.call<T>(call, param, attempt + 1);
+          return this.call<T>(call, param, attempt + 1, baseUrl);
         }
       }
       throw err;
@@ -195,5 +197,19 @@ export class OmieClient {
       { codigo_pedido }
     );
     return res.pedido_venda_produto ?? (res as unknown as OmiePedidoCompleto);
+  }
+
+  /** Consulta cadastro do cliente (somente leitura). */
+  async consultarCliente(codigo_cliente_omie: number): Promise<{
+    codigo_cliente_omie?: number;
+    razao_social?: string;
+    nome_fantasia?: string;
+  }> {
+    return this.call(
+      "ConsultarCliente",
+      { codigo_cliente_omie },
+      0,
+      CLIENTES_URL
+    );
   }
 }
