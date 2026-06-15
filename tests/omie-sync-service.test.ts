@@ -509,6 +509,7 @@ describe("processOnePedido — link shadow orfao", () => {
       numero_pedido: "260209",
       etapa: "20",
       nome_cliente: "Cliente Teste",
+      codigo_cliente: 2422656210,
       data_previsao: "15/06/2026",
     },
     det: [
