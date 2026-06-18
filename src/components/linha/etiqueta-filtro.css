@@ -2,10 +2,10 @@
   position: fixed;
   left: -9999px;
   top: 0;
-  width: 0;
-  height: 0;
+  width: 100mm;
   overflow: hidden;
   pointer-events: none;
+  opacity: 0;
 }
 
 .etiqueta-preview-wrap {
@@ -57,12 +57,8 @@
 }
 
 @media print {
-  /*
-   * Argox 100×20 mm: drivers Windows costumam expor página 20 mm (largura) × 100 mm (altura).
-   * Conteúdo desenhado em 100×20 mm + rotate(90°) alinha base/altura corretas na térmica.
-   */
   @page {
-    size: 20mm 100mm;
+    size: 100mm 20mm landscape;
     margin: 0;
   }
 
@@ -70,21 +66,9 @@
   body {
     margin: 0 !important;
     padding: 0 !important;
-    width: 20mm;
-    height: 100mm;
-  }
-
-  body > *:not(.etiqueta-print-host) {
-    display: none !important;
-  }
-
-  body.printing-etiquetas * {
-    visibility: hidden;
-  }
-
-  body.printing-etiquetas .etiqueta-print-host,
-  body.printing-etiquetas .etiqueta-print-host * {
-    visibility: visible;
+    width: 100mm !important;
+    height: 20mm !important;
+    background: #fff !important;
   }
 
   body.printing-etiquetas > *:not(.etiqueta-print-host) {
@@ -98,28 +82,18 @@
     width: auto !important;
     height: auto !important;
     overflow: visible !important;
+    opacity: 1 !important;
     pointer-events: auto !important;
     display: block !important;
   }
 
   .etiqueta-sheet {
-    width: 20mm;
-    height: 100mm;
-    position: relative;
+    width: 100mm;
+    height: 20mm;
     overflow: hidden;
     box-sizing: border-box;
     page-break-after: always;
     break-after: page;
-  }
-
-  .etiqueta-sheet .etiqueta-filtro {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100mm;
-    height: 20mm;
-    transform: rotate(90deg);
-    transform-origin: top left;
   }
 
   .etiqueta-sheet:last-child {

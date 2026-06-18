@@ -171,17 +171,54 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
 
   useEffect(() => {
     if (!printing || printEtiquetas.length === 0) return;
+
     document.body.classList.add("printing-etiquetas");
-    const t = window.setTimeout(() => {
+    let cancelled = false;
+
+    const cleanup = () => {
+      document.body.classList.remove("printing-etiquetas");
+      setPrinting(false);
+      setPrintEtiquetas([]);
+    };
+
+    const onAfterPrint = () => {
+      if (!cancelled) cleanup();
+    };
+
+    window.addEventListener("afterprint", onAfterPrint);
+
+    const runPrint = async () => {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      });
+      if (cancelled) return;
+
+      const imgs = document.querySelectorAll<HTMLImageElement>(
+        ".etiqueta-print-host img"
+      );
+      await Promise.all(
+        Array.from(imgs).map(
+          (img) =>
+            new Promise<void>((resolve) => {
+              if (img.complete) {
+                resolve();
+                return;
+              }
+              img.addEventListener("load", () => resolve(), { once: true });
+              img.addEventListener("error", () => resolve(), { once: true });
+            })
+        )
+      );
+      if (cancelled) return;
+
       window.print();
-      window.setTimeout(() => {
-        document.body.classList.remove("printing-etiquetas");
-        setPrinting(false);
-        setPrintEtiquetas([]);
-      }, 300);
-    }, 150);
+    };
+
+    void runPrint();
+
     return () => {
-      window.clearTimeout(t);
+      cancelled = true;
+      window.removeEventListener("afterprint", onAfterPrint);
       document.body.classList.remove("printing-etiquetas");
     };
   }, [printing, printEtiquetas]);
@@ -327,7 +364,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       {typeof document !== "undefined" &&
         printEtiquetas.length > 0 &&
         createPortal(
-          <div className="etiqueta-print-host" aria-hidden={!printing}>
+          <div className="etiqueta-print-host">
             <EtiquetaPrintSheets etiquetas={printEtiquetas} />
           </div>,
           document.body
