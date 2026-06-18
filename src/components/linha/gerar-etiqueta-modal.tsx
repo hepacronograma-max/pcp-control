@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import {
@@ -23,6 +23,7 @@ import {
   gerarLoteEtiqueta,
   medidaEtiquetaFromDescricao,
 } from "@/lib/utils/etiqueta-filtro";
+import { printEtiquetaInIframe } from "@/lib/etiqueta-print-iframe";
 
 const QR_URL = "https://www.hepafiltros.com.br";
 
@@ -64,6 +65,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   const [printing, setPrinting] = useState(false);
   const [printEtiquetas, setPrintEtiquetas] = useState<EtiquetaFiltroData[]>([]);
   const [previewQr, setPreviewQr] = useState<string>("");
+  const printHostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open || !item) return;
@@ -172,20 +174,12 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   useEffect(() => {
     if (!printing || printEtiquetas.length === 0) return;
 
-    document.body.classList.add("printing-etiquetas");
     let cancelled = false;
 
-    const cleanup = () => {
-      document.body.classList.remove("printing-etiquetas");
+    const finish = () => {
       setPrinting(false);
       setPrintEtiquetas([]);
     };
-
-    const onAfterPrint = () => {
-      if (!cancelled) cleanup();
-    };
-
-    window.addEventListener("afterprint", onAfterPrint);
 
     const runPrint = async () => {
       await new Promise<void>((resolve) => {
@@ -193,9 +187,13 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       });
       if (cancelled) return;
 
-      const imgs = document.querySelectorAll<HTMLImageElement>(
-        ".etiqueta-print-host img"
-      );
+      const host = printHostRef.current;
+      if (!host) {
+        finish();
+        return;
+      }
+
+      const imgs = host.querySelectorAll<HTMLImageElement>("img");
       await Promise.all(
         Array.from(imgs).map(
           (img) =>
@@ -211,15 +209,13 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       );
       if (cancelled) return;
 
-      window.print();
+      await printEtiquetaInIframe(host, finish);
     };
 
     void runPrint();
 
     return () => {
       cancelled = true;
-      window.removeEventListener("afterprint", onAfterPrint);
-      document.body.classList.remove("printing-etiquetas");
     };
   }, [printing, printEtiquetas]);
 
@@ -364,7 +360,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       {typeof document !== "undefined" &&
         printEtiquetas.length > 0 &&
         createPortal(
-          <div className="etiqueta-print-host">
+          <div className="etiqueta-print-host" ref={printHostRef}>
             <EtiquetaPrintSheets etiquetas={printEtiquetas} />
           </div>,
           document.body

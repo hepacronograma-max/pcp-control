@@ -1,59 +1,50 @@
-.etiqueta-print-host {
-  position: fixed;
-  left: -9999px;
-  top: 0;
+/* Estilos da etiqueta 100×20 mm — documento isolado (iframe de impressão). */
+
+@page {
+  size: 100mm 20mm;
+  margin: 0;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
   width: 100mm;
-  overflow: hidden;
-  pointer-events: none;
-  opacity: 0;
-}
-
-.etiqueta-preview-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: stretch;
   background: #fff;
 }
 
-.etiqueta-preview-wrap--fit {
-  width: 100%;
-  max-width: 100%;
-  overflow: hidden;
+body {
+  min-height: 20mm;
 }
 
-.etiqueta-sheet--preview {
-  width: 100%;
-  aspect-ratio: 100 / 20;
-  position: relative;
-  overflow: hidden;
-  background: #fff;
+.etiqueta-print-root {
+  margin: 0;
+  padding: 0;
+  width: 100mm;
 }
 
-.etiqueta-preview-scale {
+.etiqueta-sheet {
   width: 100mm;
   height: 20mm;
-  transform-origin: top left;
+  overflow: hidden;
+  box-sizing: border-box;
+  page-break-after: always;
+  break-after: page;
 }
 
-.etiqueta-preview-dual {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  width: 100%;
+.etiqueta-sheet:last-child {
+  page-break-after: auto;
+  break-after: auto;
 }
 
-.etiqueta-preview-dual__col {
-  min-width: 0;
-}
-
-.etiqueta-preview-dual__label {
-  font-size: 10px;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 6px;
+@media print {
+  html,
+  body {
+    width: 100mm !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
 }
 
 .etiqueta-filtro,
@@ -62,9 +53,6 @@
   print-color-adjust: exact;
 }
 
-/*
- * Larguras fixas (100 mm): logo 26 | centro 46 | direita 20 | seta 8
- */
 .etiqueta-filtro {
   width: 100mm;
   height: 20mm;
@@ -225,7 +213,6 @@
   height: 100%;
 }
 
-/* Completa: mesma fonte da simples; faixa 2×2; aviso abaixo do lote/série */
 .etiqueta-filtro--completa .etiqueta-filtro__center-col {
   justify-content: flex-start;
   padding-top: 0.3mm;
@@ -247,7 +234,6 @@
   gap: 0 0.6mm;
 }
 
-/* Valores reais: 1 linha se couber; senão Vazão+Classe / ΔPi+ΔPf em 2 linhas */
 .etiqueta-filtro--completa .etiqueta-filtro__specs--duas-linhas {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   row-gap: 0.08mm;
