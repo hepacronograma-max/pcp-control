@@ -2,7 +2,6 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import {
-  decidirLayoutFaixaTecnica,
   formatSerieEtiqueta,
   ROTULO_DPI_FAIXA,
   ROTULO_DPF_FAIXA,
@@ -52,15 +51,6 @@ export function EtiquetaFiltro100x20({
   className = "",
 }: Props) {
   const isCompleta = modelo === "completa";
-  const layoutFaixa =
-    isCompleta
-      ? decidirLayoutFaixaTecnica({
-          vazao,
-          perdaInicial,
-          perdaFinal,
-          classe,
-        })
-      : null;
 
   return (
     <div
@@ -78,23 +68,19 @@ export function EtiquetaFiltro100x20({
 
         <div className="etiqueta-filtro__center-col">
           {isCompleta ? (
-            <>
+            <div className="etiqueta-filtro__center-stack">
               <div className="etiqueta-filtro__text-block">
                 <div className="etiqueta-filtro__line etiqueta-filtro__line--code-desc">
                   {codigo} {descricaoEtiqueta}
                 </div>
                 {medida ? (
-                  <div className="etiqueta-filtro__line">{medida}</div>
+                  <div className="etiqueta-filtro__line etiqueta-filtro__line--medida">
+                    {medida}
+                  </div>
                 ) : null}
               </div>
 
-              <div
-                className={`etiqueta-filtro__specs${
-                  layoutFaixa === "duas-linhas"
-                    ? " etiqueta-filtro__specs--duas-linhas"
-                    : ""
-                }`}
-              >
+              <div className="etiqueta-filtro__specs">
                 <span>
                   <strong>Vazão:</strong> {vazao || "—"} m³/h
                 </span>
@@ -110,15 +96,16 @@ export function EtiquetaFiltro100x20({
               </div>
 
               <div className="etiqueta-filtro__trace">
-                <span>LOTE: {lote}</span>
-                <span>SÉRIE: {formatSerieEtiqueta(serie, serieTotal)}</span>
+                <span>
+                  SÉRIE: {formatSerieEtiqueta(serie, serieTotal)} · LOTE: {lote}
+                </span>
               </div>
 
               <div className="etiqueta-filtro__warn">
                 <span>NÃO TORCER OU TOCAR</span>
                 <span>NO MEIO FILTRANTE</span>
               </div>
-            </>
+            </div>
           ) : (
             <>
               <div className="etiqueta-filtro__text-block">

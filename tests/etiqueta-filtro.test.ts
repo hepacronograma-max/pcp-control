@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 
 import { describe, it } from "node:test";
 
+import { ETIQUETA_PRINT_CSS } from "../src/lib/etiqueta-print-styles";
+
 import {
 
   decidirLayoutFaixaTecnica,
@@ -482,5 +484,14 @@ describe("gerarEtiquetasSeriesEspecificas", () => {
 
   });
 
+});
+
+describe("ETIQUETA_PRINT_CSS", () => {
+  it("inclui layout completa e regras anti-corte na impressão", () => {
+    assert.match(ETIQUETA_PRINT_CSS, /center-stack/);
+    assert.match(ETIQUETA_PRINT_CSS, /size:\s*100mm\s+20mm/);
+    assert.match(ETIQUETA_PRINT_CSS, /flex-shrink:\s*0\s*!important/);
+    assert.match(ETIQUETA_PRINT_CSS, /print-color-adjust:\s*exact/);
+  });
 });
 

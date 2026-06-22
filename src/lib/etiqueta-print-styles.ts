@@ -309,31 +309,36 @@ body {
 }
 
 .etiqueta-filtro__fluxo-bar {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  position: relative;
   width: 100%;
   height: 100%;
+  display: grid;
+  grid-template-rows: 11fr 31fr;
+  align-items: stretch;
   min-height: 0;
 }
 
-.etiqueta-filtro__fluxo-arrow {
-  flex: 0 0 3mm;
+.etiqueta-filtro__fluxo-shape {
+  position: absolute;
+  inset: 0;
   width: 100%;
+  height: 100%;
   display: block;
+  pointer-events: none;
 }
 
-.etiqueta-filtro__fluxo-body {
-  flex: 1;
-  min-height: 0;
+.etiqueta-filtro__fluxo-text {
+  grid-row: 2;
+  z-index: 1;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 0.7mm;
-  background: #000;
+  gap: 0.65mm;
+  align-self: center;
+  justify-self: center;
   color: #fff;
-  padding: 0.35mm 0.25mm;
+  padding: 0 0.2mm;
   box-sizing: border-box;
 }
 
@@ -341,61 +346,100 @@ body {
   writing-mode: vertical-rl;
   text-orientation: upright;
   font-family: "Arial Black", Arial, Helvetica, sans-serif;
-  font-size: 5pt;
+  font-size: 4.8pt;
   font-weight: 900;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   line-height: 1;
   white-space: nowrap;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__center-col {
-  justify-content: flex-start;
-  padding-top: 0.3mm;
-  padding-bottom: 0.25mm;
-  gap: 0.1mm;
+  width: 46mm;
+  flex: 0 0 46mm;
+  height: 20mm;
+  min-height: 20mm;
+  padding: 0 0.45mm 0 0.6mm;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__center-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 20mm;
+  min-height: 20mm;
+  width: 100%;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__center-stack > * {
+  flex-shrink: 0;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__right {
+  width: 15mm;
+  flex: 0 0 15mm;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0.35mm 0.05mm 0.35mm 0;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__qr {
+  justify-content: flex-end;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__text-block {
+  line-height: 1.06;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__line--medida {
+  overflow: visible;
+  text-overflow: unset;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__line,
 .etiqueta-filtro--completa .etiqueta-filtro__trace,
-.etiqueta-filtro--completa .etiqueta-filtro__specs,
-.etiqueta-filtro--completa .etiqueta-filtro__warn {
-  line-height: 1.02;
+.etiqueta-filtro--completa .etiqueta-filtro__specs {
+  font-size: 7pt;
+  line-height: 1.06;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__specs {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  font-size: 7.5pt;
-  padding-top: 0;
-  gap: 0 0.6mm;
-}
-
-.etiqueta-filtro--completa .etiqueta-filtro__specs--duas-linhas {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  row-gap: 0.08mm;
-  column-gap: 1mm;
+  row-gap: 0.1mm;
+  column-gap: 0.8mm;
+  padding-top: 0;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__trace {
   margin-top: 0;
 }
 
+.etiqueta-filtro--completa .etiqueta-filtro__trace span {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .etiqueta-filtro--completa .etiqueta-filtro__warn {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
-  font-size: 7.5pt;
+  gap: 0.06mm;
+  font-size: 6.5pt;
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.04;
   color: #000;
   text-transform: uppercase;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
+  margin-top: 0;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__warn span {
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: unset;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__logo-img {
@@ -416,10 +460,60 @@ body {
     max-height: 20mm !important;
     transform: none !important;
     zoom: 1 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  .etiqueta-filtro__fluxo-body {
+  /* Margem interna ~0,1 mm — evita corte na borda da térmica Argox 100×20 */
+  .etiqueta-filtro__main {
+    box-sizing: border-box !important;
+    padding: 0.1mm 0 !important;
+    align-items: stretch !important;
+    overflow: hidden !important;
+  }
+
+  .etiqueta-filtro__logo-wrap,
+  .etiqueta-filtro__center-col,
+  .etiqueta-filtro__right,
+  .etiqueta-filtro__fluxo,
+  .etiqueta-filtro__fluxo-bar {
+    height: auto !important;
+    max-height: none !important;
+    align-self: stretch !important;
+  }
+
+  .etiqueta-filtro--completa .etiqueta-filtro__center-col {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: hidden !important;
+  }
+
+  .etiqueta-filtro--completa .etiqueta-filtro__center-stack {
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  .etiqueta-filtro--completa .etiqueta-filtro__center-stack > * {
+    flex-shrink: 0 !important;
+  }
+
+  .etiqueta-filtro--completa .etiqueta-filtro__warn,
+  .etiqueta-filtro--completa .etiqueta-filtro__warn span {
+    overflow: visible !important;
+  }
+
+  .etiqueta-filtro__fluxo-text {
     filter: contrast(1.35);
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .etiqueta-filtro__fluxo-shape {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 }
 `;
