@@ -380,7 +380,7 @@ body {
   }
 
   .etiqueta-filtro__fluxo-svg {
-    filter: contrast(1.25);
+    filter: contrast(1.35);
   }
 }
 `;

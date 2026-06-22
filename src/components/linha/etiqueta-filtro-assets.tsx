@@ -1,4 +1,4 @@
-/** Seta "FLUXO DE AR" — preta sólida, texto branco centralizado no corpo. */
+/** Seta "FLUXO DE AR" — corpo preto sólido, texto branco legível na térmica. */
 export function FluxoDeArSeta({ className = "" }: { className?: string }) {
   return (
     <svg
@@ -7,20 +7,24 @@ export function FluxoDeArSeta({ className = "" }: { className?: string }) {
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
       role="img"
+      shapeRendering="crispEdges"
     >
-      <polygon points="5,0 10,10 0,10" fill="#000" stroke="#000" strokeWidth="0.2" />
-      <rect x="0.15" y="10" width="9.7" height="32" fill="#000" stroke="#000" strokeWidth="0.15" />
+      <polygon points="5,0 10,11 0,11" fill="#000" />
+      <rect x="0" y="11" width="10" height="31" fill="#000" />
       <text
         x="5"
-        y="26"
+        y="26.5"
         fill="#fff"
+        stroke="#fff"
+        strokeWidth="0.08"
+        paintOrder="stroke fill"
         fontFamily="Arial, Helvetica, sans-serif"
-        fontSize="3.45"
+        fontSize="3.85"
         fontWeight="900"
-        letterSpacing="0.1em"
+        letterSpacing="0.12em"
         textAnchor="middle"
         dominantBaseline="middle"
-        transform="rotate(-90 5 26)"
+        transform="rotate(-90 5 26.5)"
       >
         FLUXO DE AR
       </text>
