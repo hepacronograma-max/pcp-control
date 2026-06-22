@@ -29,7 +29,10 @@ import {
   POPUP_BLOCKED_ERROR,
   printEtiquetaInWindow,
 } from "@/lib/etiqueta-print-window";
-import { getHepaLogoDataUrl } from "@/lib/etiqueta-assets-cache";
+import {
+  getHepaLogoDataUrl,
+  invalidateHepaLogoCache,
+} from "@/lib/etiqueta-assets-cache";
 
 const QR_URL = "https://www.hepafiltros.com.br";
 
@@ -78,6 +81,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
   const [previewQr, setPreviewQr] = useState<string>("");
+  const [previewLogo, setPreviewLogo] = useState<string>("");
 
   useEffect(() => {
     if (!open) return;
@@ -108,6 +112,8 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    invalidateHepaLogoCache();
+    setPreviewLogo("");
     QRCode.toDataURL(QR_URL, QR_OPTS)
       .then((url) => {
         if (!cancelled) setPreviewQr(url);
@@ -115,7 +121,13 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       .catch(() => {
         if (!cancelled) setPreviewQr("");
       });
-    void getHepaLogoDataUrl().catch(() => undefined);
+    getHepaLogoDataUrl()
+      .then((url) => {
+        if (!cancelled) setPreviewLogo(url);
+      })
+      .catch((err) => {
+        console.warn("[etiqueta-print] logo preview:", err);
+      });
     return () => {
       cancelled = true;
     };
@@ -134,6 +146,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
         perdaInicial: perdaInicial.trim(),
         perdaFinal: perdaFinal.trim(),
         qrDataUrl: previewQr,
+        logoDataUrl: previewLogo || undefined,
       };
     },
     [
@@ -148,6 +161,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       vazao,
       perdaInicial,
       perdaFinal,
+      previewLogo,
     ]
   );
 
@@ -225,7 +239,9 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
         try {
           const [qrDataUrl, logoDataUrl] = await Promise.all([
             QRCode.toDataURL(QR_URL, QR_OPTS),
-            getHepaLogoDataUrl(),
+            previewLogo
+              ? Promise.resolve(previewLogo)
+              : getHepaLogoDataUrl(),
           ]);
           const base = {
             codigo,
@@ -283,6 +299,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       vazao,
       perdaInicial,
       perdaFinal,
+      previewLogo,
     ]
   );
 
