@@ -16,10 +16,11 @@ export const POPUP_BLOCKED_ERROR =
 
 /** Abre janela em branco — deve ser chamado de forma síncrona no clique do usuário. */
 export function openEtiquetaPrintWindow(): Window | null {
+  // ~100mm×20mm em px (96dpi) para a janela refletir o tamanho real da etiqueta
   return window.open(
     "about:blank",
     "etiqueta-print-hepa",
-    "width=480,height=160,menubar=no,toolbar=no,location=no,status=no"
+    "width=400,height=96,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes"
   );
 }
 
@@ -67,7 +68,6 @@ function buildPrintDocumentHtml(etiquetas: EtiquetaFiltroData[]): string {
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Etiqueta HEPA</title>
 <style>${ETIQUETA_PRINT_CSS}</style>
 </head>
