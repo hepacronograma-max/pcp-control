@@ -366,14 +366,20 @@ body {
 .etiqueta-filtro--completa .etiqueta-filtro__center-stack {
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
   height: 20mm;
   min-height: 20mm;
   width: 100%;
+  gap: 0.03mm;
+  box-sizing: border-box;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__center-stack > * {
   flex-shrink: 0;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__center-stack > .etiqueta-filtro__warn {
+  margin-top: auto;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__right {
@@ -389,26 +395,34 @@ body {
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__text-block {
-  line-height: 1.06;
+  line-height: 1;
+  padding-top: 0.62mm;
+}
+
+.etiqueta-filtro--completa .etiqueta-filtro__line--code-desc {
+  line-height: 1;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__line--medida {
   overflow: visible;
   text-overflow: unset;
+  line-height: 1;
+  margin-top: 0;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__line,
 .etiqueta-filtro--completa .etiqueta-filtro__trace,
 .etiqueta-filtro--completa .etiqueta-filtro__specs {
   font-size: 7pt;
-  line-height: 1.06;
+  line-height: 0.98;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__specs {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  row-gap: 0.1mm;
+  row-gap: 0;
   column-gap: 0.8mm;
   padding-top: 0;
+  line-height: 0.98;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__trace {
@@ -426,10 +440,10 @@ body {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.06mm;
+  gap: 0;
   font-size: 6.5pt;
   font-weight: 700;
-  line-height: 1.04;
+  line-height: 0.98;
   color: #000;
   text-transform: uppercase;
   letter-spacing: 0;
