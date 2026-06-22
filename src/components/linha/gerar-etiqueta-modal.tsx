@@ -429,7 +429,19 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       {typeof document !== "undefined" &&
         printEtiquetas.length > 0 &&
         createPortal(
-          <div className="etiqueta-print-host" ref={printHostRef}>
+          <div
+            className="etiqueta-print-host"
+            ref={printHostRef}
+            style={{
+              position: "fixed",
+              left: "-12000px",
+              top: 0,
+              width: "110mm",
+              height: "25mm",
+              overflow: "hidden",
+              pointerEvents: "none",
+            }}
+          >
             <EtiquetaPrintSheets etiquetas={printEtiquetas} />
           </div>,
           document.body
