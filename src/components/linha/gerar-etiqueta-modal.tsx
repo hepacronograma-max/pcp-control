@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import {
   Dialog,
@@ -23,7 +22,11 @@ import {
   gerarLoteEtiqueta,
   medidaEtiquetaFromDescricao,
 } from "@/lib/utils/etiqueta-filtro";
-import { printEtiquetaInIframe } from "@/lib/etiqueta-print-iframe";
+import {
+  openEtiquetaPrintWindow,
+  POPUP_BLOCKED_ERROR,
+  printEtiquetaInWindow,
+} from "@/lib/etiqueta-print-window";
 import { getHepaLogoDataUrl } from "@/lib/etiqueta-assets-cache";
 
 const QR_URL = "https://www.hepafiltros.com.br";
@@ -64,10 +67,8 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   const [perdaInicial, setPerdaInicial] = useState("");
   const [perdaFinal, setPerdaFinal] = useState("");
   const [printing, setPrinting] = useState(false);
-  const [printEtiquetas, setPrintEtiquetas] = useState<EtiquetaFiltroData[]>([]);
   const [printError, setPrintError] = useState<string | null>(null);
   const [previewQr, setPreviewQr] = useState<string>("");
-  const printHostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -166,40 +167,60 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
         }
       : previewBase;
 
-  const handlePrint = useCallback(async () => {
+  const handlePrint = useCallback(() => {
     if (!item || quantidade < 1 || printing) return;
     setPrintError(null);
-    try {
-      const [qrDataUrl, logoDataUrl] = await Promise.all([
-        QRCode.toDataURL(QR_URL, QR_OPTS),
-        getHepaLogoDataUrl(),
-      ]);
-      const batch = gerarEtiquetasComSeries(
-        {
-          codigo,
-          descricaoEtiqueta,
-          medida,
-          classe: classe.trim() || null,
-          modelo,
-          lote,
-          vazao: vazao.trim(),
-          perdaInicial: perdaInicial.trim(),
-          perdaFinal: perdaFinal.trim(),
-          qrDataUrl,
-          logoDataUrl,
-        },
-        quantidade
-      );
-      setPrintEtiquetas(batch);
-      setPrinting(true);
-    } catch (err) {
-      console.error("[etiqueta-print] preparação:", err);
-      setPrintError(
-        err instanceof Error
-          ? err.message
-          : "Não foi possível preparar a impressão."
-      );
+
+    const printWin = openEtiquetaPrintWindow();
+    if (!printWin) {
+      setPrintError(POPUP_BLOCKED_ERROR);
+      return;
     }
+
+    setPrinting(true);
+
+    void (async () => {
+      try {
+        const [qrDataUrl, logoDataUrl] = await Promise.all([
+          QRCode.toDataURL(QR_URL, QR_OPTS),
+          getHepaLogoDataUrl(),
+        ]);
+        const batch = gerarEtiquetasComSeries(
+          {
+            codigo,
+            descricaoEtiqueta,
+            medida,
+            classe: classe.trim() || null,
+            modelo,
+            lote,
+            vazao: vazao.trim(),
+            perdaInicial: perdaInicial.trim(),
+            perdaFinal: perdaFinal.trim(),
+            qrDataUrl,
+            logoDataUrl,
+          },
+          quantidade
+        );
+        const result = await printEtiquetaInWindow(printWin, batch);
+        if (!result.ok) {
+          setPrintError(result.error);
+        }
+      } catch (err) {
+        console.error("[etiqueta-print] preparação:", err);
+        setPrintError(
+          err instanceof Error
+            ? err.message
+            : "Não foi possível preparar a impressão."
+        );
+        try {
+          printWin.close();
+        } catch {
+          /* ignore */
+        }
+      } finally {
+        setPrinting(false);
+      }
+    })();
   }, [
     item,
     quantidade,
@@ -214,69 +235,6 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
     perdaInicial,
     perdaFinal,
   ]);
-
-  useLayoutEffect(() => {
-    if (!printing || printEtiquetas.length === 0) return;
-
-    let cancelled = false;
-
-    const finish = () => {
-      setPrinting(false);
-      setPrintEtiquetas([]);
-    };
-
-    const runPrint = async () => {
-      try {
-        await new Promise<void>((resolve) => {
-          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-        });
-        if (cancelled) return;
-
-        const host = printHostRef.current;
-        if (!host) {
-          throw new Error("Conteúdo da etiqueta não montou a tempo. Tente de novo.");
-        }
-
-        const imgs = host.querySelectorAll<HTMLImageElement>("img");
-        await Promise.all(
-          Array.from(imgs).map(
-            (img) =>
-              new Promise<void>((resolve) => {
-                if (img.complete) {
-                  resolve();
-                  return;
-                }
-                const done = () => resolve();
-                img.addEventListener("load", done, { once: true });
-                img.addEventListener("error", done, { once: true });
-                window.setTimeout(done, 12_000);
-              })
-          )
-        );
-        if (cancelled) return;
-
-        const result = await printEtiquetaInIframe(host);
-        if (!result.ok) {
-          setPrintError(result.error);
-        }
-      } catch (err) {
-        console.error("[etiqueta-print] erro no modal:", err);
-        setPrintError(
-          err instanceof Error
-            ? err.message
-            : "Não foi possível abrir a impressão."
-        );
-      } finally {
-        if (!cancelled) finish();
-      }
-    };
-
-    void runPrint();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [printing, printEtiquetas]);
 
   if (!item) return null;
 
@@ -414,7 +372,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
               <button
                 type="button"
                 className="rounded-md bg-[#1B4F72] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#163d58] disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={() => void handlePrint()}
+                onClick={handlePrint}
                 disabled={printing}
               >
                 {printing ? "Abrindo impressão…" : "Imprimir"}
@@ -425,27 +383,6 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
           </div>
         </DialogContent>
       </Dialog>
-
-      {typeof document !== "undefined" &&
-        printEtiquetas.length > 0 &&
-        createPortal(
-          <div
-            className="etiqueta-print-host"
-            ref={printHostRef}
-            style={{
-              position: "fixed",
-              left: "-12000px",
-              top: 0,
-              width: "110mm",
-              height: "25mm",
-              overflow: "hidden",
-              pointerEvents: "none",
-            }}
-          >
-            <EtiquetaPrintSheets etiquetas={printEtiquetas} />
-          </div>,
-          document.body
-        )}
     </>
   );
 }
