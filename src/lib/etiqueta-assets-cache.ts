@@ -18,7 +18,7 @@ export function getHepaLogoDataUrl(): Promise<string> {
   if (cachedLogoDataUrl) return Promise.resolve(cachedLogoDataUrl);
   if (!logoPromise) {
     logoPromise = (async () => {
-      const res = await fetch(HEPA_LOGO_ETIQUETA_SRC, { cache: "force-cache" });
+      const res = await fetch(HEPA_LOGO_ETIQUETA_SRC, { cache: "no-cache" });
       if (!res.ok) {
         throw new Error(`Logo da etiqueta não carregou (${res.status}).`);
       }
