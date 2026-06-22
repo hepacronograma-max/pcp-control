@@ -48,6 +48,8 @@ const PREVIEW_DEMO_FAIXA = {
   classe: "F8",
 } as const;
 
+type PrintMode = "todas" | "serie";
+
 type Props = {
   item: LineItemWithOrder | null;
   open: boolean;
@@ -63,8 +65,12 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
     [descricao, productCode]
   );
 
+  const quantidadeTotal = useMemo(
+    () => Math.max(1, Math.floor(Number(item?.quantity) || 1)),
+    [item?.quantity]
+  );
+
   const [classe, setClasse] = useState("");
-  const [quantidade, setQuantidade] = useState(1);
   const [vazao, setVazao] = useState("");
   const [perdaInicial, setPerdaInicial] = useState("");
   const [perdaFinal, setPerdaFinal] = useState("");
@@ -81,7 +87,6 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   useEffect(() => {
     if (!open || !item) return;
     setClasse(detected ?? "");
-    setQuantidade(Math.max(1, Number(item.quantity) || 1));
     setVazao("");
     setPerdaInicial("");
     setPerdaFinal("");
@@ -149,9 +154,9 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   const buildEtiquetaData = useCallback((): EtiquetaFiltroData | null => {
       const base = buildEtiquetaBase();
       if (!base) return null;
-      return { ...base, serie: 1, serieTotal: quantidade };
+      return { ...base, serie: 1, serieTotal: quantidadeTotal };
     },
-    [buildEtiquetaBase, quantidade]
+    [buildEtiquetaBase, quantidadeTotal]
   );
 
   const previewBase = buildEtiquetaData();
@@ -172,97 +177,114 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       : previewBase;
 
   const seriesReimpressao = useMemo(
-    () => parseSeriesReimpressao(reimprimirSeries, quantidade),
-    [reimprimirSeries, quantidade]
+    () => parseSeriesReimpressao(reimprimirSeries, quantidadeTotal),
+    [reimprimirSeries, quantidadeTotal]
   );
 
-  const quantidadeImpressao = useMemo(() => {
-    if (!seriesReimpressao.ok || seriesReimpressao.numeros.length === 0) {
-      return quantidade;
-    }
-    return seriesReimpressao.numeros.length;
-  }, [seriesReimpressao, quantidade]);
+  const podeImprimirSerie = reimprimirSeries.trim().length > 0;
 
-  const handlePrint = useCallback(() => {
-    if (!item || quantidade < 1 || printing) return;
-    setPrintError(null);
+  const contagemSeriesReimpressao =
+    seriesReimpressao.ok && seriesReimpressao.numeros.length > 0
+      ? seriesReimpressao.numeros.length
+      : 0;
 
-    const parsed = parseSeriesReimpressao(reimprimirSeries, quantidade);
-    if (!parsed.ok) {
-      setPrintError(parsed.error);
-      return;
-    }
+  const runPrint = useCallback(
+    (mode: PrintMode) => {
+      if (!item || quantidadeTotal < 1 || printing) return;
+      setPrintError(null);
 
-    const printWin = openEtiquetaPrintWindow();
-    if (!printWin) {
-      setPrintError(POPUP_BLOCKED_ERROR);
-      return;
-    }
+      let batchNumeros: number[] | null = null;
 
-    setPrinting(true);
-
-    void (async () => {
-      try {
-        const [qrDataUrl, logoDataUrl] = await Promise.all([
-          QRCode.toDataURL(QR_URL, QR_OPTS),
-          getHepaLogoDataUrl(),
-        ]);
-        const base = {
-          codigo,
-          descricaoEtiqueta,
-          medida,
-          classe: classe.trim() || null,
-          modelo,
-          lote,
-          vazao: vazao.trim(),
-          perdaInicial: perdaInicial.trim(),
-          perdaFinal: perdaFinal.trim(),
-          qrDataUrl,
-          logoDataUrl,
-        };
-        const batch =
-          parsed.numeros.length === 0
-            ? gerarEtiquetasComSeries(base, quantidade)
-            : gerarEtiquetasSeriesEspecificas(
-                base,
-                parsed.numeros,
-                quantidade
-              );
-        const result = await printEtiquetaInWindow(printWin, batch);
-        if (!result.ok) {
-          setPrintError(result.error);
+      if (mode === "serie") {
+        if (!reimprimirSeries.trim()) {
+          setPrintError(
+            "Digite o número da série que deseja reimprimir (ex: 2 ou 2,5,7)."
+          );
+          return;
         }
-      } catch (err) {
-        console.error("[etiqueta-print] preparação:", err);
-        setPrintError(
-          err instanceof Error
-            ? err.message
-            : "Não foi possível preparar a impressão."
+        const parsed = parseSeriesReimpressao(
+          reimprimirSeries,
+          quantidadeTotal
         );
-        try {
-          printWin.close();
-        } catch {
-          /* ignore */
+        if (!parsed.ok) {
+          setPrintError(parsed.error);
+          return;
         }
-      } finally {
-        setPrinting(false);
+        batchNumeros = parsed.numeros;
       }
-    })();
-  }, [
-    item,
-    quantidade,
-    printing,
-    codigo,
-    descricaoEtiqueta,
-    medida,
-    classe,
-    modelo,
-    lote,
-    vazao,
-    perdaInicial,
-    perdaFinal,
-    reimprimirSeries,
-  ]);
+
+      const printWin = openEtiquetaPrintWindow();
+      if (!printWin) {
+        setPrintError(POPUP_BLOCKED_ERROR);
+        return;
+      }
+
+      setPrinting(true);
+
+      void (async () => {
+        try {
+          const [qrDataUrl, logoDataUrl] = await Promise.all([
+            QRCode.toDataURL(QR_URL, QR_OPTS),
+            getHepaLogoDataUrl(),
+          ]);
+          const base = {
+            codigo,
+            descricaoEtiqueta,
+            medida,
+            classe: classe.trim() || null,
+            modelo,
+            lote,
+            vazao: vazao.trim(),
+            perdaInicial: perdaInicial.trim(),
+            perdaFinal: perdaFinal.trim(),
+            qrDataUrl,
+            logoDataUrl,
+          };
+          const batch =
+            mode === "todas"
+              ? gerarEtiquetasComSeries(base, quantidadeTotal)
+              : gerarEtiquetasSeriesEspecificas(
+                  base,
+                  batchNumeros!,
+                  quantidadeTotal
+                );
+          const result = await printEtiquetaInWindow(printWin, batch);
+          if (!result.ok) {
+            setPrintError(result.error);
+          }
+        } catch (err) {
+          console.error("[etiqueta-print] preparação:", err);
+          setPrintError(
+            err instanceof Error
+              ? err.message
+              : "Não foi possível preparar a impressão."
+          );
+          try {
+            printWin.close();
+          } catch {
+            /* ignore */
+          }
+        } finally {
+          setPrinting(false);
+        }
+      })();
+    },
+    [
+      item,
+      quantidadeTotal,
+      printing,
+      reimprimirSeries,
+      codigo,
+      descricaoEtiqueta,
+      medida,
+      classe,
+      modelo,
+      lote,
+      vazao,
+      perdaInicial,
+      perdaFinal,
+    ]
+  );
 
   if (!item) return null;
 
@@ -296,7 +318,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
               </p>
               <p>
                 <span className="font-semibold text-slate-700">Série (preview):</span>{" "}
-                1/{quantidade}
+                1/{quantidadeTotal}
               </p>
               <p>
                 <span className="font-semibold text-slate-700">Modelo:</span>{" "}
@@ -317,36 +339,34 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
                 />
               </label>
               <label className="text-xs font-medium text-slate-700">
-                Quantidade (etiquetas)
+                Quantidade do pedido (total da série)
                 <input
-                  type="number"
-                  min={1}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"
-                  value={quantidade}
-                  onChange={(e) =>
-                    setQuantidade(Math.max(1, Number(e.target.value) || 1))
-                  }
+                  type="text"
+                  readOnly
+                  tabIndex={-1}
+                  className="mt-1 w-full cursor-default rounded-md border border-slate-200 bg-slate-100 px-2 py-1.5 text-xs text-slate-800"
+                  value={`${quantidadeTotal} peça${quantidadeTotal !== 1 ? "s" : ""} → séries 1/${quantidadeTotal} … ${quantidadeTotal}/${quantidadeTotal}`}
                 />
               </label>
             </div>
 
             <label className="block text-xs font-medium text-slate-700">
-              Reimprimir série específica (opcional)
+              Série específica (reimpressão)
               <input
                 type="text"
                 inputMode="numeric"
                 className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"
                 value={reimprimirSeries}
                 onChange={(e) => setReimprimirSeries(e.target.value)}
-                placeholder="Ex.: 7 ou 7,12,15"
+                placeholder="Ex.: 2 ou 2,5,7"
                 disabled={printing}
               />
               <span className="mt-1 block font-normal text-[10px] leading-snug text-slate-500">
-                Deixe em branco para imprimir todas ({quantidade} etiquetas, séries
-                1/{quantidade} até {quantidade}/{quantidade}). Para reimprimir
-                etiquetas que estragaram, digite o número da série (ex:{" "}
-                <strong>7</strong> ou <strong>7,12</strong>) — sai como 7/
-                {quantidade}, mantendo o mesmo lote.
+                Use só se uma etiqueta estragou. Digite o número da série (ex:{" "}
+                <strong>2</strong> → imprime <strong>2/{quantidadeTotal}</strong>
+                ). Vários números separados por vírgula (ex:{" "}
+                <strong>2,5,7</strong>). O total /{quantidadeTotal} vem sempre
+                da quantidade do pedido acima.
               </span>
             </label>
 
@@ -402,34 +422,50 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
               </div>
             ) : null}
 
-            <div className="flex flex-col items-end gap-2 pt-1">
+            <div className="flex flex-col items-stretch gap-2 pt-1">
               {printError ? (
                 <p className="w-full rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-700">
                   {printError}
                 </p>
               ) : null}
-              <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-                onClick={onClose}
-                disabled={printing}
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className="rounded-md bg-[#1B4F72] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#163d58] disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={handlePrint}
-                disabled={printing}
-              >
-                {printing ? "Abrindo impressão…" : "Imprimir"}
-                {!printing && quantidadeImpressao > 1
-                  ? ` (${quantidadeImpressao} etiquetas)`
-                  : !printing && quantidadeImpressao === 1 && reimprimirSeries.trim()
-                    ? " (1 etiqueta — reimpressão)"
-                    : ""}
-              </button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                  onClick={onClose}
+                  disabled={printing}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => runPrint("serie")}
+                  disabled={printing || !podeImprimirSerie}
+                  title={
+                    !reimprimirSeries.trim()
+                      ? "Digite o número da série acima"
+                      : undefined
+                  }
+                >
+                  {printing
+                    ? "Abrindo impressão…"
+                    : `Imprimir série específica${
+                        contagemSeriesReimpressao > 0
+                          ? ` (${contagemSeriesReimpressao})`
+                          : ""
+                      }`}
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md bg-[#1B4F72] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#163d58] disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={() => runPrint("todas")}
+                  disabled={printing}
+                >
+                  {printing
+                    ? "Abrindo impressão…"
+                    : `Imprimir todas (${quantidadeTotal} etiqueta${quantidadeTotal !== 1 ? "s" : ""})`}
+                </button>
               </div>
             </div>
           </div>
