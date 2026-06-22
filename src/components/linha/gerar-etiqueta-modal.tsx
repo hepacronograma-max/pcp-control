@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import QRCode from "qrcode";
 import {
@@ -64,8 +64,14 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   const [perdaFinal, setPerdaFinal] = useState("");
   const [printing, setPrinting] = useState(false);
   const [printEtiquetas, setPrintEtiquetas] = useState<EtiquetaFiltroData[]>([]);
+  const [printError, setPrintError] = useState<string | null>(null);
   const [previewQr, setPreviewQr] = useState<string>("");
   const printHostRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setPrintError(null);
+  }, [open]);
 
   useEffect(() => {
     if (!open || !item) return;
@@ -159,7 +165,8 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       : previewBase;
 
   const handlePrint = useCallback(async () => {
-    if (!item || quantidade < 1) return;
+    if (!item || quantidade < 1 || printing) return;
+    setPrintError(null);
     const qrDataUrl = await QRCode.toDataURL(QR_URL, QR_OPTS);
     const base = buildEtiquetaBase();
     if (!base) return;
@@ -169,9 +176,9 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
     );
     setPrintEtiquetas(batch);
     setPrinting(true);
-  }, [item, quantidade, buildEtiquetaBase]);
+  }, [item, quantidade, printing, buildEtiquetaBase]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!printing || printEtiquetas.length === 0) return;
 
     let cancelled = false;
@@ -182,34 +189,49 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
     };
 
     const runPrint = async () => {
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      });
-      if (cancelled) return;
+      try {
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+        if (cancelled) return;
 
-      const host = printHostRef.current;
-      if (!host) {
-        finish();
-        return;
+        const host = printHostRef.current;
+        if (!host) {
+          throw new Error("Conteúdo da etiqueta não montou a tempo. Tente de novo.");
+        }
+
+        const imgs = host.querySelectorAll<HTMLImageElement>("img");
+        await Promise.all(
+          Array.from(imgs).map(
+            (img) =>
+              new Promise<void>((resolve) => {
+                if (img.complete) {
+                  resolve();
+                  return;
+                }
+                const done = () => resolve();
+                img.addEventListener("load", done, { once: true });
+                img.addEventListener("error", done, { once: true });
+                window.setTimeout(done, 12_000);
+              })
+          )
+        );
+        if (cancelled) return;
+
+        const result = await printEtiquetaInIframe(host);
+        if (!result.ok) {
+          setPrintError(result.error);
+        }
+      } catch (err) {
+        console.error("[etiqueta-print] erro no modal:", err);
+        setPrintError(
+          err instanceof Error
+            ? err.message
+            : "Não foi possível abrir a impressão."
+        );
+      } finally {
+        if (!cancelled) finish();
       }
-
-      const imgs = host.querySelectorAll<HTMLImageElement>("img");
-      await Promise.all(
-        Array.from(imgs).map(
-          (img) =>
-            new Promise<void>((resolve) => {
-              if (img.complete) {
-                resolve();
-                return;
-              }
-              img.addEventListener("load", () => resolve(), { once: true });
-              img.addEventListener("error", () => resolve(), { once: true });
-            })
-        )
-      );
-      if (cancelled) return;
-
-      await printEtiquetaInIframe(host, finish);
     };
 
     void runPrint();
@@ -337,21 +359,31 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
               </div>
             ) : null}
 
-            <div className="flex justify-end gap-2 pt-1">
+            <div className="flex flex-col items-end gap-2 pt-1">
+              {printError ? (
+                <p className="w-full rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs text-red-700">
+                  {printError}
+                </p>
+              ) : null}
+              <div className="flex justify-end gap-2">
               <button
                 type="button"
                 className="rounded-md border border-slate-300 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
                 onClick={onClose}
+                disabled={printing}
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                className="rounded-md bg-[#1B4F72] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#163d58]"
+                className="rounded-md bg-[#1B4F72] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#163d58] disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={() => void handlePrint()}
+                disabled={printing}
               >
-                Imprimir {quantidade > 1 ? `(${quantidade} etiquetas)` : ""}
+                {printing ? "Abrindo impressão…" : "Imprimir"}
+                {!printing && quantidade > 1 ? ` (${quantidade} etiquetas)` : ""}
               </button>
+              </div>
             </div>
           </div>
         </DialogContent>
