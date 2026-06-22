@@ -63,16 +63,21 @@ body {
 @media screen {
   html,
   body {
-    width: 100mm;
+    position: fixed !important;
+    left: -32000px !important;
+    top: -32000px !important;
+    width: 1px !important;
+    height: 1px !important;
     margin: 0;
     padding: 0;
-    overflow: hidden;
+    overflow: hidden !important;
+    opacity: 0 !important;
     background: #fff;
   }
 
   .etiqueta-print-root,
   .etiqueta-sheet {
-    visibility: hidden;
+    visibility: hidden !important;
   }
 }
 
@@ -184,7 +189,6 @@ body {
   width: auto;
   height: auto;
   object-fit: contain;
-  image-rendering: crisp-edges;
 }
 
 .etiqueta-filtro__center-col {
@@ -375,13 +379,8 @@ body {
     zoom: 1 !important;
   }
 
-  .etiqueta-filtro__logo-img {
-    filter: contrast(1.15) brightness(0.95);
-    image-rendering: crisp-edges;
-  }
-
   .etiqueta-filtro__fluxo-svg {
-    filter: contrast(1.2);
+    filter: contrast(1.25);
   }
 }
 `;

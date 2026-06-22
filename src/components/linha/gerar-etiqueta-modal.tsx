@@ -27,7 +27,7 @@ import {
   POPUP_BLOCKED_ERROR,
   printEtiquetaInWindow,
 } from "@/lib/etiqueta-print-window";
-import { getHepaLogoDataUrl, getHepaLogoDataUrlForPrint } from "@/lib/etiqueta-assets-cache";
+import { getHepaLogoDataUrl } from "@/lib/etiqueta-assets-cache";
 
 const QR_URL = "https://www.hepafiltros.com.br";
 
@@ -183,7 +183,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       try {
         const [qrDataUrl, logoDataUrl] = await Promise.all([
           QRCode.toDataURL(QR_URL, QR_OPTS),
-          getHepaLogoDataUrlForPrint(),
+          getHepaLogoDataUrl(),
         ]);
         const batch = gerarEtiquetasComSeries(
           {

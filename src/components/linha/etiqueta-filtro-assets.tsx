@@ -8,14 +8,14 @@ export function FluxoDeArSeta({ className = "" }: { className?: string }) {
       aria-hidden
       role="img"
     >
-      <polygon points="5,0 10,10 0,10" fill="#000" stroke="#000" strokeWidth="0.15" />
-      <rect x="0.25" y="10" width="9.5" height="32" fill="#000" stroke="#000" strokeWidth="0.1" />
+      <polygon points="5,0 10,10 0,10" fill="#000" stroke="#000" strokeWidth="0.2" />
+      <rect x="0.15" y="10" width="9.7" height="32" fill="#000" stroke="#000" strokeWidth="0.15" />
       <text
         x="5"
         y="26"
         fill="#fff"
         fontFamily="Arial, Helvetica, sans-serif"
-        fontSize="3.35"
+        fontSize="3.45"
         fontWeight="900"
         letterSpacing="0.1em"
         textAnchor="middle"
