@@ -414,7 +414,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
                   !perdaFinal.trim()
                     ? " · faixa técnica com valores de exemplo enquanto campos vazios"
                     : null}
-                  {" · "}escala ajustada · logo original.
+                  {" · "}escala ajustada · logo P&B.
                 </p>
                 <div className="rounded-md border border-dashed border-slate-300 bg-white p-3 overflow-hidden">
                   <EtiquetaPrintSheets etiquetas={[previewEtiqueta]} preview />
