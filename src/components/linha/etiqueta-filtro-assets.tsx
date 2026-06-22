@@ -30,5 +30,10 @@ export function FluxoDeArSeta({ className = "" }: { className?: string }) {
   );
 }
 
-/** Logo HEPA P&B recortado (filtro + AIR FLOW + Filtros Industriais). v2 jun/2026 */
-export const HEPA_LOGO_ETIQUETA_SRC = "/etiquetas/hepa-logo-bw-top.png?v=2";
+/**
+ * Logo P&B recortado (filtro + AIR FLOW + Filtros Industriais).
+ * Arquivo físico: public/etiquetas/hepa-logo-bw-top.png
+ * Após substituir o PNG manualmente, incremente LOGO_CACHE_VERSION e faça deploy.
+ */
+export const LOGO_CACHE_VERSION = 3;
+export const HEPA_LOGO_ETIQUETA_SRC = `/etiquetas/hepa-logo-bw-top.png?v=${LOGO_CACHE_VERSION}`;

@@ -38,60 +38,76 @@ export function openEtiquetaPrintWindow(): Window | null {
   return printWin;
 }
 
-function waitForImages(doc: Document, timeoutMs: number): Promise<void> {
-  const imgs = doc.querySelectorAll("img");
-  if (imgs.length === 0) return Promise.resolve();
-
-  return Promise.all(
-    Array.from(imgs).map(
-      (img) =>
-        new Promise<void>((resolve) => {
-          if (img.complete) {
-            resolve();
-            return;
-          }
-          const done = () => resolve();
-          img.addEventListener("load", done, { once: true });
-          img.addEventListener("error", done, { once: true });
-          window.setTimeout(done, timeoutMs);
-        })
-    )
-  ).then(() => undefined);
-}
-
-function waitForDocumentReady(win: Window): Promise<void> {
-  return new Promise<void>((resolve) => {
-    const run = () => {
-      void waitForImages(win.document, LOAD_TIMEOUT_MS).then(resolve);
-    };
-    if (win.document.readyState === "complete") {
-      run();
-    } else {
-      win.addEventListener("load", run, { once: true });
-      window.setTimeout(run, LOAD_TIMEOUT_MS);
-    }
-  });
-}
-
-const PRINT_WINDOW_CLOSE_SCRIPT = `<script>
+/** Script na janela popup: aguarda imagens, chama print(), fecha após afterprint. */
+const PRINT_WINDOW_SCRIPT = `<script>
 (function () {
+  var printed = false;
+  var fechando = false;
+
   function fechar() {
+    if (fechando) return;
+    fechando = true;
     try { window.close(); } catch (e) {}
   }
+
+  function doPrint() {
+    if (printed) return;
+    printed = true;
+    try {
+      console.log("[etiqueta-print] print() chamado (janela)");
+      window.focus();
+      window.print();
+      console.log("[etiqueta-print] print() retornou (diálogo pode estar aberto)");
+    } catch (e) {
+      console.error("[etiqueta-print] print() falhou:", e);
+    }
+  }
+
+  function schedulePrint() {
+    requestAnimationFrame(function () {
+      requestAnimationFrame(doPrint);
+    });
+  }
+
+  function whenReady() {
+    var imgs = document.querySelectorAll("img");
+    var pending = 0;
+    imgs.forEach(function (img) {
+      if (!img.complete) {
+        pending++;
+        var check = function () {
+          pending--;
+          if (pending <= 0) schedulePrint();
+        };
+        img.addEventListener("load", check, { once: true });
+        img.addEventListener("error", check, { once: true });
+      }
+    });
+    if (pending === 0) schedulePrint();
+  }
+
   window.addEventListener("afterprint", function () {
     setTimeout(fechar, 80);
   });
+
   if (window.matchMedia) {
     var mq = window.matchMedia("print");
-    var fechando = false;
     mq.addEventListener("change", function (ev) {
-      if (!ev.matches && !fechando) {
-        fechando = true;
-        setTimeout(fechar, 120);
-      }
+      if (!ev.matches) setTimeout(fechar, 120);
     });
   }
+
   setTimeout(fechar, ${WINDOW_CLOSE_FALLBACK_MS});
+
+  if (document.readyState === "complete") {
+    whenReady();
+  } else {
+    window.addEventListener("load", whenReady, { once: true });
+  }
+
+  setTimeout(function () {
+    if (!printed) whenReady();
+  }, 600);
 })();
 </script>`;
 
@@ -107,40 +123,13 @@ function buildPrintDocumentHtml(etiquetas: EtiquetaFiltroData[]): string {
 <title>Etiqueta HEPA</title>
 <style>${ETIQUETA_PRINT_CSS}</style>
 </head>
-<body>${bodyHtml}${PRINT_WINDOW_CLOSE_SCRIPT}</body>
+<body>${bodyHtml}${PRINT_WINDOW_SCRIPT}</body>
 </html>`;
 }
 
-function scheduleWindowCloseFromParent(printWin: Window): void {
-  let closed = false;
-  const close = () => {
-    if (closed || printWin.closed) return;
-    closed = true;
-    printWin.removeEventListener("afterprint", onAfterPrint);
-    try {
-      printWin.close();
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const onAfterPrint = () => {
-    window.setTimeout(close, 80);
-  };
-
-  try {
-    printWin.addEventListener("afterprint", onAfterPrint);
-    printWin.onafterprint = onAfterPrint;
-  } catch {
-    /* ignore */
-  }
-
-  window.setTimeout(close, WINDOW_CLOSE_FALLBACK_MS);
-}
-
 /**
- * Escreve etiquetas na janela já aberta e chama print() nela.
- * Retorna logo após print() — a janela fecha sozinha (afterprint + script interno).
+ * Escreve etiquetas na janela já aberta.
+ * O print() roda DENTRO da popup (script inline) — o opener perde o gesto do usuário após await.
  */
 export async function printEtiquetaInWindow(
   printWin: Window,
@@ -163,34 +152,27 @@ export async function printEtiquetaInWindow(
   }
 
   try {
-    maximizePrintWindow(printWin);
-
     const html = buildPrintDocumentHtml(etiquetas);
     const doc = printWin.document;
     doc.open();
     doc.write(html);
     doc.close();
 
-    await waitForDocumentReady(printWin);
-
-    maximizePrintWindow(printWin);
-
+    // Aguarda sinal de que o documento montou (print dispara no script da popup).
     await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      const timer = window.setTimeout(resolve, LOAD_TIMEOUT_MS);
+      const done = () => {
+        window.clearTimeout(timer);
+        resolve();
+      };
+      if (printWin.document.readyState === "complete") {
+        window.setTimeout(done, 400);
+      } else {
+        printWin.addEventListener("load", () => window.setTimeout(done, 400), {
+          once: true,
+        });
+      }
     });
-
-    printWin.focus();
-
-    console.log("[etiqueta-print] print() chamado", {
-      sheets: etiquetas.length,
-      target: "window",
-    });
-    printWin.print();
-    console.log(
-      "[etiqueta-print] print() retornou (diálogo pode estar aberto)"
-    );
-
-    scheduleWindowCloseFromParent(printWin);
 
     return { ok: true };
   } catch (err) {

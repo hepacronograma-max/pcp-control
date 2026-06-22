@@ -13,6 +13,12 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
+/** Limpa cache em memória após substituir o arquivo PNG manualmente. */
+export function invalidateHepaLogoCache(): void {
+  cachedLogoDataUrl = null;
+  logoPromise = null;
+}
+
 /** Pré-carrega o logo HEPA como data URL (cache em memória). */
 export function getHepaLogoDataUrl(): Promise<string> {
   if (cachedLogoDataUrl) return Promise.resolve(cachedLogoDataUrl);
