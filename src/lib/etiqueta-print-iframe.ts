@@ -1,13 +1,7 @@
-const ETIQUETA_PRINT_CSS = "/etiquetas/etiqueta-print.css";
+import { ETIQUETA_PRINT_CSS } from "@/lib/etiqueta-print-styles";
+
 const LOAD_TIMEOUT_MS = 12_000;
 const IFRAME_CLEANUP_MS = 60_000;
-
-const FALLBACK_PRINT_CSS = `
-@page { size: 100mm 20mm; margin: 0; }
-html, body { margin: 0; padding: 0; width: 100mm; background: #fff; }
-.etiqueta-sheet { width: 100mm; height: 20mm; overflow: hidden; page-break-after: always; }
-.etiqueta-filtro { width: 100mm; height: 20mm; font-family: Arial, Helvetica, sans-serif; }
-`;
 
 export type EtiquetaPrintResult = { ok: true } | { ok: false; error: string };
 
@@ -40,11 +34,7 @@ function waitForImages(doc: Document, timeoutMs: number): Promise<void> {
     Array.from(imgs).map(
       (img) =>
         new Promise<void>((resolve) => {
-          if (img.complete && img.naturalWidth > 0) {
-            resolve();
-            return;
-          }
-          if (img.complete && img.naturalHeight === 0) {
+          if (img.complete) {
             resolve();
             return;
           }
@@ -57,36 +47,14 @@ function waitForImages(doc: Document, timeoutMs: number): Promise<void> {
   ).then(() => undefined);
 }
 
-async function loadPrintCss(origin: string): Promise<string> {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${origin}${ETIQUETA_PRINT_CSS}`, {
-      signal: controller.signal,
-      cache: "force-cache",
-    });
-    if (!res.ok) {
-      console.warn(
-        "[etiqueta-print] CSS não carregou, usando fallback:",
-        res.status
-      );
-      return FALLBACK_PRINT_CSS;
-    }
-    return await res.text();
-  } catch (err) {
-    console.warn("[etiqueta-print] fetch CSS falhou, usando fallback:", err);
-    return FALLBACK_PRINT_CSS;
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
-
-function absolutizeImages(root: ParentNode, origin: string): void {
-  root.querySelectorAll("img").forEach((img) => {
-    const src = img.getAttribute("src");
-    if (src?.startsWith("/")) {
-      img.src = `${origin}${src}`;
-    }
+/** Copia src das imagens do host original (data URLs já resolvidas). */
+function syncImagesFromSource(clone: HTMLElement, source: HTMLElement): void {
+  const sourceImgs = source.querySelectorAll("img");
+  const cloneImgs = clone.querySelectorAll("img");
+  cloneImgs.forEach((cloneImg, index) => {
+    const sourceImg = sourceImgs[index];
+    if (!sourceImg?.src) return;
+    cloneImg.src = sourceImg.src;
   });
 }
 
@@ -96,18 +64,44 @@ function removeIframe(iframe: HTMLIFrameElement): void {
   }
 }
 
+function waitForPrintDialogClose(win: Window): Promise<void> {
+  return new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+
+    const onAfterPrint = () => {
+      win.removeEventListener("afterprint", onAfterPrint);
+      finish();
+    };
+
+    win.addEventListener("afterprint", onAfterPrint);
+    window.setTimeout(finish, IFRAME_CLEANUP_MS);
+  });
+}
+
 /**
  * Imprime etiquetas num iframe isolado (100×20 mm).
- * Retorna após chamar print() — limpeza do iframe é assíncrona (afterprint).
+ * Sem fetch de rede: CSS embutido e imagens já em data URL no host.
  */
 export async function printEtiquetaInIframe(
   sourceHost: HTMLElement
 ): Promise<EtiquetaPrintResult> {
+  const sheetCount = sourceHost.querySelectorAll(".etiqueta-sheet").length;
+  if (sheetCount === 0) {
+    return {
+      ok: false,
+      error: "Nenhuma etiqueta encontrada para impressão.",
+    };
+  }
+
   const iframe = document.createElement("iframe");
   iframe.setAttribute("title", "Impressão etiqueta");
-  // Dimensões reais fora da tela: iframe 0×0 oculto impede print() no Edge/Chrome.
   iframe.style.cssText =
-    "position:fixed;left:-12000px;top:0;width:110mm;height:25mm;border:0;opacity:0;pointer-events:none;";
+    "position:fixed;left:0;top:0;width:100mm;height:20mm;border:0;z-index:2147483647;background:#fff;";
 
   document.body.appendChild(iframe);
 
@@ -116,31 +110,27 @@ export async function printEtiquetaInIframe(
   if (!win || !doc) {
     console.error("[etiqueta-print] iframe sem contentWindow/contentDocument");
     removeIframe(iframe);
-    return { ok: false, error: "Não foi possível criar o contexto de impressão." };
+    return {
+      ok: false,
+      error: "Não foi possível criar o contexto de impressão.",
+    };
   }
 
   try {
-    const origin = window.location.origin;
-
     doc.open();
     doc.write(
       '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Etiqueta</title></head><body></body></html>'
     );
     doc.close();
 
-    const base = doc.createElement("base");
-    base.href = `${origin}/`;
-    doc.head.appendChild(base);
-
-    const cssText = await loadPrintCss(origin);
     const style = doc.createElement("style");
-    style.textContent = cssText;
+    style.textContent = ETIQUETA_PRINT_CSS;
     doc.head.appendChild(style);
 
     const clone = sourceHost.cloneNode(true) as HTMLElement;
     clone.className = "etiqueta-print-root";
     clone.removeAttribute("style");
-    absolutizeImages(clone, origin);
+    syncImagesFromSource(clone, sourceHost);
     doc.body.appendChild(clone);
 
     await withTimeout(
@@ -153,16 +143,11 @@ export async function printEtiquetaInIframe(
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
 
-    const cleanupIframe = () => {
-      win.removeEventListener("afterprint", cleanupIframe);
-      removeIframe(iframe);
-    };
-
-    win.addEventListener("afterprint", cleanupIframe);
-    window.setTimeout(cleanupIframe, IFRAME_CLEANUP_MS);
-
     win.focus();
     win.print();
+
+    await waitForPrintDialogClose(win);
+    removeIframe(iframe);
 
     return { ok: true };
   } catch (err) {

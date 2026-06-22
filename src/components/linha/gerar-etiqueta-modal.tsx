@@ -24,6 +24,7 @@ import {
   medidaEtiquetaFromDescricao,
 } from "@/lib/utils/etiqueta-filtro";
 import { printEtiquetaInIframe } from "@/lib/etiqueta-print-iframe";
+import { getHepaLogoDataUrl } from "@/lib/etiqueta-assets-cache";
 
 const QR_URL = "https://www.hepafiltros.com.br";
 
@@ -104,6 +105,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       .catch(() => {
         if (!cancelled) setPreviewQr("");
       });
+    void getHepaLogoDataUrl().catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -167,16 +169,51 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   const handlePrint = useCallback(async () => {
     if (!item || quantidade < 1 || printing) return;
     setPrintError(null);
-    const qrDataUrl = await QRCode.toDataURL(QR_URL, QR_OPTS);
-    const base = buildEtiquetaBase();
-    if (!base) return;
-    const batch = gerarEtiquetasComSeries(
-      { ...base, qrDataUrl },
-      quantidade
-    );
-    setPrintEtiquetas(batch);
-    setPrinting(true);
-  }, [item, quantidade, printing, buildEtiquetaBase]);
+    try {
+      const [qrDataUrl, logoDataUrl] = await Promise.all([
+        QRCode.toDataURL(QR_URL, QR_OPTS),
+        getHepaLogoDataUrl(),
+      ]);
+      const batch = gerarEtiquetasComSeries(
+        {
+          codigo,
+          descricaoEtiqueta,
+          medida,
+          classe: classe.trim() || null,
+          modelo,
+          lote,
+          vazao: vazao.trim(),
+          perdaInicial: perdaInicial.trim(),
+          perdaFinal: perdaFinal.trim(),
+          qrDataUrl,
+          logoDataUrl,
+        },
+        quantidade
+      );
+      setPrintEtiquetas(batch);
+      setPrinting(true);
+    } catch (err) {
+      console.error("[etiqueta-print] preparação:", err);
+      setPrintError(
+        err instanceof Error
+          ? err.message
+          : "Não foi possível preparar a impressão."
+      );
+    }
+  }, [
+    item,
+    quantidade,
+    printing,
+    codigo,
+    descricaoEtiqueta,
+    medida,
+    classe,
+    modelo,
+    lote,
+    vazao,
+    perdaInicial,
+    perdaFinal,
+  ]);
 
   useLayoutEffect(() => {
     if (!printing || printEtiquetas.length === 0) return;
