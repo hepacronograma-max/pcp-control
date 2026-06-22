@@ -14,24 +14,26 @@ export type EtiquetaPrintResult = { ok: true } | { ok: false; error: string };
 export const POPUP_BLOCKED_ERROR =
   "Pop-up bloqueado. Clique no ícone de pop-up bloqueado na barra de endereço, permita pop-ups de pcp-control.vercel.app e tente de novo.";
 
-function tuckPrintWindowAway(win: Window): void {
+function maximizePrintWindow(win: Window): void {
   try {
-    win.moveTo(-32_000, -32_000);
-    win.resizeTo(1, 1);
+    const { availWidth, availHeight } = window.screen;
+    win.moveTo(0, 0);
+    win.resizeTo(availWidth, availHeight);
   } catch {
-    /* moveTo/resizeTo podem falhar fora do gesto do usuário */
+    /* moveTo/resizeTo podem falhar em alguns navegadores */
   }
 }
 
-/** Abre janela mínima fora da tela — deve ser chamado de forma síncrona no clique. */
+/** Abre janela maximizada — deve ser chamado de forma síncrona no clique. */
 export function openEtiquetaPrintWindow(): Window | null {
+  const { availWidth, availHeight } = window.screen;
   const printWin = window.open(
     "about:blank",
     "etiqueta-print-hepa",
-    "left=-32000,top=-32000,width=1,height=1,menubar=no,toolbar=no,location=no,status=no,scrollbars=no"
+    `width=${availWidth},height=${availHeight},left=0,top=0,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes`
   );
   if (printWin) {
-    tuckPrintWindowAway(printWin);
+    maximizePrintWindow(printWin);
   }
   return printWin;
 }
@@ -71,19 +73,6 @@ function waitForDocumentReady(win: Window): Promise<void> {
   });
 }
 
-const PRINT_WINDOW_HIDE_SCRIPT = `<script>
-(function () {
-  function esconder() {
-    try {
-      window.moveTo(-32000, -32000);
-      window.resizeTo(1, 1);
-    } catch (e) {}
-  }
-  esconder();
-  document.addEventListener("DOMContentLoaded", esconder);
-})();
-</script>`;
-
 const PRINT_WINDOW_CLOSE_SCRIPT = `<script>
 (function () {
   function fechar() {
@@ -117,7 +106,6 @@ function buildPrintDocumentHtml(etiquetas: EtiquetaFiltroData[]): string {
 <meta charset="utf-8">
 <title>Etiqueta HEPA</title>
 <style>${ETIQUETA_PRINT_CSS}</style>
-${PRINT_WINDOW_HIDE_SCRIPT}
 </head>
 <body>${bodyHtml}${PRINT_WINDOW_CLOSE_SCRIPT}</body>
 </html>`;
@@ -175,7 +163,7 @@ export async function printEtiquetaInWindow(
   }
 
   try {
-    tuckPrintWindowAway(printWin);
+    maximizePrintWindow(printWin);
 
     const html = buildPrintDocumentHtml(etiquetas);
     const doc = printWin.document;
@@ -183,18 +171,15 @@ export async function printEtiquetaInWindow(
     doc.write(html);
     doc.close();
 
-    tuckPrintWindowAway(printWin);
-
     await waitForDocumentReady(printWin);
 
-    tuckPrintWindowAway(printWin);
+    maximizePrintWindow(printWin);
 
     await new Promise<void>((resolve) => {
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
 
-    // Mantém foco no PCP — evita popup piscar na frente do operador
-    window.focus();
+    printWin.focus();
 
     console.log("[etiqueta-print] print() chamado", {
       sheets: etiquetas.length,
@@ -205,8 +190,6 @@ export async function printEtiquetaInWindow(
       "[etiqueta-print] print() retornou (diálogo pode estar aberto)"
     );
 
-    tuckPrintWindowAway(printWin);
-    window.focus();
     scheduleWindowCloseFromParent(printWin);
 
     return { ok: true };

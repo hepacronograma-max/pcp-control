@@ -63,21 +63,26 @@ body {
 @media screen {
   html,
   body {
-    position: fixed !important;
-    left: -32000px !important;
-    top: -32000px !important;
-    width: 1px !important;
-    height: 1px !important;
     margin: 0;
-    padding: 0;
-    overflow: hidden !important;
-    opacity: 0 !important;
-    background: #fff;
+    padding: 24px;
+    min-height: 100vh;
+    box-sizing: border-box;
+    background: #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
   }
 
-  .etiqueta-print-root,
+  .etiqueta-print-root {
+    width: 100mm;
+  }
+
   .etiqueta-sheet {
-    visibility: hidden !important;
+    width: 100mm;
+    height: 20mm;
+    margin-bottom: 4mm;
+    background: #fff;
+    box-shadow: 0 0 0 1px #cbd5e1;
   }
 }
 
@@ -192,8 +197,8 @@ body {
 }
 
 .etiqueta-filtro__center-col {
-  width: 46mm;
-  flex: 0 0 46mm;
+  width: 43mm;
+  flex: 0 0 43mm;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -293,13 +298,14 @@ body {
 }
 
 .etiqueta-filtro__fluxo {
-  width: 8mm;
-  flex: 0 0 8mm;
+  width: 11mm;
+  flex: 0 0 11mm;
   display: flex;
   align-items: stretch;
   justify-content: center;
-  padding: 0.4mm 0.3mm 0.4mm 0.1mm;
+  padding: 0.3mm 0.5mm 0.3mm 0.2mm;
   box-sizing: border-box;
+  overflow: visible;
 }
 
 .etiqueta-filtro__fluxo-svg {

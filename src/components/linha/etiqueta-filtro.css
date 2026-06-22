@@ -63,7 +63,7 @@
 }
 
 /*
- * Larguras fixas (100 mm): logo 26 | centro 46 | direita 20 | seta 8
+ * Larguras fixas (100 mm): logo 26 | centro 43 | direita 20 | seta 11
  */
 .etiqueta-filtro {
   width: 100mm;
@@ -109,8 +109,8 @@
 }
 
 .etiqueta-filtro__center-col {
-  width: 46mm;
-  flex: 0 0 46mm;
+  width: 43mm;
+  flex: 0 0 43mm;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -210,13 +210,14 @@
 }
 
 .etiqueta-filtro__fluxo {
-  width: 8mm;
-  flex: 0 0 8mm;
+  width: 11mm;
+  flex: 0 0 11mm;
   display: flex;
   align-items: stretch;
   justify-content: center;
-  padding: 0.4mm 0.3mm 0.4mm 0.1mm;
+  padding: 0.3mm 0.5mm 0.3mm 0.2mm;
   box-sizing: border-box;
+  overflow: visible;
 }
 
 .etiqueta-filtro__fluxo-svg {
