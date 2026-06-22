@@ -1,8 +1,18 @@
 /** CSS completo da etiqueta 100×20 mm — embutido para impressão sem fetch de rede. */
-export const ETIQUETA_PRINT_CSS = `/* Estilos da etiqueta 100×20 mm — documento isolado (iframe de impressão). */
+export const ETIQUETA_PRINT_CSS = `/* Etiqueta 100×20 mm — janela de impressão (1:1, sem scale do preview). */
 
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* 100mm ≈ 3.937in · 20mm ≈ 0.787in — polegadas ajudam drivers Argox/Térmica */
 @page {
   size: 100mm 20mm;
+  margin: 0;
+}
+
+@page {
+  size: 3.937in 0.787in;
   margin: 0;
 }
 
@@ -15,7 +25,7 @@ body {
 }
 
 body {
-  min-height: 20mm;
+  min-height: 0;
 }
 
 .etiqueta-print-root {
@@ -25,10 +35,17 @@ body {
 }
 
 .etiqueta-sheet {
+  display: block;
   width: 100mm;
   height: 20mm;
+  min-height: 20mm;
+  max-height: 20mm;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
   box-sizing: border-box;
+  page-break-inside: avoid;
+  break-inside: avoid;
   page-break-after: always;
   break-after: page;
 }
@@ -38,13 +55,80 @@ body {
   break-after: auto;
 }
 
+.etiqueta-sheet + .etiqueta-sheet {
+  page-break-before: always;
+  break-before: page;
+}
+
+@media screen {
+  html,
+  body {
+    width: 100mm;
+    background: #e2e8f0;
+  }
+
+  .etiqueta-sheet {
+    margin-bottom: 2mm;
+    background: #fff;
+    box-shadow: 0 0 0 1px #cbd5e1;
+  }
+}
+
 @media print {
   html,
   body {
+    margin: 0 !important;
+    padding: 0 !important;
     width: 100mm !important;
+    min-width: 100mm !important;
+    max-width: 100mm !important;
     height: auto !important;
     overflow: visible !important;
     background: #fff !important;
+    zoom: 1 !important;
+    transform: none !important;
+  }
+
+  .etiqueta-print-root {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100mm !important;
+  }
+
+  .etiqueta-sheet {
+    display: block !important;
+    width: 100mm !important;
+    height: 20mm !important;
+    min-width: 100mm !important;
+    min-height: 20mm !important;
+    max-width: 100mm !important;
+    max-height: 20mm !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    transform: none !important;
+    zoom: 1 !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-after: always !important;
+    break-after: page !important;
+  }
+
+  .etiqueta-sheet:last-child {
+    page-break-after: auto !important;
+    break-after: auto !important;
+  }
+
+  .etiqueta-sheet + .etiqueta-sheet {
+    page-break-before: always !important;
+    break-before: page !important;
+  }
+
+  .etiqueta-preview-scale,
+  .etiqueta-sheet--preview {
+    transform: none !important;
+    width: 100mm !important;
+    height: 20mm !important;
   }
 }
 
@@ -66,6 +150,7 @@ body {
   flex-direction: column;
   overflow: hidden;
   padding: 0;
+  margin: 0;
 }
 
 .etiqueta-filtro__main {
@@ -271,5 +356,17 @@ body {
 .etiqueta-filtro--completa .etiqueta-filtro__qr img {
   width: 10.5mm;
   height: 10.5mm;
+}
+
+@media print {
+  .etiqueta-filtro,
+  .etiqueta-filtro__main {
+    width: 100mm !important;
+    height: 20mm !important;
+    max-width: 100mm !important;
+    max-height: 20mm !important;
+    transform: none !important;
+    zoom: 1 !important;
+  }
 }
 `;
