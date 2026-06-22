@@ -1,5 +1,4 @@
 /** Seta "FLUXO DE AR" — preta sólida, texto branco centralizado no corpo. */
-
 export function FluxoDeArSeta({ className = "" }: { className?: string }) {
   return (
     <svg
@@ -9,19 +8,19 @@ export function FluxoDeArSeta({ className = "" }: { className?: string }) {
       aria-hidden
       role="img"
     >
-      <polygon points="5,0 10,9 0,9" fill="#000" />
-      <rect x="1.5" y="9" width="7" height="33" fill="#000" />
+      <polygon points="5,0 10,10 0,10" fill="#000" stroke="#000" strokeWidth="0.15" />
+      <rect x="0.25" y="10" width="9.5" height="32" fill="#000" stroke="#000" strokeWidth="0.1" />
       <text
         x="5"
-        y="25.5"
+        y="26"
         fill="#fff"
         fontFamily="Arial, Helvetica, sans-serif"
-        fontSize="3"
-        fontWeight="700"
-        letterSpacing="0.08em"
+        fontSize="3.35"
+        fontWeight="900"
+        letterSpacing="0.1em"
         textAnchor="middle"
         dominantBaseline="middle"
-        transform="rotate(-90 5 25.5)"
+        transform="rotate(-90 5 26)"
       >
         FLUXO DE AR
       </text>

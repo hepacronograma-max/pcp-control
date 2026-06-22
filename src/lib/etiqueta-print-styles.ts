@@ -64,13 +64,15 @@ body {
   html,
   body {
     width: 100mm;
-    background: #e2e8f0;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #fff;
   }
 
+  .etiqueta-print-root,
   .etiqueta-sheet {
-    margin-bottom: 2mm;
-    background: #fff;
-    box-shadow: 0 0 0 1px #cbd5e1;
+    visibility: hidden;
   }
 }
 
@@ -93,6 +95,7 @@ body {
     margin: 0 !important;
     padding: 0 !important;
     width: 100mm !important;
+    visibility: visible !important;
   }
 
   .etiqueta-sheet {
@@ -106,6 +109,7 @@ body {
     margin: 0 !important;
     padding: 0 !important;
     overflow: hidden !important;
+    visibility: visible !important;
     transform: none !important;
     zoom: 1 !important;
     page-break-inside: avoid !important;
@@ -180,6 +184,7 @@ body {
   width: auto;
   height: auto;
   object-fit: contain;
+  image-rendering: crisp-edges;
 }
 
 .etiqueta-filtro__center-col {
@@ -297,6 +302,7 @@ body {
   display: block;
   width: 100%;
   height: 100%;
+  shape-rendering: geometricPrecision;
 }
 
 .etiqueta-filtro--completa .etiqueta-filtro__center-col {
@@ -367,6 +373,15 @@ body {
     max-height: 20mm !important;
     transform: none !important;
     zoom: 1 !important;
+  }
+
+  .etiqueta-filtro__logo-img {
+    filter: contrast(1.15) brightness(0.95);
+    image-rendering: crisp-edges;
+  }
+
+  .etiqueta-filtro__fluxo-svg {
+    filter: contrast(1.2);
   }
 }
 `;
