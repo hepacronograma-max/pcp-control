@@ -27,6 +27,8 @@ export type EtiquetaFiltroData = {
   perdaInicial?: string;
   perdaFinal?: string;
   qrDataUrl: string;
+  /** Data URL do logo — impressão usa só memória, sem rede no iframe. */
+  logoDataUrl?: string;
 };
 
 type Props = EtiquetaFiltroData & {
@@ -46,6 +48,7 @@ export function EtiquetaFiltro100x20({
   perdaInicial,
   perdaFinal,
   qrDataUrl,
+  logoDataUrl,
   className = "",
 }: Props) {
   const isCompleta = modelo === "completa";
@@ -67,7 +70,7 @@ export function EtiquetaFiltro100x20({
         <div className="etiqueta-filtro__logo-wrap">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={HEPA_LOGO_ETIQUETA_SRC}
+            src={logoDataUrl ?? HEPA_LOGO_ETIQUETA_SRC}
             alt=""
             className="etiqueta-filtro__logo-img"
           />
