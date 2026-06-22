@@ -20,9 +20,13 @@ import {
 
   gerarEtiquetasComSeries,
 
+  gerarEtiquetasSeriesEspecificas,
+
   gerarLoteEtiqueta,
 
   medidaEtiquetaFromDescricao,
+
+  parseSeriesReimpressao,
 
 } from "../src/lib/utils/etiqueta-filtro";
 
@@ -386,4 +390,97 @@ describe("gerarEtiquetasComSeries", () => {
 
 });
 
+
+
+describe("parseSeriesReimpressao", () => {
+
+  it("vazio imprime todas", () => {
+
+    assert.deepEqual(parseSeriesReimpressao("", 20), { ok: true, numeros: [] });
+
+    assert.deepEqual(parseSeriesReimpressao("   ", 20), { ok: true, numeros: [] });
+
+  });
+
+
+
+  it("uma série válida", () => {
+
+    assert.deepEqual(parseSeriesReimpressao("7", 20), { ok: true, numeros: [7] });
+
+  });
+
+
+
+  it("várias séries com vírgula", () => {
+
+    assert.deepEqual(parseSeriesReimpressao("7, 12, 15", 20), {
+
+      ok: true,
+
+      numeros: [7, 12, 15],
+
+    });
+
+  });
+
+
+
+  it("rejeita série maior que o total", () => {
+
+    const r = parseSeriesReimpressao("25", 20);
+
+    assert.equal(r.ok, false);
+
+    if (!r.ok) assert.match(r.error, /25/);
+
+  });
+
+
+
+  it("rejeita série zero", () => {
+
+    assert.equal(parseSeriesReimpressao("0", 20).ok, false);
+
+  });
+
+
+
+  it("remove duplicatas e ordena", () => {
+
+    assert.deepEqual(parseSeriesReimpressao("15,7,7,12", 20), {
+
+      ok: true,
+
+      numeros: [7, 12, 15],
+
+    });
+
+  });
+
+});
+
+
+
+describe("gerarEtiquetasSeriesEspecificas", () => {
+
+  it("reimpressão mantém serieTotal e lote", () => {
+
+    const base = { lote: "260622-260020", codigo: "HF-52504" };
+
+    const batch = gerarEtiquetasSeriesEspecificas(base, [7], 20);
+
+    assert.equal(batch.length, 1);
+
+    assert.equal(batch[0].serie, 7);
+
+    assert.equal(batch[0].serieTotal, 20);
+
+    assert.equal(formatSerieEtiqueta(batch[0].serie, batch[0].serieTotal), "7/20");
+
+    assert.equal(batch[0].lote, base.lote);
+
+  });
+
+});
 

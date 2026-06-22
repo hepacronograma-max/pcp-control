@@ -19,8 +19,10 @@ import {
   descricaoSemMedida,
   detectarClasseFiltragem,
   gerarEtiquetasComSeries,
+  gerarEtiquetasSeriesEspecificas,
   gerarLoteEtiqueta,
   medidaEtiquetaFromDescricao,
+  parseSeriesReimpressao,
 } from "@/lib/utils/etiqueta-filtro";
 import {
   openEtiquetaPrintWindow,
@@ -66,6 +68,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   const [vazao, setVazao] = useState("");
   const [perdaInicial, setPerdaInicial] = useState("");
   const [perdaFinal, setPerdaFinal] = useState("");
+  const [reimprimirSeries, setReimprimirSeries] = useState("");
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
   const [previewQr, setPreviewQr] = useState<string>("");
@@ -82,6 +85,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
     setVazao("");
     setPerdaInicial("");
     setPerdaFinal("");
+    setReimprimirSeries("");
   }, [open, item, detected]);
 
   const modelo = decidirModeloEtiqueta(classe.trim() || null);
@@ -167,9 +171,27 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
         }
       : previewBase;
 
+  const seriesReimpressao = useMemo(
+    () => parseSeriesReimpressao(reimprimirSeries, quantidade),
+    [reimprimirSeries, quantidade]
+  );
+
+  const quantidadeImpressao = useMemo(() => {
+    if (!seriesReimpressao.ok || seriesReimpressao.numeros.length === 0) {
+      return quantidade;
+    }
+    return seriesReimpressao.numeros.length;
+  }, [seriesReimpressao, quantidade]);
+
   const handlePrint = useCallback(() => {
     if (!item || quantidade < 1 || printing) return;
     setPrintError(null);
+
+    const parsed = parseSeriesReimpressao(reimprimirSeries, quantidade);
+    if (!parsed.ok) {
+      setPrintError(parsed.error);
+      return;
+    }
 
     const printWin = openEtiquetaPrintWindow();
     if (!printWin) {
@@ -185,22 +207,27 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
           QRCode.toDataURL(QR_URL, QR_OPTS),
           getHepaLogoDataUrl(),
         ]);
-        const batch = gerarEtiquetasComSeries(
-          {
-            codigo,
-            descricaoEtiqueta,
-            medida,
-            classe: classe.trim() || null,
-            modelo,
-            lote,
-            vazao: vazao.trim(),
-            perdaInicial: perdaInicial.trim(),
-            perdaFinal: perdaFinal.trim(),
-            qrDataUrl,
-            logoDataUrl,
-          },
-          quantidade
-        );
+        const base = {
+          codigo,
+          descricaoEtiqueta,
+          medida,
+          classe: classe.trim() || null,
+          modelo,
+          lote,
+          vazao: vazao.trim(),
+          perdaInicial: perdaInicial.trim(),
+          perdaFinal: perdaFinal.trim(),
+          qrDataUrl,
+          logoDataUrl,
+        };
+        const batch =
+          parsed.numeros.length === 0
+            ? gerarEtiquetasComSeries(base, quantidade)
+            : gerarEtiquetasSeriesEspecificas(
+                base,
+                parsed.numeros,
+                quantidade
+              );
         const result = await printEtiquetaInWindow(printWin, batch);
         if (!result.ok) {
           setPrintError(result.error);
@@ -234,6 +261,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
     vazao,
     perdaInicial,
     perdaFinal,
+    reimprimirSeries,
   ]);
 
   if (!item) return null;
@@ -301,6 +329,26 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
                 />
               </label>
             </div>
+
+            <label className="block text-xs font-medium text-slate-700">
+              Reimprimir série específica (opcional)
+              <input
+                type="text"
+                inputMode="numeric"
+                className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs"
+                value={reimprimirSeries}
+                onChange={(e) => setReimprimirSeries(e.target.value)}
+                placeholder="Ex.: 7 ou 7,12,15"
+                disabled={printing}
+              />
+              <span className="mt-1 block font-normal text-[10px] leading-snug text-slate-500">
+                Deixe em branco para imprimir todas ({quantidade} etiquetas, séries
+                1/{quantidade} até {quantidade}/{quantidade}). Para reimprimir
+                etiquetas que estragaram, digite o número da série (ex:{" "}
+                <strong>7</strong> ou <strong>7,12</strong>) — sai como 7/
+                {quantidade}, mantendo o mesmo lote.
+              </span>
+            </label>
 
             {modelo === "completa" ? (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -376,7 +424,11 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
                 disabled={printing}
               >
                 {printing ? "Abrindo impressão…" : "Imprimir"}
-                {!printing && quantidade > 1 ? ` (${quantidade} etiquetas)` : ""}
+                {!printing && quantidadeImpressao > 1
+                  ? ` (${quantidadeImpressao} etiquetas)`
+                  : !printing && quantidadeImpressao === 1 && reimprimirSeries.trim()
+                    ? " (1 etiqueta — reimpressão)"
+                    : ""}
               </button>
               </div>
             </div>
