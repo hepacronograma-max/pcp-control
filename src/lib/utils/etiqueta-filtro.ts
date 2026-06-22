@@ -171,3 +171,66 @@ export function gerarEtiquetasComSeries<T extends Record<string, unknown>>(
     serieTotal: total,
   }));
 }
+
+export type ParseSeriesReimpressaoResult =
+  | { ok: true; numeros: number[] }
+  | { ok: false; error: string };
+
+/**
+ * Interpreta campo "reimprimir série específica".
+ * Vazio → numeros [] (imprimir todas). Ex.: "7" ou "7, 12, 15".
+ */
+export function parseSeriesReimpressao(
+  input: string,
+  serieTotal: number
+): ParseSeriesReimpressaoResult {
+  const trimmed = input.trim();
+  const total = Math.max(1, Math.floor(serieTotal));
+
+  if (!trimmed) {
+    return { ok: true, numeros: [] };
+  }
+
+  const partes = trimmed
+    .split(/[,;]+/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (partes.length === 0) {
+    return { ok: true, numeros: [] };
+  }
+
+  const numeros: number[] = [];
+  for (const parte of partes) {
+    if (!/^\d+$/.test(parte)) {
+      return {
+        ok: false,
+        error: `"${parte}" não é válido. Use números entre 1 e ${total}, separados por vírgula (ex: 7 ou 7,12).`,
+      };
+    }
+    const n = Number(parte);
+    if (n < 1 || n > total) {
+      return {
+        ok: false,
+        error: `Série ${n} inválida: informe um número entre 1 e ${total}.`,
+      };
+    }
+    numeros.push(n);
+  }
+
+  return { ok: true, numeros: [...new Set(numeros)].sort((a, b) => a - b) };
+}
+
+/** Gera etiquetas só para as séries indicadas (reimpressão parcial). */
+export function gerarEtiquetasSeriesEspecificas<T extends Record<string, unknown>>(
+  base: T,
+  numerosSerie: number[],
+  serieTotal: number
+): (T & { serie: number; serieTotal: number })[] {
+  const total = Math.max(1, Math.floor(serieTotal));
+  return numerosSerie.map((serie) => ({
+    ...base,
+    serie,
+    serieTotal: total,
+  }));
+}
