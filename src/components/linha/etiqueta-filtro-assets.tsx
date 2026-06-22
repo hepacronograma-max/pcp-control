@@ -32,5 +32,5 @@ export function FluxoDeArSeta({ className = "" }: { className?: string }) {
   );
 }
 
-/** Logo original HEPA (colorido) — arquivo em public/etiquetas. */
-export const HEPA_LOGO_ETIQUETA_SRC = "/etiquetas/hepa-logo-original.png";
+/** Logo HEPA P&B (parte superior: filtro + AIR FLOW + Filtros Industriais). */
+export const HEPA_LOGO_ETIQUETA_SRC = "/etiquetas/hepa-logo-bw-top.png";
