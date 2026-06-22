@@ -145,7 +145,7 @@ export function EtiquetaFiltro100x20({
         </div>
 
         <div className="etiqueta-filtro__fluxo" aria-hidden>
-          <FluxoDeArSeta className="etiqueta-filtro__fluxo-svg" />
+          <FluxoDeArSeta />
         </div>
       </div>
     </div>

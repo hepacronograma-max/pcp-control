@@ -1,32 +1,20 @@
-/** Seta "FLUXO DE AR" — corpo preto sólido; viewBox largo para o texto não cortar. */
+/** Coluna direita: seta para cima + faixa preta com "FLUXO" / "DE AR" legível na térmica. */
 export function FluxoDeArSeta({ className = "" }: { className?: string }) {
   return (
-    <svg
-      className={className}
-      viewBox="0 0 16 42"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden
-      role="img"
-      shapeRendering="geometricPrecision"
-      preserveAspectRatio="xMidYMid meet"
-    >
-      <polygon points="8,0 16,11 0,11" fill="#000" />
-      <rect x="0" y="11" width="16" height="31" fill="#000" />
-      <text
-        x="8"
-        y="27"
-        fill="#fff"
-        fontFamily="Arial, Helvetica, sans-serif"
-        fontSize="3.25"
-        fontWeight="900"
-        letterSpacing="0.04em"
-        textAnchor="middle"
-        dominantBaseline="middle"
-        transform="rotate(-90 8 27)"
+    <div className={`etiqueta-filtro__fluxo-bar ${className}`.trim()} aria-hidden>
+      <svg
+        className="etiqueta-filtro__fluxo-arrow"
+        viewBox="0 0 26 11"
+        xmlns="http://www.w3.org/2000/svg"
+        preserveAspectRatio="xMidYMax meet"
       >
-        FLUXO DE AR
-      </text>
-    </svg>
+        <polygon points="13,0 26,11 0,11" fill="#000" />
+      </svg>
+      <div className="etiqueta-filtro__fluxo-body">
+        <span className="etiqueta-filtro__fluxo-line">FLUXO</span>
+        <span className="etiqueta-filtro__fluxo-line">DE AR</span>
+      </div>
+    </div>
   );
 }
 
