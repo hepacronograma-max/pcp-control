@@ -7,20 +7,19 @@ import {
 import { ETIQUETA_PRINT_CSS } from "@/lib/etiqueta-print-styles";
 
 const LOAD_TIMEOUT_MS = 12_000;
-const WINDOW_CLOSE_MS = 60_000;
+const WINDOW_CLOSE_FALLBACK_MS = 120_000;
 
 export type EtiquetaPrintResult = { ok: true } | { ok: false; error: string };
 
 export const POPUP_BLOCKED_ERROR =
   "Pop-up bloqueado. Clique no ícone de pop-up bloqueado na barra de endereço, permita pop-ups de pcp-control.vercel.app e tente de novo.";
 
-/** Abre janela em branco — deve ser chamado de forma síncrona no clique do usuário. */
+/** Abre janela mínima fora da tela — deve ser chamado de forma síncrona no clique. */
 export function openEtiquetaPrintWindow(): Window | null {
-  // ~100mm×20mm em px (96dpi) para a janela refletir o tamanho real da etiqueta
   return window.open(
     "about:blank",
     "etiqueta-print-hepa",
-    "width=400,height=96,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes"
+    "left=-2400,top=-2400,width=1,height=1,menubar=no,toolbar=no,location=no,status=no,scrollbars=no"
   );
 }
 
@@ -59,6 +58,28 @@ function waitForDocumentReady(win: Window): Promise<void> {
   });
 }
 
+const PRINT_WINDOW_CLOSE_SCRIPT = `<script>
+(function () {
+  function fechar() {
+    try { window.close(); } catch (e) {}
+  }
+  window.addEventListener("afterprint", function () {
+    setTimeout(fechar, 120);
+  });
+  if (window.matchMedia) {
+    var mq = window.matchMedia("print");
+    var fechando = false;
+    mq.addEventListener("change", function (ev) {
+      if (!ev.matches && !fechando) {
+        fechando = true;
+        setTimeout(fechar, 200);
+      }
+    });
+  }
+  setTimeout(fechar, ${WINDOW_CLOSE_FALLBACK_MS});
+})();
+</script>`;
+
 function buildPrintDocumentHtml(etiquetas: EtiquetaFiltroData[]): string {
   const sheetsHtml = renderToStaticMarkup(
     createElement(EtiquetaPrintSheets, { etiquetas })
@@ -71,32 +92,40 @@ function buildPrintDocumentHtml(etiquetas: EtiquetaFiltroData[]): string {
 <title>Etiqueta HEPA</title>
 <style>${ETIQUETA_PRINT_CSS}</style>
 </head>
-<body>${bodyHtml}</body>
+<body>${bodyHtml}${PRINT_WINDOW_CLOSE_SCRIPT}</body>
 </html>`;
 }
 
-function scheduleWindowClose(win: Window): void {
+function scheduleWindowCloseFromParent(printWin: Window): void {
   let closed = false;
   const close = () => {
-    if (closed || win.closed) return;
+    if (closed || printWin.closed) return;
     closed = true;
-    win.removeEventListener("afterprint", onAfterPrint);
+    printWin.removeEventListener("afterprint", onAfterPrint);
     try {
-      win.close();
+      printWin.close();
     } catch {
-      /* janela pode já ter sido fechada pelo usuário */
+      /* ignore */
     }
   };
 
-  const onAfterPrint = () => close();
+  const onAfterPrint = () => {
+    window.setTimeout(close, 150);
+  };
 
-  win.addEventListener("afterprint", onAfterPrint);
-  window.setTimeout(close, WINDOW_CLOSE_MS);
+  try {
+    printWin.addEventListener("afterprint", onAfterPrint);
+    printWin.onafterprint = onAfterPrint;
+  } catch {
+    /* ignore */
+  }
+
+  window.setTimeout(close, WINDOW_CLOSE_FALLBACK_MS);
 }
 
 /**
  * Escreve etiquetas na janela já aberta e chama print() nela.
- * Retorna logo após print() — fechamento da janela é assíncrono (afterprint).
+ * Retorna logo após print() — a janela fecha sozinha (afterprint + script interno).
  */
 export async function printEtiquetaInWindow(
   printWin: Window,
@@ -142,7 +171,7 @@ export async function printEtiquetaInWindow(
       "[etiqueta-print] print() retornou (diálogo pode estar aberto)"
     );
 
-    scheduleWindowClose(printWin);
+    scheduleWindowCloseFromParent(printWin);
 
     return { ok: true };
   } catch (err) {
