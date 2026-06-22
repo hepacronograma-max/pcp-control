@@ -64,28 +64,25 @@ function removeIframe(iframe: HTMLIFrameElement): void {
   }
 }
 
-function waitForPrintDialogClose(win: Window): Promise<void> {
-  return new Promise<void>((resolve) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      resolve();
-    };
+function scheduleIframeCleanup(iframe: HTMLIFrameElement, win: Window): void {
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    win.removeEventListener("afterprint", onAfterPrint);
+    removeIframe(iframe);
+  };
 
-    const onAfterPrint = () => {
-      win.removeEventListener("afterprint", onAfterPrint);
-      finish();
-    };
+  const onAfterPrint = () => cleanup();
 
-    win.addEventListener("afterprint", onAfterPrint);
-    window.setTimeout(finish, IFRAME_CLEANUP_MS);
-  });
+  win.addEventListener("afterprint", onAfterPrint);
+  window.setTimeout(cleanup, IFRAME_CLEANUP_MS);
 }
 
 /**
  * Imprime etiquetas num iframe isolado (100×20 mm).
  * Sem fetch de rede: CSS embutido e imagens já em data URL no host.
+ * Retorna logo após chamar print() — limpeza do iframe é assíncrona (afterprint).
  */
 export async function printEtiquetaInIframe(
   sourceHost: HTMLElement
@@ -100,8 +97,9 @@ export async function printEtiquetaInIframe(
 
   const iframe = document.createElement("iframe");
   iframe.setAttribute("title", "Impressão etiqueta");
+  // Dimensões reais fora da tela: 0×0 ou on-screen bloqueia print() com modal aberto no Edge.
   iframe.style.cssText =
-    "position:fixed;left:0;top:0;width:100mm;height:20mm;border:0;z-index:2147483647;background:#fff;";
+    "position:fixed;left:-12000px;top:0;width:110mm;height:25mm;border:0;opacity:1;pointer-events:none;";
 
   document.body.appendChild(iframe);
 
@@ -143,11 +141,17 @@ export async function printEtiquetaInIframe(
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
     });
 
+    iframe.focus();
     win.focus();
-    win.print();
 
-    await waitForPrintDialogClose(win);
-    removeIframe(iframe);
+    console.log("[etiqueta-print] print() chamado", {
+      sheets: sheetCount,
+      iframeWindow: win === iframe.contentWindow,
+    });
+    win.print();
+    console.log("[etiqueta-print] print() retornou (diálogo pode estar aberto)");
+
+    scheduleIframeCleanup(iframe, win);
 
     return { ok: true };
   } catch (err) {
