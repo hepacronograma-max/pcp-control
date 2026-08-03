@@ -1,0 +1,187 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  calcularVazaoPressao,
+  isPrecisaInputs,
+  isResultadoCalculo,
+  motorBolsa,
+  motorCunha,
+  motorFino,
+  motorPlano,
+  parseFamilia,
+} from "../src/lib/motor-vazao";
+
+describe("motorPlano", () => {
+  it("610×610 papel 50mm → ~1072 m³/h", () => {
+    const r = motorPlano({
+      largura_mm: 610,
+      altura_mm: 610,
+      espessura_papel_mm: 50,
+    });
+    assert.equal(r.vazao, 1072);
+    assert.equal(r.dPi, 250);
+    assert.equal(r.dPf, 600);
+  });
+
+  it("610×610 papel 80mm → escala com fator 0.90", () => {
+    const r = motorPlano({
+      largura_mm: 610,
+      altura_mm: 610,
+      espessura_papel_mm: 80,
+    });
+    // 0.8*(80/50)*0.9 * 0.61*0.61 * 3600 ≈ 1543
+    assert.equal(r.vazao, 1543);
+  });
+});
+
+describe("motorCunha", () => {
+  it("3 cunhas 450×450 → ~1548 m³/h", () => {
+    const r = motorCunha({
+      base_mm: 450,
+      altura_mm: 450,
+      num_cunhas: 3,
+    });
+    assert.ok(
+      Math.abs(r.vazao - 1548) <= 2,
+      `esperado ~1548, obtido ${r.vazao}`
+    );
+    assert.equal(r.dPi, 250);
+    assert.equal(r.dPf, 600);
+  });
+
+  it("6 cunhas 610×610 (N6) → ~3400 m³/h", () => {
+    const r = motorCunha({
+      base_mm: 610,
+      altura_mm: 610,
+      num_cunhas: 6,
+    });
+    assert.equal(r.vazao, 3400);
+  });
+});
+
+describe("motorFino", () => {
+  it("fibra_vidro 80mm com coroa 592×592 → 3000 m³/h", () => {
+    const r = motorFino({
+      largura_mm: 592,
+      altura_mm: 592,
+      material: "fibra_vidro",
+      espessura_papel_mm: 80,
+      tem_coroa: true,
+    });
+    assert.equal(r.vazao, 3000);
+    assert.equal(r.dPi, 150);
+    assert.equal(r.dPf, 450);
+  });
+});
+
+describe("motorBolsa", () => {
+  it("F8 8 bolsas 592×592 → ~3400 m³/h", () => {
+    const r = motorBolsa({
+      base_mm: 592,
+      altura_mm: 592,
+      num_bolsas: 8,
+      classe: "F8",
+    });
+    assert.equal(r.vazao, 3400);
+    assert.equal(r.dPi, 81);
+    assert.equal(r.dPf, 450);
+  });
+});
+
+describe("parseFamilia", () => {
+  it("ABSW6-H14 → cunha, 6 cunhas, H14", () => {
+    const f = parseFamilia(
+      "HF-1579",
+      "FILTRO HF-ABSW6-H14-AG-S 592X287X292mm"
+    );
+    assert.equal(f.tipo, "cunha");
+    assert.equal(f.num_elementos, 6);
+    assert.equal(f.classe, "H14");
+    assert.equal(f.largura_mm, 592);
+    assert.equal(f.altura_mm, 287);
+    assert.equal(f.profundidade_mm, 292);
+  });
+
+  it("BSF8-8 → bolsa, F8, 8 bolsas", () => {
+    const f = parseFamilia("HF-1405", "FILTRO HF-BSF8-8-AG 592X592X600mm");
+    assert.equal(f.tipo, "bolsa");
+    assert.equal(f.classe, "F8");
+    assert.equal(f.num_elementos, 8);
+  });
+
+  it("ABSP-H14 → plano, H14", () => {
+    const f = parseFamilia(
+      "HF-017",
+      "FILTRO HF-ABSP-H14-T-S 610X610X78mm"
+    );
+    assert.equal(f.tipo, "plano");
+    assert.equal(f.classe, "H14");
+    assert.equal(f.modelo, "ABSP");
+  });
+
+  it("FFP-F7 → fino", () => {
+    const f = parseFamilia(
+      "HF-1822",
+      "FILTRO HF-FFP-F7-AG-S 432X620X78mm"
+    );
+    assert.equal(f.tipo, "fino");
+    assert.equal(f.classe, "F7");
+  });
+
+  it("PL-M5 → sem_calculo", () => {
+    const f = parseFamilia("HF-0251", "FILTRO HF-PL-M5 180x620x45mm");
+    assert.equal(f.tipo, "sem_calculo");
+    assert.equal(f.classe, "M5");
+  });
+
+  it("ABSW sem dígito → cunha com falta num_elementos", () => {
+    const f = parseFamilia("HF-066", "FILTRO HF-ABSW-750 305X305X292mm");
+    assert.equal(f.tipo, "cunha");
+    assert.equal(f.num_elementos, null);
+    assert.ok(f.falta.includes("num_elementos"));
+  });
+});
+
+describe("calcularVazaoPressao", () => {
+  it("PL → null (sem_calculo)", () => {
+    const r = calcularVazaoPressao({
+      product_code: "HF-1",
+      description: "FILTRO HF-PL-M5 595X595X45mm",
+    });
+    assert.equal(r, null);
+  });
+
+  it("plano sem papel → precisa espessura_papel_mm", () => {
+    const r = calcularVazaoPressao({
+      description: "FILTRO HF-ABSP-H14-T-S 610X610X78mm",
+    });
+    assert.ok(isPrecisaInputs(r));
+    if (isPrecisaInputs(r)) {
+      assert.ok(r.precisa.includes("espessura_papel_mm"));
+    }
+  });
+
+  it("plano com papel 50 → 1072", () => {
+    const r = calcularVazaoPressao(
+      { description: "FILTRO HF-ABSP-H14-T-S 610X610X78mm" },
+      { espessura_papel_mm: 50 }
+    );
+    assert.ok(isResultadoCalculo(r));
+    if (isResultadoCalculo(r)) {
+      assert.equal(r.motor_usado, "plano");
+      assert.equal(r.vazao, 1072);
+      assert.ok(r.memoria_calculo.includes("Motor PLANO"));
+    }
+  });
+
+  it("bolsa BSF8-8 completa → 3400", () => {
+    const r = calcularVazaoPressao({
+      description: "FILTRO HF-BSF8-8-AG 592X592X600mm",
+    });
+    assert.ok(isResultadoCalculo(r));
+    if (isResultadoCalculo(r)) {
+      assert.equal(r.motor_usado, "bolsa");
+      assert.equal(r.vazao, 3400);
+    }
+  });
+});

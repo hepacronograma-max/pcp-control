@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit",
     "test:omie": "npx tsx --test tests/omie-*.test.ts",
     "test:etiqueta": "npx tsx --test tests/etiqueta-filtro.test.ts",
+    "test:motor": "npx tsx --test tests/motor-vazao.test.ts",
     "import-backup": "node import-backup-to-supabase.js",
     "cleanup": "node scripts/run-cleanup.js",
     "cleanup:dry": "node scripts/run-cleanup.js --dry-run",
