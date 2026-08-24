@@ -1136,14 +1136,16 @@ function drawConclusaoDiscreta(doc: JsPdfDoc, y: number): number {
 
 
 /**
- * Gera PDF A4 conforme moldes HTML.
- * Tipo A e B/C/D: 1 página. Assinaturas no rodapé da folha.
+ * Desenha 1 folha de certificado no doc atual (página já selecionada).
  */
-export async function gerarCertificadoPdf(
-  params: CertificadoPdfParams
-): Promise<Blob> {
-  const { jsPDF } = await import("jspdf");
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+async function drawCertificadoPagina(
+  doc: JsPdfDoc,
+  params: CertificadoPdfParams,
+  assinaturas: {
+    imgElab: string | null;
+    imgAprov: string | null;
+  }
+): Promise<void> {
   const dataStr = fmtData(params.dataEmissao ?? new Date());
   const template = params.roteamento.template;
   const comTeste = template.temTesteBancada;
@@ -1174,7 +1176,9 @@ export async function gerarCertificadoPdf(
     const grafY = y + 2.2;
     let grafH = grafCeiling - grafY;
     const minGraf = 56;
-    if (grafH < minGraf) grafH = Math.max(40, Math.min(minGraf, grafCeiling - grafY));
+    if (grafH < minGraf) {
+      grafH = Math.max(40, Math.min(minGraf, grafCeiling - grafY));
+    }
 
     await drawDoisGraficos(doc, params, grafY, grafH, { x: M, w: INNER_W });
     if (comTeste) {
@@ -1184,6 +1188,22 @@ export async function gerarCertificadoPdf(
     }
   }
 
+  drawAssin(doc, params.elaborador, params.aprovador, assinY, {
+    h: ASSIN_H,
+    imgElab: assinaturas.imgElab,
+    imgAprov: assinaturas.imgAprov,
+  });
+}
+
+async function resolveAssinaturas(
+  params: Pick<
+    CertificadoPdfParams,
+    | "elaborador"
+    | "aprovador"
+    | "assinaturaElaboradorDataUrl"
+    | "assinaturaAprovadorDataUrl"
+  >
+): Promise<{ imgElab: string | null; imgAprov: string | null }> {
   const imgElab = await enhanceAssinaturaDataUrl(
     params.assinaturaElaboradorDataUrl !== undefined
       ? params.assinaturaElaboradorDataUrl
@@ -1194,40 +1214,76 @@ export async function gerarCertificadoPdf(
       ? params.assinaturaAprovadorDataUrl
       : await loadAssinaturaDataUrl(params.aprovador)
   );
+  return { imgElab, imgAprov };
+}
 
-  drawAssin(doc, params.elaborador, params.aprovador, assinY, {
-    h: ASSIN_H,
-    imgElab,
-    imgAprov,
-  });
-
+/**
+ * Gera PDF A4 conforme moldes HTML.
+ * Tipo A e B/C/D: 1 página. Assinaturas no rodapé da folha.
+ */
+export async function gerarCertificadoPdf(
+  params: CertificadoPdfParams
+): Promise<Blob> {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const assinaturas = await resolveAssinaturas(params);
+  await drawCertificadoPagina(doc, params, assinaturas);
   return doc.output("blob");
 }
 
 /** Sobe quando o layout muda — o preview do modal usa isto para não reutilizar blob antigo. */
-export const CERT_PDF_LAYOUT = 27;
+export const CERT_PDF_LAYOUT = 28;
 
+export type CertificadoLoteResult = {
+  blob: Blob;
+  filename: string;
+  paginas: number;
+};
+
+/**
+ * Gera um único PDF com N folhas (1 certificado por página).
+ */
 export async function gerarCertificadosSeries(
   base: Omit<CertificadoPdfParams, "item"> & {
     item: Omit<CertificadoItemInput, "serie" | "serieTotal">;
   },
   series: number[],
   serieTotal: number
-): Promise<{ serie: number; blob: Blob; filename: string }[]> {
-  const out: { serie: number; blob: Blob; filename: string }[] = [];
-  for (const serie of series) {
-    const blob = await gerarCertificadoPdf({
-      ...base,
-      item: { ...base.item, serie, serieTotal },
-    });
-    const pedido = base.item.pedido.replace(/[^\w-]/g, "_");
-    out.push({
-      serie,
-      blob,
-      filename: `certificado-${pedido}-serie-${serie}-de-${serieTotal}.pdf`,
-    });
+): Promise<CertificadoLoteResult> {
+  if (series.length === 0) {
+    throw new Error("Nenhuma série para gerar.");
   }
-  return out;
+
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const assinaturas = await resolveAssinaturas(base);
+
+  for (let i = 0; i < series.length; i++) {
+    if (i > 0) doc.addPage();
+    const serie = series[i]!;
+    await drawCertificadoPagina(
+      doc,
+      {
+        ...base,
+        item: { ...base.item, serie, serieTotal },
+      },
+      assinaturas
+    );
+  }
+
+  const pedido = base.item.pedido.replace(/[^\w-]/g, "_") || "pedido";
+  const filename =
+    series.length === 1
+      ? `certificado-${pedido}-serie-${series[0]}-de-${serieTotal}.pdf`
+      : series.length === serieTotal
+        ? `certificado-${pedido}-todas-${serieTotal}-folhas.pdf`
+        : `certificado-${pedido}-series-${series.join("-")}-de-${serieTotal}.pdf`;
+
+  return {
+    blob: doc.output("blob"),
+    filename,
+    paginas: series.length,
+  };
 }
 
 export function downloadBlob(blob: Blob, filename: string) {
@@ -1253,5 +1309,54 @@ export function openBlobInNewTab(blob: Blob): Window | null {
   return win;
 }
 
-// silencia unused type warning in builds estritos
+/** Abre o diálogo de impressão (equivalente a Ctrl+P) para o PDF. */
+export function printBlob(blob: Blob): boolean {
+  const url = URL.createObjectURL(blob);
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("title", "Imprimir certificado");
+  iframe.style.position = "fixed";
+  iframe.style.right = "0";
+  iframe.style.bottom = "0";
+  iframe.style.width = "0";
+  iframe.style.height = "0";
+  iframe.style.border = "0";
+  iframe.style.opacity = "0";
+  iframe.style.pointerEvents = "none";
+  iframe.src = url;
+  document.body.appendChild(iframe);
+
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    iframe.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  iframe.onload = () => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch (err) {
+      console.error("[certificado] print:", err);
+      const win = window.open(url, "_blank");
+      if (win) {
+        setTimeout(() => {
+          try {
+            win.focus();
+            win.print();
+          } catch {
+            /* viewer nativo */
+          }
+        }, 400);
+      }
+    }
+    setTimeout(cleanup, 120_000);
+  };
+
+  setTimeout(cleanup, 180_000);
+  return true;
+}
+
+// silencia unused type warning em builds estritos
 export type { ChecklistItem, TemplateCertificado };

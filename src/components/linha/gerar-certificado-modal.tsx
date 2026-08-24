@@ -28,7 +28,7 @@ import {
   carregarAssetsCertificado,
   downloadBlob,
   gerarCertificadosSeries,
-  openBlobInNewTab,
+  printBlob,
   rotearCertificado,
 } from "@/lib/certificado";
 
@@ -49,8 +49,6 @@ function parseNum(s: string): number | null {
   const n = Number(String(s).trim().replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
-
-type PrintMode = "serie" | "todas";
 
 export function GerarCertificadoModal({
   item,
@@ -201,10 +199,8 @@ export function GerarCertificadoModal({
     try {
       const base = await buildBaseParams();
       if (!base) return;
-      const results = await gerarCertificadosSeries(base, [1], quantidadeTotal);
-      const first = results[0];
-      if (!first) return;
-      const fresh = `${URL.createObjectURL(first.blob)}#view=FitV&toolbar=0&navpanes=0&t=${Date.now()}&layout=${CERT_PDF_LAYOUT}`;
+      const lote = await gerarCertificadosSeries(base, [1], quantidadeTotal);
+      const fresh = `${URL.createObjectURL(lote.blob)}#view=FitV&toolbar=0&navpanes=0&t=${Date.now()}&layout=${CERT_PDF_LAYOUT}`;
       setPreviewUrl((prev) => {
         revokePreviewUrl(prev);
         return fresh;
@@ -242,18 +238,12 @@ export function GerarCertificadoModal({
   ]);
 
   const runGenerate = useCallback(
-    (mode: PrintMode, action: "abrir" | "baixar") => {
+    (action: "baixar" | "imprimir") => {
       if (!item || !roteamento || quantidadeTotal < 1 || generating) return;
       setGenError(null);
 
-      let batchNumeros: number[] | null = null;
-      if (mode === "serie") {
-        if (!reimprimirSeries.trim()) {
-          setGenError(
-            "Digite o número da série que deseja gerar (ex: 2 ou 2,5,7)."
-          );
-          return;
-        }
+      let batchNumeros: number[];
+      if (podeGerarSerie) {
         const parsed = parseSeriesReimpressao(
           reimprimirSeries,
           quantidadeTotal
@@ -278,28 +268,16 @@ export function GerarCertificadoModal({
             setGenError("Não foi possível montar o certificado.");
             return;
           }
-          const results = await gerarCertificadosSeries(
+          const lote = await gerarCertificadosSeries(
             base,
-            batchNumeros!,
+            batchNumeros,
             quantidadeTotal
           );
 
-          if (action === "abrir") {
-            const first = results[0];
-            if (!first) return;
-            const win = openBlobInNewTab(first.blob);
-            if (!win) {
-              setGenError(
-                "Pop-up bloqueado. Permita pop-ups ou use «Baixar PDF»."
-              );
-              for (const r of results) downloadBlob(r.blob, r.filename);
-              return;
-            }
-            for (const r of results.slice(1)) {
-              downloadBlob(r.blob, r.filename);
-            }
+          if (action === "baixar") {
+            downloadBlob(lote.blob, lote.filename);
           } else {
-            for (const r of results) downloadBlob(r.blob, r.filename);
+            printBlob(lote.blob);
           }
         } catch (err) {
           console.error("[certificado] geração:", err);
@@ -318,6 +296,7 @@ export function GerarCertificadoModal({
       roteamento,
       quantidadeTotal,
       generating,
+      podeGerarSerie,
       reimprimirSeries,
       buildBaseParams,
     ]
@@ -610,36 +589,27 @@ export function GerarCertificadoModal({
               </button>
               <button
                 type="button"
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-50"
-                onClick={() => runGenerate("serie", "baixar")}
-                disabled={generating || !roteamento || !podeGerarSerie}
-              >
-                Baixar série
-                {contagemSeriesReimpressao > 0
-                  ? ` (${contagemSeriesReimpressao})`
-                  : ""}
-              </button>
-              <button
-                type="button"
                 className="rounded-md border border-[#1B4F72]/40 px-3 py-1.5 text-xs font-medium text-[#1B4F72] hover:bg-[#1B4F72]/5 disabled:opacity-50"
-                onClick={() => runGenerate("todas", "baixar")}
-                disabled={generating || !roteamento}
-              >
-                Baixar todas ({quantidadeTotal})
-              </button>
-              <button
-                type="button"
-                className="rounded-md bg-[#1B4F72] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#163d58] disabled:opacity-60"
-                onClick={() =>
-                  runGenerate(podeGerarSerie ? "serie" : "todas", "abrir")
-                }
+                onClick={() => runGenerate("baixar")}
                 disabled={generating || !roteamento}
               >
                 {generating
                   ? "Gerando…"
                   : podeGerarSerie
-                    ? "Abrir / imprimir série"
-                    : `Abrir / imprimir (${quantidadeTotal})`}
+                    ? `Baixar série (${contagemSeriesReimpressao} folha${contagemSeriesReimpressao === 1 ? "" : "s"})`
+                    : `Baixar (${quantidadeTotal} folha${quantidadeTotal === 1 ? "" : "s"})`}
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-[#1B4F72] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#163d58] disabled:opacity-60"
+                onClick={() => runGenerate("imprimir")}
+                disabled={generating || !roteamento}
+              >
+                {generating
+                  ? "Gerando…"
+                  : podeGerarSerie
+                    ? `Imprimir série (${contagemSeriesReimpressao})`
+                    : `Imprimir (${quantidadeTotal})`}
               </button>
             </div>
           </div>

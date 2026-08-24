@@ -41,7 +41,9 @@ export {
   carregarAssetsCertificado,
   downloadBlob,
   openBlobInNewTab,
+  printBlob,
   CERT_PDF_LAYOUT,
   type CertificadoItemInput,
   type CertificadoPdfParams,
+  type CertificadoLoteResult,
 } from "./gerar-pdf";
