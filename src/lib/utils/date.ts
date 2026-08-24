@@ -33,13 +33,40 @@ export function deadlineDayStatus(
 }
 
 /** Verifica se a data de fim já passou (hoje não conta como atrasado) */
-export function isPastDeadline(dateStr: string | null): boolean {
+export function isPastDeadline(dateStr: string | null | undefined): boolean {
   return deadlineDayStatus(dateStr) === "past";
 }
 
 /** Prazo cai no dia de hoje (horário local; hoje não é “atrasado”). */
-export function isTodayDeadline(dateStr: string | null): boolean {
+export function isTodayDeadline(dateStr: string | null | undefined): boolean {
   return deadlineDayStatus(dateStr) === "today";
+}
+
+/**
+ * Classes Tailwind para destacar prazo vencido (aberto).
+ * Use em células de data em todo o sistema.
+ */
+export function pastDeadlineTextClass(
+  dateStr: string | null | undefined,
+  opts?: { open?: boolean }
+): string {
+  const open = opts?.open !== false;
+  if (!open || !isPastDeadline(dateStr)) return "";
+  return "text-red-700 font-semibold";
+}
+
+/** Mensagem padrão pedindo reprogramação de prazo vencido. */
+export const REPROGRAM_OVERDUE_HINT =
+  "Atrasado em relação a hoje — reprogramar o prazo.";
+
+export function overdueRescheduleMessage(
+  labels: string[]
+): string {
+  if (labels.length === 0) return REPROGRAM_OVERDUE_HINT;
+  if (labels.length === 1) {
+    return `${labels[0]} vencido em relação a hoje — reprogramar.`;
+  }
+  return `Prazos vencidos (${labels.join(", ")}) — reprogramar.`;
 }
 
 /**
@@ -47,6 +74,8 @@ export function isTodayDeadline(dateStr: string | null): boolean {
  * Use em toda tela, export, PDF, etc. — evite `toLocaleDateString` solto.
  */
 export const BRAZIL_DATE_DISPLAY_FORMAT = "d/M/yy" as const;
+/** Data curta sem ano (linha de produção): `21/7`. */
+export const BRAZIL_DAY_MONTH_FORMAT = "d/M" as const;
 
 /**
  * Data curta (BR): aceita `yyyy-MM-dd`, ISO com hora, ou `Date`.
@@ -76,6 +105,38 @@ export function formatShortDate(
     }
     const d = new Date(value);
     return Number.isNaN(d.getTime()) ? value : format(d, BRAZIL_DATE_DISPLAY_FORMAT);
+  } catch {
+    return typeof value === "string" ? value : "--";
+  }
+}
+
+/** Dia/mês sem ano (`21/7`). Tooltip pode usar `formatShortDate` com o ano. */
+export function formatDayMonth(
+  value: string | Date | null | undefined
+): string {
+  if (value === null || value === undefined || value === "") return "--";
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime())
+      ? "--"
+      : format(value, BRAZIL_DAY_MONTH_FORMAT);
+  }
+  try {
+    if (value.includes("-")) {
+      const ymd =
+        value.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(value)
+          ? value.slice(0, 10)
+          : value;
+      const partStr = ymd.split("T")[0] ?? ymd;
+      const parts = partStr.split("-").map(Number);
+      if (parts.length >= 3 && !parts.slice(0, 3).some((n) => Number.isNaN(n))) {
+        return format(
+          new Date(parts[0], parts[1] - 1, parts[2]),
+          BRAZIL_DAY_MONTH_FORMAT
+        );
+      }
+    }
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? value : format(d, BRAZIL_DAY_MONTH_FORMAT);
   } catch {
     return typeof value === "string" ? value : "--";
   }

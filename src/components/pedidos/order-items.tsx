@@ -3,7 +3,7 @@ import type {
   OrderItemWithLine,
   ProductionLine,
 } from "@/lib/types/database";
-import { formatShortDate } from "@/lib/utils/date";
+import { formatShortDate, isPastDeadline, pastDeadlineTextClass } from "@/lib/utils/date";
 import { ItemStatusBadge } from "./order-status-badge";
 import { OmieSyncItemAlert } from "./omie-sync-alert";
 
@@ -228,7 +228,18 @@ export function OrderItems({
               </select>
             </div>
             <div className="min-w-0">
-              <div className="w-full rounded-md border border-slate-200 bg-slate-100 px-1 py-0.5 text-[10px] text-center text-slate-700 truncate">
+              <div
+                className={`w-full rounded-md border px-1 py-0.5 text-[10px] text-center truncate ${
+                  item.status !== "completed" && isPastDeadline(effectivePcp)
+                    ? "border-red-300 bg-red-50 text-red-700 font-semibold"
+                    : "border-slate-200 bg-slate-100 text-slate-700"
+                }`}
+                title={
+                  item.status !== "completed" && isPastDeadline(effectivePcp)
+                    ? "Prazo PCP vencido — reprogramar."
+                    : undefined
+                }
+              >
                 {formatShortDate(effectivePcp)}
               </div>
             </div>
@@ -251,7 +262,19 @@ export function OrderItems({
               </button>
             </div>
             <div className="flex justify-between items-center gap-1 min-w-0">
-              <span className="text-[10px] text-slate-500 shrink-0">
+              <span
+                className={`text-[10px] shrink-0 ${
+                  pastDeadlineTextClass(item.production_end, {
+                    open: item.status !== "completed",
+                  }) || "text-slate-500"
+                }`}
+                title={
+                  item.status !== "completed" &&
+                  isPastDeadline(item.production_end)
+                    ? "Prazo de produção vencido — reprogramar."
+                    : undefined
+                }
+              >
                 {formatShortDate(item.production_end)}
               </span>
             <div className="flex flex-col items-end gap-0.5 min-w-0">

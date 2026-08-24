@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>MODELO Certificado Tipo B/C/D - Padrao (1 pagina, sem teste de bancada)</title>
+<style>
+  /* ===== MOLDE DE REFERENCIA PARA O CURSOR ===== */
+  /* Layout do certificado PADRAO (fino plano FFP=TipoB, bolsa BSF=TipoC, grosso/plissado GP-PL=TipoD). */
+  /* 1 pagina so. SEM verso, SEM instrumento de teste. Checklist + grafico embaixo. */
+  /* A DIFERENCA entre B/C/D e apenas o CHECKLIST (linhas) e a coluna final (CERTIFICACAO vs PLANO DE REACAO). */
+  /* Este exemplo mostra o Tipo B (FFP fino plano, 9 itens). Trocar o checklist para C ou D conforme o tipo. */
+
+  @page { size: A4; margin: 8mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color:#111; margin:0; }
+  .pagina { width:210mm; min-height:297mm; padding:8mm; }
+  table { border-collapse:collapse; }
+
+  .cab { display:flex; border:2px solid #111; }
+  .cab-logo { display:flex; align-items:center; gap:8px; padding:6px 10px; border-right:2px solid #111; min-width:210px; }
+  .cab-logo img { height:34px; }
+  .cab-titulo { flex:1; display:flex; align-items:center; justify-content:center; font-size:20px; font-weight:bold; }
+  .cab-dir { border-left:2px solid #111; padding:6px 10px; min-width:190px; font-size:11px; }
+
+  .id-bloco { display:flex; border:2px solid #111; border-top:none; }
+  .id-tab { flex:1.3; border-right:2px solid #111; }
+  .id-tab table { width:100%; font-size:11px; }
+  .id-tab td { padding:4px 6px; border-bottom:1px solid #999; }
+  .id-tab td.lbl { background:#eee; font-weight:bold; }
+  .id-tab td.sep { border-left:1px solid #999; }
+  .id-foto { flex:1; display:flex; align-items:center; justify-content:center; padding:8px; }
+  .id-foto img { max-width:100%; max-height:150px; }
+
+  .chk { width:100%; border:2px solid #111; border-top:none; font-size:10px; }
+  .chk th { background:#ddd; font-weight:bold; padding:4px; border:1px solid #999; }
+  .chk td { padding:3px 5px; border:1px solid #999; }
+  .chk td.c { text-align:center; }
+  .chk td.ok { background:#1a9c4c; color:#fff; text-align:center; font-weight:bold; }
+
+  .perf-row { display:flex; gap:8px; margin-top:12px; }
+  .perf-graf { flex:1; border:1px solid #999; padding:8px; }
+  .perf-graf .t { font-size:11px; font-weight:bold; text-align:center; margin-bottom:6px; }
+  .perf-graf .area { height:150px; display:flex; align-items:center; justify-content:center; color:#888; font-size:11px; border:1px dashed #ccc; }
+  .concl { text-align:right; font-size:11px; margin:4px 0 8px; color:#555; }
+  .concl strong { color:#1a7c3c; }
+
+  .assin { display:flex; border:2px solid #111; margin-top:12px; font-size:11px; }
+  .assin div { flex:1; padding:6px 10px; }
+  .assin div:first-child { border-right:2px solid #111; }
+  .assin .nome { text-align:center; margin-top:20px; border-top:1px solid #333; padding-top:2px; }
+</style>
+</head>
+<body>
+
+<div class="pagina">
+
+  <div class="cab">
+    <div class="cab-logo"><img src="/certificados/logo-hepa.png" alt="HEPA"></div>
+    <div class="cab-titulo">CERTIFICADO DE QUALIDADE</div>
+    <div class="cab-dir">
+      <div style="font-weight:bold;">CERTIFICADO Nº {{numero_pedido}}</div>
+      <div>DATA: {{data}}</div>
+    </div>
+  </div>
+
+  <div class="id-bloco">
+    <div class="id-tab">
+      <table>
+        <tr><td class="lbl">MODELO HEPA FILTROS:</td><td class="lbl sep">Nº DE LOTE / BATCH</td></tr>
+        <tr><td>{{modelo_codigo}}</td><td class="sep">{{lote}}</td></tr>
+        <tr><td class="lbl">DIMENSÃO (mm)</td><td class="lbl sep">NORMA / STANDARD</td></tr>
+        <tr><td>{{dimensao}}</td><td class="sep" style="font-size:9px;">{{norma}}</td></tr>
+        <tr><td class="lbl">PEDIDO</td><td class="lbl sep">ORÇAMENTO</td></tr>
+        <tr><td>{{pedido}}</td><td class="sep">{{orcamento}}</td></tr>
+        <tr><td class="lbl">VAZÃO</td><td class="lbl sep">CLASSE</td></tr>
+        <tr><td>{{vazao_motor}} m³/h</td><td class="sep">{{classe}}</td></tr>
+        <tr><td class="lbl">PRESSÃO INICIAL</td><td class="lbl sep">PRESSÃO FINAL</td></tr>
+        <tr><td>{{dPi}} Pa</td><td class="sep">{{dPf}} Pa</td></tr>
+      </table>
+      <div style="font-size:10px; padding:6px; border-top:1px solid #999;">
+        <span style="background:#ccc; padding:1px 8px;">Legenda</span> N.A = Não Aplica &nbsp;|&nbsp; Obs.: Todos os pedidos devem ser inspecionados.
+      </div>
+    </div>
+    <div class="id-foto">
+      <img src="/certificados/{{foto_filtro}}" alt="Filtro">
+    </div>
+  </div>
+
+  <!-- CHECKLIST TIPO B (FFP). Para C/D trocar linhas e o cabecalho da ultima coluna. -->
+  <table class="chk">
+    <thead>
+      <tr>
+        <th>ITEM</th><th>CARACTERÍSTICA CRÍTICA</th><th>DESCRIÇÃO</th>
+        <th>MEIO DE MEDIÇÃO</th><th>TOLERÂNCIA</th><th>FREQ.</th><th>CERTIFICAÇÃO</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="c">1</td><td>Dimensional cotas A,B,C</td><td>Altura, largura e espessura conforme pedido</td><td>Trena convencional</td><td>(+/-) 5mm</td><td>100% do lote</td><td class="ok">OK</td></tr>
+      <tr><td class="c">2</td><td>Esquadro</td><td>Dimensão externa das diagonais</td><td>Trena</td><td>(+/-) 5mm</td><td>100% do lote</td><td class="ok">OK</td></tr>
+      <tr><td class="c">3</td><td>Moldura do filtro</td><td>Integridade: amassados</td><td>Visual</td><td>N.A</td><td>100% do lote</td><td class="ok">OK</td></tr>
+      <tr><td class="c">4</td><td>Meio filtrante</td><td>Distribuição das plissas e isenção de furos/amassados</td><td>Visual</td><td>N.A</td><td>100% do lote</td><td class="ok">OK</td></tr>
+      <tr><td class="c">5</td><td>Colagem</td><td>Colagem do meio filtrante junto à moldura</td><td>Visual</td><td>N.A</td><td>100% do lote</td><td class="ok">OK</td></tr>
+      <tr><td class="c">6</td><td>Guarnição</td><td>Tipo de guarnição, colagem na moldura</td><td>Visual</td><td>N.A</td><td>100% do lote</td><td class="ok">OK</td></tr>
+      <tr><td class="c">7</td><td>Identificação</td><td>Dados da etiqueta junto ao pedido</td><td>Visual</td><td>N.A</td><td>100% do lote</td><td class="ok">OK</td></tr>
+      <tr><td class="c">8</td><td>Limpeza</td><td>Produto isento de resíduos</td><td>Visual</td><td>N.A</td><td>100% do lote</td><td class="ok">OK</td></tr>
+      <tr><td class="c">9</td><td>Embalagem</td><td>Proteções laterais e saco plástico</td><td>Visual</td><td>N.A</td><td>100% do lote</td><td class="ok">OK</td></tr>
+    </tbody>
+  </table>
+
+  <div class="perf-row">
+    <div class="perf-graf">
+      <div class="t">Vazão × Pressão</div>
+      <div class="area">[GRÁFICO vazão×pressão — inicial (azul) e final (verde)]</div>
+    </div>
+    <div class="perf-graf">
+      <div class="t">Velocidade × Pressão</div>
+      <div class="area">[GRÁFICO velocidade×pressão — inicial (azul) e final (verde)]</div>
+    </div>
+  </div>
+  <div class="concl">Conclusão: <strong>Filtro Aprovado</strong></div>
+
+  <div class="assin">
+    <div>ELABORADO:<div class="nome">{{elaborador}}</div></div>
+    <div>APROVADO:<div class="nome">{{aprovador}}</div></div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -56,6 +56,66 @@ describe("motorCunha", () => {
       num_cunhas: 6,
     });
     assert.equal(r.vazao, 3400);
+    assert.equal(r.dPi, 250);
+    assert.equal(r.dPf, 600);
+  });
+
+  it("F9 (FF4W) → ΔPi 125 / ΔPf 450", () => {
+    const r = motorCunha({
+      base_mm: 472,
+      altura_mm: 472,
+      num_cunhas: 4,
+      classe: "F9",
+    });
+    assert.equal(r.dPi, 125);
+    assert.equal(r.dPf, 450);
+  });
+
+  it("F8 (FF4WC) → ΔPi 125 / ΔPf 450", () => {
+    const r = motorCunha({
+      base_mm: 472,
+      altura_mm: 472,
+      num_cunhas: 4,
+      classe: "F8",
+    });
+    assert.equal(r.dPi, 125);
+    assert.equal(r.dPf, 450);
+  });
+
+  it("F7 (FFW) → ΔPi 125 / ΔPf 450", () => {
+    const r = motorCunha({
+      base_mm: 592,
+      altura_mm: 592,
+      num_cunhas: 3,
+      classe: "F7",
+      modelo: "FFW3",
+    });
+    assert.equal(r.dPi, 125);
+    assert.equal(r.dPf, 450);
+  });
+
+  it("FFW ignora H13 no texto → ainda 125 / 450", () => {
+    const r = motorCunha({
+      base_mm: 610,
+      altura_mm: 610,
+      num_cunhas: 3,
+      classe: "H13",
+      modelo: "FFW",
+    });
+    assert.equal(r.dPi, 125);
+    assert.equal(r.dPf, 450);
+  });
+
+  it("ABSW H14 → ΔPi 250 / ΔPf 600", () => {
+    const r = motorCunha({
+      base_mm: 592,
+      altura_mm: 287,
+      num_cunhas: 6,
+      classe: "H14",
+      modelo: "ABSW6",
+    });
+    assert.equal(r.dPi, 250);
+    assert.equal(r.dPf, 600);
   });
 });
 
@@ -128,6 +188,48 @@ describe("parseFamilia", () => {
     assert.equal(f.classe, "F7");
   });
 
+  it("FF4W (fibra) → cunha, 4 cunhas, F9", () => {
+    const f = parseFamilia(
+      "HF-2315",
+      "FILTRO HF-FF4W-ABA 472X472X292mm"
+    );
+    assert.equal(f.tipo, "cunha");
+    assert.equal(f.modelo, "FF4W");
+    assert.equal(f.num_elementos, 4);
+    assert.equal(f.classe, "F9");
+    assert.equal(f.largura_mm, 472);
+  });
+
+  it("FF4WC (celulose) → cunha, 4 cunhas, F8", () => {
+    const f = parseFamilia(
+      "HF-2316",
+      "FILTRO HF-FF4WC-ABA 472X472X292mm"
+    );
+    assert.equal(f.tipo, "cunha");
+    assert.equal(f.modelo, "FF4WC");
+    assert.equal(f.num_elementos, 4);
+    assert.equal(f.classe, "F8");
+  });
+
+  it("FFW3-F8 → cunha fino, não absoluto", () => {
+    const f = parseFamilia(
+      "HF-2001",
+      "FILTRO HF-FFW3-F8 592X592X292mm"
+    );
+    assert.equal(f.tipo, "cunha");
+    assert.equal(f.modelo, "FFW3");
+    assert.equal(f.num_elementos, 3);
+    assert.equal(f.classe, "F8");
+  });
+
+  it("FFW com H13 no texto → não vira absoluto", () => {
+    const f = parseFamilia("HF-FFW", "HF-FFW H13 610x610x292mm");
+    assert.equal(f.tipo, "cunha");
+    assert.equal(f.modelo, "FFW");
+    assert.notEqual(f.classe, "H13");
+    assert.notEqual(f.classe, "H14");
+  });
+
   it("PL-M5 → sem_calculo", () => {
     const f = parseFamilia("HF-0251", "FILTRO HF-PL-M5 180x620x45mm");
     assert.equal(f.tipo, "sem_calculo");
@@ -174,14 +276,42 @@ describe("calcularVazaoPressao", () => {
     }
   });
 
-  it("bolsa BSF8-8 completa → 3400", () => {
+  it("FF4W F9 calcula ΔPi 125 / ΔPf 450", () => {
     const r = calcularVazaoPressao({
-      description: "FILTRO HF-BSF8-8-AG 592X592X600mm",
+      product_code: "HF-2315",
+      description: "FILTRO HF-FF4W-ABA 472X472X292mm",
     });
     assert.ok(isResultadoCalculo(r));
     if (isResultadoCalculo(r)) {
-      assert.equal(r.motor_usado, "bolsa");
-      assert.equal(r.vazao, 3400);
+      assert.equal(r.motor_usado, "cunha");
+      assert.equal(r.dPi, 125);
+      assert.equal(r.dPf, 450);
+    }
+  });
+
+  it("FFW3-F8 calcula ΔPi 125 / ΔPf 450", () => {
+    const r = calcularVazaoPressao({
+      product_code: "HF-2001",
+      description: "FILTRO HF-FFW3-F8 592X592X292mm",
+    });
+    assert.ok(isResultadoCalculo(r));
+    if (isResultadoCalculo(r)) {
+      assert.equal(r.motor_usado, "cunha");
+      assert.equal(r.dPi, 125);
+      assert.equal(r.dPf, 450);
+    }
+  });
+
+  it("ABSW6-H14 calcula ΔPi 250 / ΔPf 600", () => {
+    const r = calcularVazaoPressao({
+      product_code: "HF-1579",
+      description: "FILTRO HF-ABSW6-H14-AG-S 592X287X292mm",
+    });
+    assert.ok(isResultadoCalculo(r));
+    if (isResultadoCalculo(r)) {
+      assert.equal(r.motor_usado, "cunha");
+      assert.equal(r.dPi, 250);
+      assert.equal(r.dPf, 600);
     }
   });
 });

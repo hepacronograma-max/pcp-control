@@ -1,17 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useUser } from "@/lib/hooks/use-user";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import type {
-  Holiday,
   OrderItem,
   ProductionLine,
 } from "@/lib/types/database";
 import { toDateOnly } from "@/lib/utils/supabase-data";
+import { isPastDeadline } from "@/lib/utils/date";
 import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
 import {
   attachPoDatesToLineItems,
@@ -26,6 +25,7 @@ import {
   type LineItemWithOrder,
 } from "@/components/linha/gantt-calendar";
 import { GerarEtiquetaModal } from "@/components/linha/gerar-etiqueta-modal";
+import { GerarCertificadoModal } from "@/components/linha/gerar-certificado-modal";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { fetchLineDataRequest } from "@/lib/api/fetch-line-data";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
@@ -48,17 +48,6 @@ import {
 
 /** Paginação server-side da lista agregada Almox (performance). */
 const ALMOX_LIST_PAGE_SIZE = "50";
-
-const GanttCalendarLazy = dynamic(
-  () =>
-    import("@/components/linha/gantt-calendar").then((m) => ({
-      default: m.GanttCalendar,
-    })),
-  {
-    ssr: false,
-    loading: () => <div className="w-24 shrink-0 bg-slate-50/80" aria-hidden />,
-  }
-);
 
 type TabKey = "all" | "in_progress" | "finished";
 
@@ -89,7 +78,6 @@ export default function LinePage() {
   const [line, setLine] = useState<ProductionLine | null>(null);
   const [items, setItems] = useState<LineItemWithOrder[]>([]);
   const [allLines, setAllLines] = useState<ProductionLine[]>([]);
-  const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [tab, setTab] = useState<TabKey>("in_progress");
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -122,6 +110,8 @@ export default function LinePage() {
   const [etiquetaItem, setEtiquetaItem] = useState<LineItemWithOrder | null>(
     null
   );
+  const [certificadoItem, setCertificadoItem] =
+    useState<LineItemWithOrder | null>(null);
 
   useEffect(() => {
     function onFocus() {
@@ -147,9 +137,6 @@ export default function LinePage() {
     }
     prevPathnameRef.current = path;
   }, [pathname]);
-
-  /** Um único scroll (X+Y) para tabela + Gantt — evita o Gantt com largura 0 em telemóveis. */
-  const lineGanttScrollRef = useRef<HTMLDivElement | null>(null);
 
   /** Debounce de gravação de observações (evita request por tecla + corrige input controlado). */
   const notesDebounceTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>(
@@ -236,7 +223,6 @@ export default function LinePage() {
             const loadedLine = (json.line as ProductionLine) ?? null;
             setLine(loadedLine);
             setItems((json.items as LineItemWithOrder[]) ?? []);
-            setHolidays((json.holidays as Holiday[]) ?? []);
             setAllLines((json.allLines as ProductionLine[]) ?? []);
             setAlmoxPendingCount(
               loadedLine && productionLineIsAlmoxarifado(loadedLine)
@@ -257,7 +243,6 @@ export default function LinePage() {
               setLine(null);
               setItems([]);
               setAllLines([]);
-              setHolidays([]);
               setAlmoxPendingCount(null);
             }
           }
@@ -268,7 +253,6 @@ export default function LinePage() {
           setLine(null);
           setItems([]);
           setAllLines([]);
-          setHolidays([]);
           setAlmoxPendingCount(null);
           return;
         }
@@ -278,7 +262,6 @@ export default function LinePage() {
           setLine(null);
           setItems([]);
           setAllLines([]);
-          setHolidays([]);
           setAlmoxPendingCount(null);
           return;
         }
@@ -292,19 +275,13 @@ export default function LinePage() {
         const lineCurrent = (lineRes.data as ProductionLine) ?? null;
         setLine(lineCurrent);
 
-        const [allLinesData, holidaysRes] = await Promise.all([
-          fetchProductionLinesWithAlmoxFlag(supabase, cid),
-          supabase
-            .from("holidays")
-            .select(
-              "id, company_id, date, description, is_recurring, created_at"
-            )
-            .eq("company_id", cid),
-        ]);
+        const allLinesData = await fetchProductionLinesWithAlmoxFlag(
+          supabase,
+          cid
+        );
         if (cancelled) return;
 
         setAllLines(allLinesData);
-        setHolidays((holidaysRes.data as Holiday[]) ?? []);
 
         let nextItems: LineItemWithOrder[] = [];
 
@@ -633,16 +610,48 @@ export default function LinePage() {
 
   async function handleComplete(itemId: string) {
     if (line && productionLineIsAlmoxarifado(line)) return;
-    if (!window.confirm("Marcar item como concluído?")) return;
+    const it = items.find((i) => i.id === itemId);
+    const pcp =
+      it?.pcp_deadline ?? it?.order.pcp_deadline ?? it?.order.delivery_deadline;
+    const overdue =
+      it &&
+      it.status !== "completed" &&
+      (isPastDeadline(pcp) ||
+        isPastDeadline(it.production_end) ||
+        (!!it.production_end && !!pcp && it.production_end > pcp));
+    if (overdue) {
+      if (
+        !window.confirm(
+          "Este item está atrasado em relação a hoje. Reprograme Prazo PCP e/ou Fim Prod. antes de concluir.\n\nDeseja concluir mesmo assim?"
+        )
+      ) {
+        return;
+      }
+    } else if (!window.confirm("Marcar item como concluído?")) {
+      return;
+    }
     await runCompleteItems([itemId]);
   }
 
   async function handleBulkComplete() {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
+    const overdueSelected = ids.some((id) => {
+      const it = items.find((i) => i.id === id);
+      if (!it || it.status === "completed") return false;
+      const pcp =
+        it.pcp_deadline ?? it.order.pcp_deadline ?? it.order.delivery_deadline;
+      return (
+        isPastDeadline(pcp) ||
+        isPastDeadline(it.production_end) ||
+        (!!it.production_end && !!pcp && it.production_end > pcp)
+      );
+    });
     if (
       !window.confirm(
-        `Marcar ${ids.length} item(ns) como concluído(s)?`
+        overdueSelected
+          ? `${ids.length} item(ns) selecionado(s), com prazo(s) atrasado(s). Reprograme as datas quando possível.\n\nConcluir mesmo assim?`
+          : `Marcar ${ids.length} item(ns) como concluído(s)?`
       )
     ) {
       return;
@@ -841,6 +850,24 @@ export default function LinePage() {
     });
   }, [sortedItems, search]);
 
+  const overdueOpenCount = useMemo(() => {
+    return filteredItems.filter((it) => {
+      if (it.status === "completed") return false;
+      const pcp =
+        it.pcp_deadline ?? it.order.pcp_deadline ?? it.order.delivery_deadline;
+      if (isPastDeadline(pcp)) return true;
+      if (isPastDeadline(it.production_end)) return true;
+      if (
+        it.production_end &&
+        pcp &&
+        it.production_end > pcp
+      ) {
+        return true;
+      }
+      return false;
+    }).length;
+  }, [filteredItems]);
+
   const isAlmoxarifado = line ? productionLineIsAlmoxarifado(line) : false;
 
   const needsEffectiveCompany =
@@ -879,7 +906,7 @@ export default function LinePage() {
           <p className="text-[11px] text-slate-500">
             {isAlmoxarifado
               ? "Itens com data de início em todas as linhas (somente visualização)."
-              : "Visualização dos itens alocados nesta linha com calendário Gantt."}
+              : "Itens alocados nesta linha de produção."}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
@@ -1101,7 +1128,7 @@ export default function LinePage() {
           Nenhum item corresponde à busca.
         </div>
       ) : (
-        <div className="flex flex-col flex-1 min-h-0">
+        <div className="flex flex-col min-w-0">
           {tab === "finished" && (
             <p className="text-[11px] text-slate-600 px-2 py-1 shrink-0 bg-white">
               {isAlmoxarifado
@@ -1109,101 +1136,96 @@ export default function LinePage() {
                 : "Itens finalizados nesta linha."}
             </p>
           )}
-          <div className="flex flex-1 min-h-0 min-w-0 flex-col border border-slate-200 rounded-md bg-white">
+          {!isAlmoxarifado && overdueOpenCount > 0 && tab !== "finished" ? (
             <div
-              ref={lineGanttScrollRef}
-              className="flex-1 min-h-0 min-w-0 overflow-auto overscroll-x-contain [touch-action:pan-x_pan-y] [-webkit-overflow-scrolling:touch]"
+              role="alert"
+              className="mx-0 mb-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-[12px] text-red-900"
             >
-              <div
-                className={
-                  isAlmoxarifado
-                    ? "flex w-full min-h-full min-w-0 flex-row items-stretch"
-                    : "flex w-max min-h-full flex-row items-stretch"
+              <strong>
+                {overdueOpenCount} item
+                {overdueOpenCount === 1 ? "" : "s"} atrasado
+                {overdueOpenCount === 1 ? "" : "s"}
+              </strong>{" "}
+              em relação a hoje (Prazo PCP e/ou Fim Prod.). Reprograme as datas
+              nas colunas correspondentes.
+            </div>
+          ) : null}
+          <div className="min-w-0 flex flex-col border border-slate-200 rounded-md bg-white">
+            <div className="min-w-0 overflow-x-auto">
+              <LineTable
+                items={filteredItems}
+                profile={profile}
+                sortKeys={sortKeys}
+                onChangeSort={setSortKeys}
+                onChangeDate={handleChangeDate}
+                onChangeNotes={handleChangeNotes}
+                onComplete={handleComplete}
+                onReopenCompleted={
+                  profile && hasPermission(profile.role, "finishOrders")
+                    ? handleReopenCompleted
+                    : undefined
                 }
-              >
-                <div
-                  className={
-                    isAlmoxarifado
-                      ? "flex-1 min-w-0 min-h-0 self-stretch"
-                      : "sticky left-0 z-20 flex-shrink-0 self-stretch bg-white shadow-[4px_0_6px_-1px_rgba(0,0,0,0.1)]"
-                  }
-                >
-                  <LineTable
-                    items={filteredItems}
-                    profile={profile}
-                    sortKeys={sortKeys}
-                    onChangeSort={setSortKeys}
-                    onChangeDate={handleChangeDate}
-                    onChangeNotes={handleChangeNotes}
-                    onComplete={handleComplete}
-                    onReopenCompleted={
-                      profile && hasPermission(profile.role, "finishOrders")
-                        ? handleReopenCompleted
-                        : undefined
-                    }
-                    isAlmoxarifado={isAlmoxarifado}
-                    almoxGroupByDay={almoxGroupByDay}
-                    almoxTab={tab}
-                    onAlmoxSupply={isAlmoxarifado ? handleAlmoxSupply : undefined}
-                    onGerarEtiqueta={
-                      isAlmoxarifado
-                        ? undefined
-                        : (item) => setEtiquetaItem(item)
-                    }
-                    allLines={allLines}
-                    columnWidths={
-                      linePrefs.columnWidths.length > 0
-                        ? linePrefs.columnWidths
-                        : undefined
-                    }
-                    onColumnWidthsChange={(widths) => {
-                      setLinePrefs((prev) => ({ ...prev, columnWidths: widths }));
-                    }}
-                    selectedItemIds={selectedIds}
-                    onToggleItemSelected={
-                      isAlmoxarifado
-                        ? undefined
-                        : (id) => {
-                            setSelectedIds((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(id)) next.delete(id);
-                              else next.add(id);
-                              return next;
-                            });
-                          }
-                    }
-                    onToggleSelectAllVisible={
-                      isAlmoxarifado
-                        ? undefined
-                        : () => {
-                            const ids = filteredItems.map((i) => i.id);
-                            setSelectedIds((prev) => {
-                              const allSel =
-                                ids.length > 0 &&
-                                ids.every((id) => prev.has(id));
-                              if (allSel) return new Set();
-                              return new Set(ids);
-                            });
-                          }
-                    }
-                    cqContext={
-                      effectiveCompanyId ?? profile.company_id
-                        ? {
-                            userId: profile.id,
-                            companyId:
-                              (effectiveCompanyId ??
-                                profile.company_id) as string,
-                          }
-                        : null
-                    }
-                  />
-                </div>
-                {!isAlmoxarifado && (
-                  <div className="flex-shrink-0">
-                    <GanttCalendarLazy items={filteredItems} holidays={holidays} />
-                  </div>
-                )}
-              </div>
+                isAlmoxarifado={isAlmoxarifado}
+                almoxGroupByDay={almoxGroupByDay}
+                almoxTab={tab}
+                onAlmoxSupply={isAlmoxarifado ? handleAlmoxSupply : undefined}
+                onGerarEtiqueta={
+                  isAlmoxarifado
+                    ? undefined
+                    : (item) => setEtiquetaItem(item)
+                }
+                onGerarCertificado={
+                  isAlmoxarifado
+                    ? undefined
+                    : (item) => setCertificadoItem(item)
+                }
+                allLines={allLines}
+                columnWidths={
+                  linePrefs.columnWidths.length > 0
+                    ? linePrefs.columnWidths
+                    : undefined
+                }
+                onColumnWidthsChange={(widths) => {
+                  setLinePrefs((prev) => ({ ...prev, columnWidths: widths }));
+                }}
+                selectedItemIds={selectedIds}
+                onToggleItemSelected={
+                  isAlmoxarifado
+                    ? undefined
+                    : (id) => {
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(id)) next.delete(id);
+                          else next.add(id);
+                          return next;
+                        });
+                      }
+                }
+                onToggleSelectAllVisible={
+                  isAlmoxarifado
+                    ? undefined
+                    : () => {
+                        const ids = filteredItems.map((i) => i.id);
+                        setSelectedIds((prev) => {
+                          const allSel =
+                            ids.length > 0 &&
+                            ids.every((id) => prev.has(id));
+                          if (allSel) return new Set();
+                          return new Set(ids);
+                        });
+                      }
+                }
+                cqContext={
+                  effectiveCompanyId ?? profile.company_id
+                    ? {
+                        userId: profile.id,
+                        companyId:
+                          (effectiveCompanyId ??
+                            profile.company_id) as string,
+                      }
+                    : null
+                }
+              />
             </div>
           </div>
         </div>
@@ -1213,6 +1235,33 @@ export default function LinePage() {
         item={etiquetaItem}
         open={etiquetaItem != null}
         onClose={() => setEtiquetaItem(null)}
+        onMotorSalvo={(itemId, patch) => {
+          setItems((prev) =>
+            prev.map((it) => (it.id === itemId ? { ...it, ...patch } : it))
+          );
+          setEtiquetaItem((prev) =>
+            prev && prev.id === itemId ? { ...prev, ...patch } : prev
+          );
+          setCertificadoItem((prev) =>
+            prev && prev.id === itemId ? { ...prev, ...patch } : prev
+          );
+        }}
+      />
+      <GerarCertificadoModal
+        item={certificadoItem}
+        open={certificadoItem != null}
+        onClose={() => setCertificadoItem(null)}
+        onMotorSalvo={(itemId, patch) => {
+          setItems((prev) =>
+            prev.map((it) => (it.id === itemId ? { ...it, ...patch } : it))
+          );
+          setEtiquetaItem((prev) =>
+            prev && prev.id === itemId ? { ...prev, ...patch } : prev
+          );
+          setCertificadoItem((prev) =>
+            prev && prev.id === itemId ? { ...prev, ...patch } : prev
+          );
+        }}
       />
     </div>
   );

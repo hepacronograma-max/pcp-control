@@ -1,11 +1,6 @@
 import type { ReactNode } from "react";
-import "../globals.css";
 
+/** Layout do grupo (auth) — sem html/body (já no layout raiz). */
 export default function AuthLayout({ children }: { children: ReactNode }) {
-  return (
-    <html lang="pt-BR">
-      <body>{children}</body>
-    </html>
-  );
+  return children;
 }
-

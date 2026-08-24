@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { allowLocalAuthClient } from "@/lib/allow-local-auth";
@@ -67,6 +67,11 @@ export function LoginForm() {
       : ""
   );
   const [loading, setLoading] = useState(false);
+  const [showLocalHint, setShowLocalHint] = useState(false);
+
+  useEffect(() => {
+    setShowLocalHint(allowLocalAuthClient());
+  }, []);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -198,7 +203,7 @@ export function LoginForm() {
         {loading ? "Entrando…" : "Entrar"}
       </button>
       <p className="mt-3 text-xs text-slate-500 text-center">
-        {allowLocalAuthClient() ? (
+        {showLocalHint ? (
           <>
             <strong>Desenvolvimento (localhost):</strong> use credenciais em{" "}
             <code className="text-[10px]">PCP_LOCAL_DEV_*</code> no servidor ou

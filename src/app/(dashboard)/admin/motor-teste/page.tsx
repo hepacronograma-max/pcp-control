@@ -31,6 +31,11 @@ const EXEMPLOS: { label: string; code: string; desc: string }[] = [
     desc: "FILTRO HF-ABSW3-H14-AG-S 450X450X292mm",
   },
   {
+    label: "Cunha fino F8 — FFW3",
+    code: "HF-2001",
+    desc: "FILTRO HF-FFW3-F8 592X592X292mm",
+  },
+  {
     label: "Fino FFP F7",
     code: "HF-1822",
     desc: "FILTRO HF-FFP-F7-AG-S 432X620X78mm",

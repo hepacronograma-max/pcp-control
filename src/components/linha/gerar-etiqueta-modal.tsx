@@ -13,6 +13,9 @@ import {
   EtiquetaPrintSheets,
   type EtiquetaFiltroData,
 } from "@/components/linha/etiqueta-filtro";
+import { MotorVazaoInputsPanel } from "@/components/linha/motor-vazao-inputs-panel";
+import { useMotorVazaoItem } from "@/hooks/use-motor-vazao-item";
+import type { MotorCamposSalvos } from "@/lib/motor-vazao";
 import {
   codigoEtiquetaFromItem,
   decidirModeloEtiqueta,
@@ -33,15 +36,6 @@ import {
   getHepaLogoDataUrl,
   invalidateHepaLogoCache,
 } from "@/lib/etiqueta-assets-cache";
-import {
-  calcularVazaoPressao,
-  isPrecisaInputs,
-  isResultadoCalculo,
-  parseFamilia,
-  type CampoFaltante,
-  type MaterialFino,
-  type TipoMotor,
-} from "@/lib/motor-vazao";
 
 const QR_URL = "https://www.hepafiltros.com.br";
 
@@ -66,17 +60,15 @@ type Props = {
   item: LineItemWithOrder | null;
   open: boolean;
   onClose: () => void;
+  onMotorSalvo?: (itemId: string, patch: MotorCamposSalvos) => void;
 };
 
-type MotorUiMode = "off" | "precisa" | "ok";
-
-function papelOptionsForTipo(tipo: TipoMotor | null): number[] {
-  if (tipo === "fino") return [45, 60, 80, 100];
-  if (tipo === "plano") return [50, 80, 100];
-  return [50, 80, 100];
-}
-
-export function GerarEtiquetaModal({ item, open, onClose }: Props) {
+export function GerarEtiquetaModal({
+  item,
+  open,
+  onClose,
+  onMotorSalvo,
+}: Props) {
   const descricao = item?.description ?? "";
   const productCode = item?.product_code ?? null;
 
@@ -91,25 +83,45 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   );
 
   const [classe, setClasse] = useState("");
-  const [vazao, setVazao] = useState("");
-  const [perdaInicial, setPerdaInicial] = useState("");
-  const [perdaFinal, setPerdaFinal] = useState("");
   const [reimprimirSeries, setReimprimirSeries] = useState("");
   const [printing, setPrinting] = useState(false);
   const [printError, setPrintError] = useState<string | null>(null);
   const [previewQr, setPreviewQr] = useState<string>("");
   const [previewLogo, setPreviewLogo] = useState<string>("");
-
-  /** Inputs do motor (assistente). */
-  const [motorEspessura, setMotorEspessura] = useState("");
-  const [motorMaterial, setMotorMaterial] = useState<MaterialFino | "">("");
-  const [motorCoroa, setMotorCoroa] = useState<"" | "sim" | "nao">("");
-  const [motorNumElementos, setMotorNumElementos] = useState("");
-  const [motorPrecisa, setMotorPrecisa] = useState<CampoFaltante[]>([]);
-  const [motorTipo, setMotorTipo] = useState<TipoMotor | null>(null);
-  const [motorMode, setMotorMode] = useState<MotorUiMode>("off");
-  const [memoriaCalculo, setMemoriaCalculo] = useState<string | null>(null);
   const [showMemoria, setShowMemoria] = useState(false);
+
+  const {
+    motorEspessura,
+    setMotorEspessura,
+    motorMaterial,
+    setMotorMaterial,
+    motorCoroa,
+    setMotorCoroa,
+    motorNumElementos,
+    setMotorNumElementos,
+    motorPrecisa,
+    motorTipo,
+    motorMode,
+    motorMensagem,
+    memoriaCalculo,
+    vazao,
+    setVazao,
+    perdaInicial,
+    setPerdaInicial,
+    perdaFinal,
+    setPerdaFinal,
+    savingMotor,
+    papelOptions,
+    coroaOptions,
+    materialOptions,
+    showMotorAssist,
+    showMotorPanel,
+    showPapel,
+    showMaterial,
+    showCoroa,
+    showNumElementos,
+    showClasseMotor,
+  } = useMotorVazaoItem({ open, item, classe, onMotorSalvo });
 
   useEffect(() => {
     if (!open) return;
@@ -119,23 +131,9 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
   useEffect(() => {
     if (!open || !item) return;
     setClasse(detected ?? "");
-    setVazao("");
-    setPerdaInicial("");
-    setPerdaFinal("");
     setReimprimirSeries("");
-    setMotorEspessura("");
-    setMotorMaterial("");
-    setMotorCoroa("");
-    const fam = parseFamilia(productCode, descricao);
-    setMotorNumElementos(
-      fam.num_elementos != null ? String(fam.num_elementos) : ""
-    );
-    setMemoriaCalculo(null);
     setShowMemoria(false);
-    setMotorPrecisa([]);
-    setMotorMode("off");
-    setMotorTipo(fam.tipo === "sem_calculo" ? null : fam.tipo);
-  }, [open, item, detected, productCode, descricao]);
+  }, [open, item, detected]);
 
   const modelo = decidirModeloEtiqueta(classe.trim() || null);
   const codigo = item
@@ -148,79 +146,6 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
         numeroPedidoVisivel: item.order.order_number,
       })
     : "—";
-
-  /** Roda / re-roda o motor quando item abre ou inputs do motor mudam. */
-  useEffect(() => {
-    if (!open || !item) return;
-
-    const familia = parseFamilia(productCode, descricao);
-    setMotorTipo(familia.tipo);
-
-    if (familia.tipo === "sem_calculo") {
-      setMotorMode("off");
-      setMotorPrecisa([]);
-      setMemoriaCalculo(null);
-      return;
-    }
-
-    const inputs = {
-      espessura_papel_mm: motorEspessura.trim()
-        ? Number(motorEspessura)
-        : undefined,
-      material: motorMaterial || undefined,
-      tem_coroa:
-        motorCoroa === ""
-          ? undefined
-          : motorCoroa === "sim"
-            ? true
-            : false,
-      num_elementos: motorNumElementos.trim()
-        ? Number(motorNumElementos)
-        : undefined,
-      classe: classe.trim() || undefined,
-    };
-
-    const r = calcularVazaoPressao(
-      { product_code: productCode, description: descricao },
-      inputs
-    );
-
-    if (r === null) {
-      setMotorMode("off");
-      setMotorPrecisa([]);
-      setMemoriaCalculo(null);
-      return;
-    }
-
-    if (isPrecisaInputs(r)) {
-      setMotorMode("precisa");
-      setMotorPrecisa(r.precisa);
-      setMemoriaCalculo(null);
-      setVazao("");
-      setPerdaInicial("");
-      setPerdaFinal("");
-      return;
-    }
-
-    if (isResultadoCalculo(r)) {
-      setMotorMode("ok");
-      setMotorPrecisa([]);
-      setMemoriaCalculo(r.memoria_calculo);
-      setVazao(String(r.vazao));
-      setPerdaInicial(String(r.dPi));
-      setPerdaFinal(String(r.dPf));
-    }
-  }, [
-    open,
-    item,
-    productCode,
-    descricao,
-    motorEspessura,
-    motorMaterial,
-    motorCoroa,
-    motorNumElementos,
-    classe,
-  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -327,41 +252,9 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
       ? seriesReimpressao.numeros.length
       : 0;
 
-  const showMotorAssist = motorMode === "precisa" || motorMode === "ok";
-  const precisaSet = new Set(motorPrecisa);
-  /** Seletores: obrigatórios se em `precisa`; opcionais (recalcular) se já ok. */
-  const showPapel =
-    showMotorAssist &&
-    (precisaSet.has("espessura_papel_mm") ||
-      ((motorTipo === "plano" || motorTipo === "fino") &&
-        motorMode === "ok"));
-  const showMaterial =
-    showMotorAssist &&
-    (precisaSet.has("material") ||
-      (motorTipo === "fino" && motorMode === "ok"));
-  const showCoroa =
-    showMotorAssist &&
-    (precisaSet.has("tem_coroa") ||
-      (motorTipo === "fino" && motorMode === "ok"));
-  const showNumElementos =
-    showMotorAssist &&
-    (precisaSet.has("num_elementos") ||
-      ((motorTipo === "cunha" || motorTipo === "bolsa") &&
-        motorMode === "ok"));
-  const showClasseMotor =
-    showMotorAssist &&
-    precisaSet.has("classe") &&
-    motorTipo === "bolsa";
-
-  const showMotorPanel =
+  const showMotorPanelVisible =
     modelo === "completa" &&
-    showMotorAssist &&
-    (motorMode === "precisa" ||
-      showPapel ||
-      showMaterial ||
-      showCoroa ||
-      showNumElementos ||
-      showClasseMotor);
+    (showMotorPanel || motorMode === "invalida");
 
   const runPrint = useCallback(
     (mode: PrintMode) => {
@@ -476,14 +369,20 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
 
           <div className="space-y-3 text-sm">
             <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs space-y-1">
-              <p>
-                <span className="font-semibold text-slate-700">Código:</span>{" "}
-                {codigo}
-              </p>
-              <p>
-                <span className="font-semibold text-slate-700">Descrição:</span>{" "}
-                {descricaoEtiqueta}
-              </p>
+              <div className="rounded-md border border-[#1B4F72]/30 bg-[#1B4F72]/8 px-2.5 py-2 mb-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#1B4F72]">
+                  Código
+                </p>
+                <p className="text-sm font-bold text-slate-900 leading-snug">
+                  {codigo}
+                </p>
+                <p className="mt-1.5 text-[10px] font-semibold uppercase tracking-wide text-[#1B4F72]">
+                  Descrição completa
+                </p>
+                <p className="text-sm font-semibold text-slate-900 leading-snug">
+                  {descricao.trim() || "—"}
+                </p>
+              </div>
               {medida ? (
                 <p>
                   <span className="font-semibold text-slate-700">Medida:</span>{" "}
@@ -508,7 +407,11 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
                 <p>
                   <span className="font-semibold text-slate-700">Motor:</span>{" "}
                   {motorTipo}
-                  {motorMode === "ok" ? " · calculado" : " · aguardando dados"}
+                  {motorMode === "ok"
+                    ? " · calculado"
+                    : motorMode === "invalida"
+                      ? " · combinação inválida"
+                      : " · aguardando dados"}
                 </p>
               ) : null}
             </div>
@@ -568,93 +471,29 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
               </span>
             </label>
 
-            {modelo === "completa" && showMotorPanel ? (
-              <div className="rounded-md border border-[#1B4F72]/25 bg-[#1B4F72]/5 p-3 space-y-2">
-                <p className="text-[11px] font-semibold text-[#1B4F72]">
-                  Dados para o cálculo de vazão / pressão
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {showPapel ? (
-                    <label className="text-xs font-medium text-slate-700">
-                      Espessura do papel (mm)
-                      <select
-                        className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs bg-white"
-                        value={motorEspessura}
-                        onChange={(e) => setMotorEspessura(e.target.value)}
-                      >
-                        <option value="">— selecione —</option>
-                        {papelOptionsForTipo(motorTipo).map((n) => (
-                          <option key={n} value={String(n)}>
-                            {n} mm
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
-                  {showMaterial ? (
-                    <label className="text-xs font-medium text-slate-700">
-                      Material (fino)
-                      <select
-                        className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs bg-white"
-                        value={motorMaterial}
-                        onChange={(e) =>
-                          setMotorMaterial(
-                            e.target.value as MaterialFino | ""
-                          )
-                        }
-                      >
-                        <option value="">— selecione —</option>
-                        <option value="celulosico">Celulósico</option>
-                        <option value="fibra_vidro">Fibra de vidro</option>
-                      </select>
-                    </label>
-                  ) : null}
-                  {showCoroa ? (
-                    <label className="text-xs font-medium text-slate-700">
-                      Coroa (fino)
-                      <select
-                        className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs bg-white"
-                        value={motorCoroa}
-                        onChange={(e) =>
-                          setMotorCoroa(
-                            e.target.value as "" | "sim" | "nao"
-                          )
-                        }
-                      >
-                        <option value="">— selecione —</option>
-                        <option value="sim">Com coroa (FPP)</option>
-                        <option value="nao">Sem coroa (IRP)</option>
-                      </select>
-                    </label>
-                  ) : null}
-                  {showNumElementos ? (
-                    <label className="text-xs font-medium text-slate-700">
-                      Nº de{" "}
-                      {motorTipo === "bolsa" ? "bolsas" : "cunhas"}
-                      <input
-                        type="number"
-                        min={1}
-                        className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs bg-white"
-                        value={motorNumElementos}
-                        onChange={(e) =>
-                          setMotorNumElementos(e.target.value)
-                        }
-                        placeholder={
-                          motorTipo === "bolsa" ? "ex.: 8" : "ex.: 6"
-                        }
-                      />
-                    </label>
-                  ) : null}
-                </div>
-                {motorMode === "precisa" ? (
-                  <p className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-                    Preencha os campos acima para calcular vazão e pressões.
-                    {motorPrecisa.length > 0
-                      ? ` Falta: ${motorPrecisa.join(", ")}.`
-                      : null}
-                  </p>
-                ) : null}
-              </div>
+            {showMotorPanelVisible ? (
+              <MotorVazaoInputsPanel
+                motorTipo={motorTipo}
+                motorMode={motorMode}
+                motorMensagem={motorMensagem}
+                motorPrecisa={motorPrecisa}
+                showPapel={showPapel}
+                showMaterial={showMaterial}
+                showCoroa={showCoroa}
+                showNumElementos={showNumElementos}
+                papelOptions={papelOptions}
+                coroaOptions={coroaOptions}
+                materialOptions={materialOptions}
+                motorEspessura={motorEspessura}
+                setMotorEspessura={setMotorEspessura}
+                motorMaterial={motorMaterial}
+                setMotorMaterial={setMotorMaterial}
+                motorCoroa={motorCoroa}
+                setMotorCoroa={setMotorCoroa}
+                motorNumElementos={motorNumElementos}
+                setMotorNumElementos={setMotorNumElementos}
+                savingMotor={savingMotor}
+              />
             ) : null}
 
             {modelo === "completa" ? (
@@ -667,7 +506,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
                       value={vazao}
                       onChange={(e) => setVazao(e.target.value)}
                       placeholder={
-                        motorMode === "precisa"
+                        motorMode === "precisa" || motorMode === "invalida"
                           ? "aguardando cálculo…"
                           : undefined
                       }
@@ -680,7 +519,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
                       value={perdaInicial}
                       onChange={(e) => setPerdaInicial(e.target.value)}
                       placeholder={
-                        motorMode === "precisa"
+                        motorMode === "precisa" || motorMode === "invalida"
                           ? "aguardando cálculo…"
                           : undefined
                       }
@@ -693,7 +532,7 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
                       value={perdaFinal}
                       onChange={(e) => setPerdaFinal(e.target.value)}
                       placeholder={
-                        motorMode === "precisa"
+                        motorMode === "precisa" || motorMode === "invalida"
                           ? "aguardando cálculo…"
                           : undefined
                       }
@@ -741,7 +580,8 @@ export function GerarEtiquetaModal({ item, open, onClose }: Props) {
                   !perdaFinal.trim()
                     ? " · faixa técnica com valores de exemplo enquanto campos vazios"
                     : null}
-                  {modelo === "completa" && motorMode === "precisa"
+                  {modelo === "completa" &&
+                  (motorMode === "precisa" || motorMode === "invalida")
                     ? " · preencha os dados do motor para calcular"
                     : null}
                   {" · "}escala ajustada · logo P&B.

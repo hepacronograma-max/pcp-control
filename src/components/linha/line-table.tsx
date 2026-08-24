@@ -1,9 +1,10 @@
 import { CompactDateCell } from "@/components/ui/compact-date-cell";
 import * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BadgeCheck, Tag } from "lucide-react";
 import type { ItemStatus, Profile, ProductionLine } from "@/lib/types/database";
 import type { LineItemWithOrder } from "./gantt-calendar";
-import { formatShortDate, parseLocalDate } from "@/lib/utils/date";
+import { formatDayMonth, formatShortDate, isPastDeadline, overdueRescheduleMessage, parseLocalDate } from "@/lib/utils/date";
 import { itemPcArrivalForProduction } from "@/lib/utils/pc-purchase-dates";
 import { hasPermission } from "@/lib/utils/permissions";
 import { toDateOnly } from "@/lib/utils/supabase-data";
@@ -52,7 +53,48 @@ function migrateLineTableWidths(
     }
     return undefined;
   }
-  return w.length === defaults.length ? w : undefined;
+  if (w.length !== defaults.length) return undefined;
+  return ensureDocsColumnWidth(w, selectCol, defaults);
+}
+
+/** Garante largura mínima da coluna Docs e estreita colunas de data (prefs antigas). */
+function ensureDocsColumnWidth(
+  widths: number[],
+  selectCol: boolean,
+  defaults: number[]
+): number[] {
+  const withDocs = defaults.length === (selectCol ? 14 : 13);
+  let next = widths;
+  let changed = false;
+
+  if (withDocs) {
+    const docsIdx = selectCol ? 12 : 11;
+    const minDocs = Math.max(defaults[docsIdx] ?? 152, 152);
+    if ((next[docsIdx] ?? 0) < minDocs) {
+      if (!changed) {
+        next = [...next];
+        changed = true;
+      }
+      next[docsIdx] = minDocs;
+    }
+  }
+
+  /** Índices Prazo PCP, PC entrega, Início, Fim — estreitar se ainda estiverem largos. */
+  const dateIdxs = selectCol ? [6, 7, 8, 9] : [5, 6, 7, 8];
+  for (const i of dateIdxs) {
+    const def = defaults[i];
+    if (def == null) continue;
+    const cur = next[i] ?? 0;
+    if (cur > def && cur >= 90) {
+      if (!changed) {
+        next = [...next];
+        changed = true;
+      }
+      next[i] = def;
+    }
+  }
+
+  return next;
 }
 
 function safeParse(d: string): Date {
@@ -202,6 +244,8 @@ interface LineTableProps {
   onAlmoxSupply?: (itemId: string) => void;
   /** Abrir modal de etiqueta de filtro (linha de produção). */
   onGerarEtiqueta?: (item: LineItemWithOrder) => void;
+  /** Abrir modal de certificado de qualidade (linha de produção). */
+  onGerarCertificado?: (item: LineItemWithOrder) => void;
 }
 
 export function LineTable({
@@ -225,32 +269,37 @@ export function LineTable({
   almoxTab = "in_progress",
   onAlmoxSupply,
   onGerarEtiqueta,
+  onGerarCertificado,
 }: LineTableProps) {
   /**
-   * Início/Fim precisam de ~104–116px: o seletor de data usa área mínima ~96px;
-   * valores menores encavalam colunas e o clique só pega no canto.
+   * Datas na linha usam dia/mês (`21/7`) — colunas mais estreitas (~64–76px).
    */
   const selectCol = Boolean(onToggleItemSelected);
-  const showEtq = Boolean(onGerarEtiqueta);
+  const showEtq = Boolean(onGerarEtiqueta || onGerarCertificado);
   const defaultWidths = useMemo(
     () =>
       isAlmoxarifado
         ? [100, 88, 72, 200, 44, 88, 88, 88, 56]
         : selectCol
           ? showEtq
-            ? [32, 54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 44, 40]
-            : [32, 54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 40]
+            ? [32, 58, 120, 72, 220, 40, 56, 56, 72, 72, 100, 64, 152, 36]
+            : [32, 58, 120, 72, 220, 40, 56, 56, 72, 72, 100, 64, 36]
           : showEtq
-            ? [54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 44, 40]
-            : [54, 118, 72, 158, 42, 76, 76, 116, 116, 124, 80, 40],
+            ? [58, 120, 72, 220, 40, 56, 56, 72, 72, 100, 64, 152, 36]
+            : [58, 120, 72, 220, 40, 56, 56, 72, 72, 100, 64, 36],
     [isAlmoxarifado, selectCol, showEtq]
   );
 
-  /** Migra prefs antigas (sem Cód., sem “Ocorrências”, etc.). */
+  /** Migra prefs antigas (sem Cód., sem “Ocorrências”, etc.) e alarga Docs. */
   const normalizedPropWidths = useMemo(() => {
     if (!columnWidthsProp?.length || isAlmoxarifado) return undefined;
-    if (columnWidthsProp.length === defaultWidths.length)
-      return columnWidthsProp;
+    if (columnWidthsProp.length === defaultWidths.length) {
+      return ensureDocsColumnWidth(
+        columnWidthsProp,
+        selectCol,
+        defaultWidths
+      );
+    }
     return migrateLineTableWidths(columnWidthsProp, selectCol, defaultWidths);
   }, [columnWidthsProp, defaultWidths, isAlmoxarifado, selectCol]);
 
@@ -273,7 +322,14 @@ export function LineTable({
   const startXRef = useRef(0);
   const startWidthsRef = useRef<number[]>([]);
 
-  const gridTemplate = columnWidths.map((w) => `${w}px`).join(" ");
+  const gridTemplate = useMemo(() => {
+    const descIdx = isAlmoxarifado ? 3 : selectCol ? 4 : 3;
+    return columnWidths
+      .map((w, i) =>
+        i === descIdx ? `minmax(${w}px, 1fr)` : `${w}px`
+      )
+      .join(" ");
+  }, [columnWidths, isAlmoxarifado, selectCol]);
 
   function handleResizeStart(index: number, e: React.MouseEvent) {
     e.preventDefault();
@@ -289,9 +345,13 @@ export function LineTable({
       isAlmoxarifado
         ? [56, 64, 52, 96, 36, 72, 72, 64, 40]
         : selectCol
-          ? [28, 44, 72, 52, 96, 36, 56, 56, 100, 100, 64, 64, 32]
-          : [44, 72, 52, 96, 36, 56, 56, 100, 100, 64, 64, 32],
-    [isAlmoxarifado, selectCol]
+          ? showEtq
+            ? [28, 44, 72, 52, 96, 36, 48, 48, 60, 60, 64, 52, 140, 32]
+            : [28, 44, 72, 52, 96, 36, 48, 48, 60, 60, 64, 52, 32]
+          : showEtq
+            ? [44, 72, 52, 96, 36, 48, 48, 60, 60, 64, 52, 140, 32]
+            : [44, 72, 52, 96, 36, 48, 48, 60, 60, 64, 52, 32],
+    [isAlmoxarifado, selectCol, showEtq]
   );
 
   const sel = selectedItemIds ?? new Set<string>();
@@ -308,6 +368,29 @@ export function LineTable({
     if (!el) return;
     el.indeterminate = someSelected && !allVisibleSelected;
   }, [someSelected, allVisibleSelected]);
+
+  /** Persiste ajustes de largura (Docs mínimo + datas mais estreitas). */
+  useEffect(() => {
+    if (!onColumnWidthsChange || !columnWidthsProp?.length || isAlmoxarifado) {
+      return;
+    }
+    if (columnWidthsProp.length !== defaultWidths.length) return;
+    const fixed = ensureDocsColumnWidth(
+      columnWidthsProp,
+      selectCol,
+      defaultWidths
+    );
+    const changed = fixed.some(
+      (w, i) => w !== columnWidthsProp[i]
+    );
+    if (changed) onColumnWidthsChange(fixed);
+  }, [
+    columnWidthsProp,
+    defaultWidths,
+    isAlmoxarifado,
+    onColumnWidthsChange,
+    selectCol,
+  ]);
 
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
@@ -548,7 +631,7 @@ export function LineTable({
   }
 
   return (
-    <div className="min-w-[min(780px,100%)] md:min-w-[780px]">
+    <div className="w-full min-w-[min(780px,100%)] md:min-w-[900px]">
       <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
         <div
           className="grid text-[11px] h-[var(--line-gantt-header-h)] items-stretch box-border overflow-x-clip bg-slate-50/70"
@@ -603,33 +686,53 @@ export function LineTable({
           </HeaderCell>
           <HeaderCell
             className="text-center"
+            wrap
             onClick={() => toggleSort("delivery_deadline")}
             sortIndex={getSortIndex("delivery_deadline")}
             onResizeStart={(e) => handleResizeStart(5 + colOff, e)}
           >
-            Prazo PCP
+            <>
+              Prazo
+              <br />
+              PCP
+            </>
           </HeaderCell>
           <HeaderCell
             className="text-center"
+            wrap
             onResizeStart={(e) => handleResizeStart(6 + colOff, e)}
           >
-            PC entrega
+            <>
+              PC
+              <br />
+              entrega
+            </>
           </HeaderCell>
           <HeaderCell
             className="text-center"
+            wrap
             onClick={() => toggleSort("production_start")}
             sortIndex={getSortIndex("production_start")}
             onResizeStart={(e) => handleResizeStart(7 + colOff, e)}
           >
-            Início Prod.
+            <>
+              Início
+              <br />
+              Prod.
+            </>
           </HeaderCell>
           <HeaderCell
             className="text-center"
+            wrap
             onClick={() => toggleSort("production_end")}
             sortIndex={getSortIndex("production_end")}
             onResizeStart={(e) => handleResizeStart(8 + colOff, e)}
           >
-            Fim Prod.
+            <>
+              Fim
+              <br />
+              Prod.
+            </>
           </HeaderCell>
           <HeaderCell onResizeStart={(e) => handleResizeStart(9 + colOff, e)}>
             Obs.
@@ -638,20 +741,20 @@ export function LineTable({
             className="text-center"
             onResizeStart={(e) => handleResizeStart(10 + colOff, e)}
           >
-            Ocorrências
+            Ocorr.
           </HeaderCell>
-          {onGerarEtiqueta ? (
+          {showEtq ? (
             <HeaderCell
               className="text-center px-0.5"
-              onResizeStart={(e) => handleResizeStart(12 + colOff, e)}
+              onResizeStart={(e) => handleResizeStart(11 + colOff, e)}
             >
-              Etq.
+              Docs
             </HeaderCell>
           ) : null}
           <HeaderCell
             className="text-center px-0.5"
             onResizeStart={(e) =>
-              handleResizeStart((onGerarEtiqueta ? 13 : 12) + colOff, e)
+              handleResizeStart((showEtq ? 12 : 11) + colOff, e)
             }
           >
             ✓
@@ -663,13 +766,28 @@ export function LineTable({
         {items.map((item, idx) => {
           const pcpDeadline = item.pcp_deadline ?? item.order.pcp_deadline ?? item.order.delivery_deadline;
           const pcpDisplay =
+            pcpDeadline && formatDayMonth(safeParse(pcpDeadline));
+          const pcpFull =
             pcpDeadline && formatShortDate(safeParse(pcpDeadline));
 
+          const isOpen = item.status !== "completed";
           const willDelay =
-            item.production_end &&
-            pcpDeadline &&
-            item.production_end > pcpDeadline &&
-            item.status !== "completed";
+            isOpen &&
+            !!item.production_end &&
+            !!pcpDeadline &&
+            item.production_end > pcpDeadline;
+          const pcpOverdue = isOpen && isPastDeadline(pcpDeadline);
+          const endOverdue = isOpen && isPastDeadline(item.production_end);
+          const isOverdue = pcpOverdue || endOverdue || willDelay;
+          const overdueLabels: string[] = [];
+          if (pcpOverdue) overdueLabels.push("Prazo PCP");
+          if (endOverdue) overdueLabels.push("Fim Prod.");
+          if (willDelay && !pcpOverdue && !endOverdue) {
+            overdueLabels.push("Fim após PCP");
+          }
+          const overdueHint = isOverdue
+            ? overdueRescheduleMessage(overdueLabels)
+            : undefined;
 
           const dayPcp = pcpDeadline ? toDateOnly(pcpDeadline) : null;
           const pcArrival = itemPcArrivalForProduction(
@@ -689,7 +807,7 @@ export function LineTable({
             dayPc === dayStart &&
             dayStart === dayEnd;
 
-          const rowBg = willDelay
+          const rowBg = isOverdue
             ? "bg-red-50"
             : allLineDatesEqualAttention
               ? "bg-amber-50"
@@ -700,12 +818,13 @@ export function LineTable({
           return (
             <div
               key={item.id}
-              className={`grid text-[11px] items-center border-b border-slate-200 h-[var(--line-gantt-row-h)] gap-x-0 box-border overflow-x-clip overflow-y-visible ${rowBg}`}
+              className={`grid text-[11px] items-center border-b border-slate-200 min-h-[2.35rem] gap-x-0 box-border overflow-x-clip overflow-y-visible py-0.5 ${rowBg}`}
               style={{ gridTemplateColumns: gridTemplate }}
               title={
-                allLineDatesEqualAttention
+                overdueHint ??
+                (allLineDatesEqualAttention
                   ? "Atenção: Prazo PCP, PC entrega, início e fim de produção na mesma data."
-                  : undefined
+                  : undefined)
               }
             >
               {selectCol && (
@@ -741,21 +860,32 @@ export function LineTable({
               <Cell className="text-center flex justify-center items-center">
                 {item.quantity}
               </Cell>
-              <Cell className={`text-center flex justify-center items-center ${willDelay ? "text-red-700 font-semibold" : ""}`}>
+              <Cell
+                className={`text-center flex justify-center items-center tabular-nums ${pcpOverdue ? "text-red-700 font-semibold" : ""}`}
+                title={
+                  pcpOverdue
+                    ? `${pcpFull ?? ""} — ${overdueHint}`
+                    : pcpFull || undefined
+                }
+              >
                 {pcpDisplay ?? "--"}
               </Cell>
               <Cell
-                className="text-center flex justify-center items-center text-[10px] min-w-0"
+                className="text-center flex justify-center items-center text-[10px] min-w-0 tabular-nums"
                 title={
                   item.pc_number
-                    ? `PC ${item.pc_number} — entrega (max. previsão/follow-up ou PV)`
-                    : undefined
+                    ? `PC ${item.pc_number} — ${pcArrival ? formatShortDate(safeParse(pcArrival)) : "sem data"}`
+                    : pcArrival
+                      ? formatShortDate(safeParse(pcArrival))
+                      : undefined
                 }
               >
-                {pcArrival ? formatShortDate(safeParse(pcArrival)) : "--"}
+                {pcArrival ? formatDayMonth(safeParse(pcArrival)) : "--"}
               </Cell>
               <Cell className="flex items-stretch p-0 h-full min-h-0 !overflow-visible z-[1]">
                 <CompactDateCell
+                  dayMonthOnly
+                  warnIfPast={false}
                   value={item.production_start}
                   min={pcArrival}
                   onChange={(val) =>
@@ -764,9 +894,15 @@ export function LineTable({
                 />
               </Cell>
               <Cell
-                className={`flex items-stretch p-0 h-full min-h-0 !overflow-visible z-[1] ${willDelay ? "[&_input]:text-red-700 [&_input]:font-semibold" : ""}`}
+                className={`flex items-stretch p-0 h-full min-h-0 !overflow-visible z-[1] ${
+                  endOverdue || willDelay
+                    ? "[&_input]:text-red-700 [&_input]:font-semibold"
+                    : ""
+                }`}
               >
                 <CompactDateCell
+                  dayMonthOnly
+                  warnIfPast={isOpen}
                   value={item.production_end}
                   min={maxDateStr(item.production_start, pcArrival)}
                   onChange={(val) =>
@@ -774,16 +910,16 @@ export function LineTable({
                   }
                 />
               </Cell>
-              <Cell className="flex flex-col gap-1 py-1 h-full min-h-0 justify-center min-w-0">
+              <Cell className="flex flex-col gap-1 py-0.5 h-full min-h-0 justify-center min-w-0">
                 <input
                   type="text"
-                  className="w-full rounded-md border border-slate-300 bg-white px-2 text-[10px] h-[26px] box-border shrink-0"
+                  className="w-full rounded-md border border-slate-300 bg-white px-2 text-[10px] h-[22px] box-border shrink-0"
                   value={item.notes ?? ""}
                   onChange={(e) => onChangeNotes(item.id, e.target.value)}
-                  placeholder="Observações..."
+                  placeholder="Obs..."
                 />
               </Cell>
-              <Cell className="!overflow-visible px-1 flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 py-1 min-h-0 isolate z-[25] [@media(max-width:480px)]:justify-center [@media(max-width:480px)]:max-w-full">
+              <Cell className="!overflow-visible px-0.5 flex flex-wrap items-center justify-center gap-x-1 gap-y-0.5 py-0.5 min-h-0 isolate z-[20] [@media(max-width:480px)]:justify-center [@media(max-width:480px)]:max-w-full">
                 {cqContext ? (
                   <div
                     className="flex flex-row items-center justify-center gap-2 sm:gap-1 shrink-0 w-full max-w-full"
@@ -811,16 +947,44 @@ export function LineTable({
                   <span className="text-[10px] text-slate-300">—</span>
                 )}
               </Cell>
-              {onGerarEtiqueta ? (
-                <Cell className="text-center px-0.5 flex items-center justify-center">
-                  <button
-                    type="button"
-                    onClick={() => onGerarEtiqueta(item)}
-                    className="rounded border border-[#1B4F72]/40 bg-[#1B4F72]/5 px-1 py-0.5 text-[9px] font-semibold text-[#1B4F72] hover:bg-[#1B4F72]/10 whitespace-nowrap touch-manipulation"
-                    title="Gerar etiqueta de filtro"
-                  >
-                    Etiqueta
-                  </button>
+              {showEtq ? (
+                <Cell className="px-1 py-0.5 flex flex-col items-stretch justify-center gap-0.5 min-w-0 overflow-hidden">
+                  <div className="grid grid-cols-2 gap-0.5 w-full">
+                    {onGerarEtiqueta ? (
+                      <button
+                        type="button"
+                        onClick={() => onGerarEtiqueta(item)}
+                        className="inline-flex h-7 min-w-0 flex-col items-center justify-center gap-0 rounded-md bg-[#1B4F72] px-1 text-[8px] font-semibold leading-none text-white shadow-sm transition-colors hover:bg-[#163f5c] active:scale-[0.98] touch-manipulation"
+                        title="Gerar etiqueta de filtro"
+                      >
+                        <Tag className="h-3 w-3 shrink-0" aria-hidden />
+                        Etiqueta
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    {onGerarCertificado ? (
+                      <button
+                        type="button"
+                        onClick={() => onGerarCertificado(item)}
+                        className="inline-flex h-7 min-w-0 flex-col items-center justify-center gap-0 rounded-md bg-emerald-700 px-1 text-[8px] font-semibold leading-none text-white shadow-sm transition-colors hover:bg-emerald-800 active:scale-[0.98] touch-manipulation"
+                        title="Gerar certificado de qualidade"
+                      >
+                        <BadgeCheck className="h-3 w-3 shrink-0" aria-hidden />
+                        Certificado
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                  </div>
+                  {item.motor_vazao != null ? (
+                    <span
+                      className="mx-auto inline-flex max-w-full items-center truncate rounded-full bg-slate-100 px-1.5 py-0.5 text-[8px] font-medium tabular-nums text-slate-600"
+                      title={`Vazão salva: ${item.motor_vazao} m³/h`}
+                    >
+                      {item.motor_vazao} m³/h
+                    </span>
+                  ) : null}
                 </Cell>
               ) : null}
               <Cell className="text-center px-0.5 flex items-center justify-center z-[10]">
@@ -838,13 +1002,13 @@ export function LineTable({
                     type="button"
                     onClick={() => handleComplete(item.id)}
                     className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded border text-[10px] leading-none touch-manipulation ${
-                      willDelay
+                      isOverdue
                         ? "border-red-300 text-red-700 hover:bg-red-100"
                         : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
                     }`}
                     title={
-                      willDelay
-                        ? "Vai atrasar - Marcar como concluído"
+                      isOverdue
+                        ? `${overdueHint} — Marcar como concluído`
                         : "Marcar como concluído"
                     }
                   >
@@ -873,33 +1037,42 @@ function HeaderCell({
   sortIndex,
   onClick,
   onResizeStart,
+  wrap = false,
 }: {
   children: React.ReactNode;
   className?: string;
   sortIndex?: number | null;
   onClick?: () => void;
   onResizeStart?: (e: React.MouseEvent) => void;
+  /** Quebra o título em 2 linhas (colunas estreitas de data). */
+  wrap?: boolean;
 }) {
   const isCentered = className.includes("text-center");
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`relative h-full min-h-0 px-1.5 sm:px-2 py-0 border-r border-slate-200 bg-slate-50/80 flex items-center gap-0 box-border ${
+      className={`relative h-full min-h-0 px-1 sm:px-1.5 py-0 border-r border-slate-200 bg-slate-50/80 flex items-center gap-0 box-border ${
         onClick ? "cursor-pointer hover:bg-slate-100/90" : ""
       } ${className}`}
     >
       <span
-        className={`flex-1 flex items-center gap-1.5 min-w-0 ${
+        className={`flex-1 flex items-center gap-1 min-w-0 ${
           isCentered ? "justify-center" : ""
         }`}
       >
-        <span className="text-[11px] font-semibold text-slate-700 tracking-tight leading-snug select-none truncate">
+        <span
+          className={`text-[10px] font-semibold text-slate-700 tracking-tight leading-tight select-none ${
+            wrap
+              ? "whitespace-normal text-center"
+              : "truncate text-[11px] leading-snug"
+          }`}
+        >
           {children}
         </span>
         {sortIndex != null && sortIndex > 0 ? (
           <span
-            className="inline-flex h-[15px] min-w-[15px] shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white px-0.5 text-[8px] font-bold text-slate-700 shadow-sm"
+            className="inline-flex h-[14px] min-w-[14px] shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white px-0.5 text-[8px] font-bold text-slate-700 shadow-sm"
             title={`Prioridade de ordenação ${sortIndex}`}
           >
             {sortIndex}

@@ -1,4 +1,8 @@
-export { parseFamilia } from "./parse-familia";
+export {
+  isFamiliaAbsolutoCunha,
+  isFamiliaFinoCunha,
+  parseFamilia,
+} from "./parse-familia";
 export type {
   CampoFaltante,
   ClasseFiltro,
@@ -18,6 +22,19 @@ export type {
   LinhaFino,
   MaterialFino,
 } from "./tabelas-referencia";
+
+export {
+  materiaisFinoDisponiveis,
+  espessurasFinoDisponiveis,
+  coroasFinoDisponiveis,
+  espessurasPlanoDisponiveis,
+} from "./opcoes-fino";
+
+export {
+  itemTemMotorSalvo,
+  patchMotorFromCalculo,
+} from "./persistencia";
+export type { MotorCamposSalvos, ItemComMotor } from "./persistencia";
 
 export {
   escolherMaisProxima,

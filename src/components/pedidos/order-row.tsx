@@ -5,7 +5,7 @@ import type {
   ProductionLine,
   UserRole,
 } from "@/lib/types/database";
-import { formatBrazilianDateTime, formatShortDate } from "@/lib/utils/date";
+import { formatBrazilianDateTime, formatShortDate, isPastDeadline, pastDeadlineTextClass } from "@/lib/utils/date";
 import { toast } from "sonner";
 import { CompactDateCell } from "@/components/ui/compact-date-cell";
 import { OrderStatusBadge } from "./order-status-badge";
@@ -346,16 +346,39 @@ export function OrderRow({
         <div className="text-center text-slate-600">
           {formatShortDate(order.created_at)}
         </div>
-        <div className="text-center">
+        <div
+          className={`text-center ${pastDeadlineTextClass(order.delivery_deadline, {
+            open: order.status !== "finished",
+          })}`}
+          title={
+            order.status !== "finished" &&
+            isPastDeadline(order.delivery_deadline)
+              ? "Prazo de vendas vencido — reprogramar."
+              : undefined
+          }
+        >
           {formatShortDate(order.delivery_deadline)}
         </div>
         <div className="flex items-stretch w-full min-h-[28px]">
           <CompactDateCell
             value={order.pcp_deadline}
+            warnIfPast={order.status !== "finished"}
             onChange={(val) => onUpdateOrderPcpDate(order.id, val)}
           />
         </div>
-        <div className="text-center">{formatShortDate(displayProductionDeadline)}</div>
+        <div
+          className={`text-center ${pastDeadlineTextClass(displayProductionDeadline, {
+            open: order.status !== "finished",
+          })}`}
+          title={
+            order.status !== "finished" &&
+            isPastDeadline(displayProductionDeadline)
+              ? "Prazo de produção vencido — reprogramar."
+              : undefined
+          }
+        >
+          {formatShortDate(displayProductionDeadline)}
+        </div>
         {showSelect && (
           <div className="flex items-center justify-center">
             <input

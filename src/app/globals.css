@@ -10,8 +10,8 @@
   --pcp-danger: #E74C3C;
   --pcp-background: #F8F9FA;
   /** Linha de produção: tabela fixa + Gantt (mesmo valor nos dois lados) */
-  --line-gantt-header-h: 3rem; /* 48px — cabeçalho Gantt em 2 linhas + tabela */
-  --line-gantt-row-h: 2.125rem; /* 34px — linhas (inalterado) */
+  --line-gantt-header-h: 2.5rem; /* cabeçalho em 2 linhas */
+  --line-gantt-row-h: 2.125rem; /* 34px — linhas compactas */
 }
 
 html {

@@ -10,6 +10,10 @@ import {
   type LinhaFino,
   type MaterialFino,
 } from "./tabelas-referencia";
+import {
+  isFamiliaAbsolutoCunha,
+  isFamiliaFinoCunha,
+} from "./parse-familia";
 
 export type ResultadoMotor = {
   vazao: number;
@@ -71,16 +75,21 @@ export function motorPlano(params: {
   return { vazao, dPi: 250, dPf: 600, memoria };
 }
 
-/** Motor CUNHA (H13/H14 / FFW). Validação: 3 cunhas 450×450 → ~1548 m³/h. */
+/** Motor CUNHA (ABSW absoluto / FFW–FF4W fino). Validação: 3 cunhas 450×450 → ~1548 m³/h. */
 export function motorCunha(params: {
   base_mm: number;
   altura_mm: number;
   num_cunhas: number;
+  /** F7/F8/F9 → 125/450 Pa; H13/H14 (padrão) → 250/600 Pa. */
+  classe?: string | null;
+  /** Família manda na pressão: FFW/FF4W = fino; ABSW = absoluto. */
+  modelo?: string | null;
 }): ResultadoMotor {
-  const { base_mm, altura_mm, num_cunhas } = params;
+  const { base_mm, altura_mm, num_cunhas, classe, modelo } = params;
   const abertura = base_mm / num_cunhas;
   const ref = escolherMaisProxima(TABELA_CUNHA, abertura, (r) => r.base / r.cunhas);
   const aberturaRef = ref.base / ref.cunhas;
+  const { dPi, dPf, pressaoLabel } = pressaoCunhaPorClasse(classe, modelo);
   const memoria: string[] = [
     `abertura = ${base_mm}/${num_cunhas} = ${abertura.toFixed(3)} mm`,
     `ref catálogo: base=${ref.base} altura=${ref.altura} cunhas=${ref.cunhas} abertura_ref=${aberturaRef.toFixed(3)} mm área=${ref.area_m2} m² vazão=${ref.vazao}`,
@@ -100,8 +109,31 @@ export function motorCunha(params: {
   memoria.push(
     `vazão = ${area_efetiva.toFixed(4)} × (${ref.vazao}/${ref.area_m2}) = ${vazaoBruta.toFixed(2)} → ${vazao} m³/h`
   );
-  memoria.push(`ΔPi = ${ref.dPi} Pa · ΔPf = ${ref.dPf} Pa`);
-  return { vazao, dPi: ref.dPi, dPf: ref.dPf, memoria };
+  memoria.push(`ΔPi = ${dPi} Pa · ΔPf = ${dPf} Pa (${pressaoLabel})`);
+  return { vazao, dPi, dPf, memoria };
+}
+
+function pressaoCunhaPorClasse(
+  classe?: string | null,
+  modelo?: string | null
+): {
+  dPi: number;
+  dPf: number;
+  pressaoLabel: string;
+} {
+  /** FFW / FF4W / FF4WC = Filtro Fino + Cunha → sempre F7–F9. */
+  if (isFamiliaFinoCunha(modelo)) {
+    return { dPi: 125, dPf: 450, pressaoLabel: "fino F7/F8/F9 (FFW)" };
+  }
+  /** ABSW = Absoluto + Cunha → H13/H14. */
+  if (isFamiliaAbsolutoCunha(modelo)) {
+    return { dPi: 250, dPf: 600, pressaoLabel: "absoluto H13/H14 (ABSW)" };
+  }
+  const c = (classe ?? "").toUpperCase().trim();
+  if (c === "F7" || c === "F8" || c === "F9") {
+    return { dPi: 125, dPf: 450, pressaoLabel: "fino F7/F8/F9" };
+  }
+  return { dPi: 250, dPf: 600, pressaoLabel: "absoluto H13/H14" };
 }
 
 export function encontrarLinhaFino(

@@ -108,6 +108,41 @@ describe("detectarClasseFiltragem", () => {
 
 
 
+  it("FF4W (fibra) -> F9", () => {
+
+    assert.equal(
+
+      detectarClasseFiltragem("FILTRO HF-FF4W-ABA 472X472X292mm", "HF-2315"),
+
+      "F9"
+
+    );
+
+  });
+
+
+
+  it("FFW ignora H13 no texto", () => {
+    assert.equal(
+      detectarClasseFiltragem("HF-FFW H13 610x610x292mm"),
+      null
+    );
+  });
+
+  it("FF4WC (celulose) -> F8", () => {
+
+    assert.equal(
+
+      detectarClasseFiltragem("FILTRO HF-FF4WC-ABA 472X472X292mm"),
+
+      "F8"
+
+    );
+
+  });
+
+
+
   it("HESP-007 sem classe -> null", () => {
 
     assert.equal(detectarClasseFiltragem("FILTRO HF-HESP-007"), null);

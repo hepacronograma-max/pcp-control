@@ -25,6 +25,7 @@ scripts/logs/
 
 # PDF de teste (dados de cliente)
 public/test-pedido.pdf
+tmp-certificados/
 
 # misc
 *.tsbuildinfo

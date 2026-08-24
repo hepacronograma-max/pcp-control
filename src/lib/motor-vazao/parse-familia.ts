@@ -63,14 +63,43 @@ const DIMENSAO_RE =
 
 /** Modelo comercial embutido na description (não o SKU HF-1579). */
 const MODELO_RE =
-  /\bHF-?(ABSPI|ABSP|ABSW\d*|FFP|FFW\d*|BSF\d*|BSM\d*|BSG\d*|PL|GP|HESP(?:-\d+)?)\b/i;
+  /\bHF-?(ABSPI|ABSP|ABSW\d*|FF\d+WC?|FFP|FFW\d*|BSF\d*|BSM\d*|BSG\d*|PL|GP|HESP(?:-\d+)?)\b/i;
 
 function toNum(s: string): number {
   return Number(String(s).replace(",", "."));
 }
 
+/** FFW / FF4W / FF4WC = Filtro Fino + Cunha (sempre F7 / F8 / F9). */
+export function isFamiliaFinoCunha(modelo: string | null | undefined): boolean {
+  if (!modelo) return false;
+  const m = modelo.toUpperCase();
+  return m.startsWith("FFW") || /^FF\d+WC?$/.test(m);
+}
+
+/** ABSW = Absoluto + Cunha (H13 / H14). */
+export function isFamiliaAbsolutoCunha(
+  modelo: string | null | undefined
+): boolean {
+  if (!modelo) return false;
+  return modelo.toUpperCase().startsWith("ABSW");
+}
+
 function detectarClasse(texto: string): ClasseFiltro | null {
   const t = texto.toUpperCase();
+
+  /**
+   * Fino em cunha nunca é absoluto: ignora H10–H14 no texto
+   * (ex.: "HF-FFW H13" não vira H13).
+   */
+  if (/\bHF-?FFW\d*\b/.test(t) || /\bHF-?FF\d+WC?\b/.test(t)) {
+    for (const token of ["F9", "F8", "F7"] as const) {
+      if (t.includes(token)) return token;
+    }
+    if (/\bHF-?FF\d+WC\b/.test(t)) return "F8";
+    if (/\bHF-?FF\d+W\b/.test(t)) return "F9";
+    return null;
+  }
+
   if (/H13\s*\/\s*H14/.test(t)) return "H13/H14";
 
   const bsf = t.match(/\bBSF(\d)\b/);
@@ -88,6 +117,7 @@ function detectarClasse(texto: string): ClasseFiltro | null {
   for (const token of CLASSES_TOKENS) {
     if (t.includes(token)) return token;
   }
+
   return null;
 }
 
@@ -156,6 +186,14 @@ export function parseFamilia(
   } else if (modeloRaw === "FFP") {
     tipo = "fino";
     modelo = "FFP";
+  } else if (/^FF(\d+)WC$/.test(modeloRaw)) {
+    tipo = "cunha";
+    num_elementos = Number(modeloRaw.replace(/^FF(\d+)WC$/, "$1"));
+    modelo = modeloRaw;
+  } else if (/^FF(\d+)W$/.test(modeloRaw)) {
+    tipo = "cunha";
+    num_elementos = Number(modeloRaw.replace(/^FF(\d+)W$/, "$1"));
+    modelo = modeloRaw;
   } else if (/^FFW(\d*)$/.test(modeloRaw)) {
     tipo = "cunha";
     const dig = modeloRaw.replace("FFW", "");

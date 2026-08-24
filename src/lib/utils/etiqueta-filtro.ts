@@ -28,6 +28,16 @@ export function detectarClasseFiltragem(
 ): string | null {
   const texto = `${codigo ?? ""} ${descricao}`.toUpperCase();
 
+  /** FFW / FF4W = fino (F7–F9). Não herda H13/H14 do texto. */
+  if (/\bHF-?FFW\d*\b/.test(texto) || /\bHF-?FF\d+WC?\b/.test(texto)) {
+    for (const token of ["F9", "F8", "F7"] as const) {
+      if (texto.includes(token)) return token;
+    }
+    if (/\bHF-?FF\d+WC\b/.test(texto)) return "F8";
+    if (/\bHF-?FF\d+W\b/.test(texto)) return "F9";
+    return null;
+  }
+
   if (/H13\s*\/\s*H14/.test(texto)) {
     return "H13/H14";
   }

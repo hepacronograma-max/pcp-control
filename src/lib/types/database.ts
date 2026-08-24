@@ -116,6 +116,14 @@ export interface OrderItem {
   omie_sync_detail?: string | null;
   /** Chave Omie do item (sync incremental) */
   omie_codigo_item?: number | null;
+  /** Motor de vazão — sincroniza etiqueta ↔ certificado */
+  motor_espessura_papel_mm?: number | null;
+  motor_material?: string | null;
+  motor_tem_coroa?: boolean | null;
+  motor_num_elementos?: number | null;
+  motor_vazao?: number | null;
+  motor_dpi?: number | null;
+  motor_dpf?: number | null;
   created_at: string;
   updated_at: string;
 }

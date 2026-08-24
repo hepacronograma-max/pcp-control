@@ -7,7 +7,7 @@ import type {
   OrderWithItems,
   OrderComercialThreadPatch,
 } from "@/lib/types/database";
-import { formatBrazilianDateTime, formatShortDate } from "@/lib/utils/date";
+import { formatBrazilianDateTime, formatShortDate, isPastDeadline, pastDeadlineTextClass } from "@/lib/utils/date";
 import { OrderStatusBadge } from "@/components/pedidos/order-status-badge";
 import {
   areAllOrderDeadlinesSameDay,
@@ -575,9 +575,19 @@ export function ComercialOrdersView({
                         {canEditDeliveryDeadline ? (
                           <input
                             type="date"
-                            title="Prazo de vendas (clique para alterar)"
+                            title={
+                              o.status !== "finished" &&
+                              isPastDeadline(row.delivery_deadline)
+                                ? "Prazo de vendas vencido — reprogramar."
+                                : "Prazo de vendas (clique para alterar)"
+                            }
                             disabled={savingDeliveryId === row.id}
-                            className="w-full max-w-[7.5rem] rounded-md border border-slate-300 bg-white px-1 py-0.5 text-[10px] sm:text-[11px] text-slate-800 tabular-nums disabled:opacity-50"
+                            className={`w-full max-w-[7.5rem] rounded-md border px-1 py-0.5 text-[10px] sm:text-[11px] tabular-nums disabled:opacity-50 ${
+                              o.status !== "finished" &&
+                              isPastDeadline(row.delivery_deadline)
+                                ? "border-red-400 bg-red-50 text-red-800 font-semibold"
+                                : "border-slate-300 bg-white text-slate-800"
+                            }`}
                             value={toDateOnly(row.delivery_deadline) ?? ""}
                             onChange={(e) =>
                               void saveDeliveryDeadline(
@@ -587,12 +597,36 @@ export function ComercialOrdersView({
                             }
                           />
                         ) : (
-                          <span className="text-center tabular-nums text-slate-600">
+                          <span
+                            className={`text-center tabular-nums ${
+                              pastDeadlineTextClass(row.delivery_deadline, {
+                                open: o.status !== "finished",
+                              }) || "text-slate-600"
+                            }`}
+                            title={
+                              o.status !== "finished" &&
+                              isPastDeadline(row.delivery_deadline)
+                                ? "Prazo de vendas vencido — reprogramar."
+                                : undefined
+                            }
+                          >
                             {formatShortDate(row.delivery_deadline)}
                           </span>
                         )}
                       </div>
-                      <div className="text-center tabular-nums text-[#1B4F72] font-medium">
+                      <div
+                        className={`text-center tabular-nums font-medium ${
+                          pastDeadlineTextClass(row.pcp_deadline, {
+                            open: o.status !== "finished",
+                          }) || "text-[#1B4F72]"
+                        }`}
+                        title={
+                          o.status !== "finished" &&
+                          isPastDeadline(row.pcp_deadline)
+                            ? "Prazo PCP vencido — reprogramar."
+                            : undefined
+                        }
+                      >
                         {formatShortDate(row.pcp_deadline)}
                       </div>
                       <div className="flex flex-wrap items-center justify-end gap-0.5 min-h-[24px] pl-0.5">

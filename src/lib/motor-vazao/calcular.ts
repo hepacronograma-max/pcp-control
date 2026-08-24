@@ -42,6 +42,9 @@ export type ResultadoCalculoMotor = {
 export type PrecisaInputsMotor = {
   precisa: CampoFaltante[];
   familia: FamiliaParseada;
+  /** Faltam inputs vs combinação material/espessura/coroa inexistente na tabela. */
+  motivo?: "faltando" | "combinacao_invalida";
+  mensagem?: string;
 };
 
 export type CalculoMotorResult =
@@ -137,10 +140,15 @@ export function calcularVazaoPressao(
         inputsUsuario.tem_coroa
       )
     ) {
-      // combinação inexistente na tabela
-      precisa.push("material");
-      precisa.push("espessura_papel_mm");
-      precisa.push("tem_coroa");
+      return {
+        precisa: ["material", "espessura_papel_mm", "tem_coroa"],
+        familia,
+        motivo: "combinacao_invalida",
+        mensagem:
+          "Combinacao material/espessura/coroa inexistente na tabela. " +
+          "Ex.: fibra_vidro 45 mm so SEM coroa; com coroa use 80 ou 100 mm. " +
+          "Celulosico com coroa so em 60 mm.",
+      };
     }
   }
 
@@ -184,6 +192,8 @@ export function calcularVazaoPressao(
       base_mm: L,
       altura_mm: A,
       num_cunhas: num!,
+      classe: familia.classe,
+      modelo: familia.modelo,
     });
     return {
       vazao: r.vazao,
