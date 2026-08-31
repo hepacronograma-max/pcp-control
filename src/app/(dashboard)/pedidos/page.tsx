@@ -947,13 +947,21 @@ export default function PedidosPage() {
             ➕ Novo Pedido
           </Button>
           {canImport && (
-            <Button
-              className="text-xs"
-              disabled={importingOmie}
-              onClick={() => void handleImportOmie()}
-            >
-              {importingOmie ? "Importando…" : "Importar do Omie"}
-            </Button>
+            <>
+              <Button
+                className="bg-slate-100 text-slate-800 hover:bg-slate-200 text-xs"
+                onClick={() => router.push("/importar")}
+              >
+                Importar PDF
+              </Button>
+              <Button
+                className="text-xs"
+                disabled={importingOmie}
+                onClick={() => void handleImportOmie()}
+              >
+                {importingOmie ? "Importando…" : "Importar do Omie"}
+              </Button>
+            </>
           )}
         </div>
       </div>

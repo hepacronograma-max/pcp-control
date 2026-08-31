@@ -9,6 +9,8 @@ import { useUser } from "@/lib/hooks/use-user";
 import { defaultAppPathForRole, hasPermission } from "@/lib/utils/permissions";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { createClient } from "@/lib/supabase/client";
+import type { ManualImportKind } from "@/lib/pdf/apply-manual-import";
+import { downloadPcpManualPdfExample } from "@/lib/pdf/download-pcp-manual-example";
 interface ImportResult {
   fileName: string;
   success: boolean;
@@ -26,6 +28,7 @@ export default function ImportPage() {
   const [results, setResults] = useState<ImportResult[]>([]);
   const [processing, setProcessing] = useState(false);
   const [currentIndex, setCurrentIndex] = useState<number | null>(null);
+  const [importKind, setImportKind] = useState<ManualImportKind>("pedido");
   const { profile, loading: profileLoading } = useUser();
   const { companyId: effectiveCompanyId } = useEffectiveCompanyId(profile);
   const router = useRouter();
@@ -58,6 +61,7 @@ export default function ImportPage() {
   async function processOnePdf(file: File): Promise<ImportResult> {
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("import_kind", importKind);
 
     if (effectiveCompanyId) {
       formData.append("company_id", effectiveCompanyId);
@@ -174,11 +178,13 @@ export default function ImportPage() {
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">
-            Importar Pedidos
+            Importar PDF (sem Omie)
           </h1>
           <p className="text-sm text-slate-600">
-            Envie arquivos PDF de pedidos de venda (TOTVS, Omie) para criar pedidos e
-            itens automaticamente. O prazo de entrega é extraído do PDF.
+            Use o PDF de cotação Zenith (mesmo layout de ZH-260026). A API do
+            Omie continua em Pedidos → Importar do Omie. Depois de importar, o
+            pedido entra no cronograma; etiqueta e certificado saem com a marca
+            HEPA, iguais aos demais.
           </p>
         </div>
         <PageExportMenu
@@ -203,6 +209,67 @@ export default function ImportPage() {
             ]),
           })}
         />
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
+        <p className="text-sm font-semibold text-slate-800">Tipo desta importação</p>
+        <div className="flex flex-col gap-2 text-sm">
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="import_kind"
+              className="mt-1"
+              checked={importKind === "pedido"}
+              onChange={() => setImportKind("pedido")}
+              disabled={processing}
+            />
+            <span>
+              <span className="font-medium text-slate-800">Pedido de venda (outro CNPJ)</span>
+              <span className="block text-xs text-slate-500">
+                Empresa que não usa Omie. Entra no mesmo cronograma HEPA.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="import_kind"
+              className="mt-1"
+              checked={importKind === "estoque"}
+              onChange={() => setImportKind("estoque")}
+              disabled={processing}
+            />
+            <span>
+              <span className="font-medium text-slate-800">Filtro de estoque HEPA</span>
+              <span className="block text-xs text-slate-500">
+                Cliente fica ESTOQUE HEPA e o número ganha prefixo EST- para não
+                misturar com pedido Omie.
+              </span>
+            </span>
+          </label>
+        </div>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Button
+            type="button"
+            className="bg-slate-100 text-slate-800 hover:bg-slate-200 text-xs"
+            onClick={() => downloadPcpManualPdfExample(importKind)}
+          >
+            Baixar PDF modelo
+          </Button>
+        </div>
+        <pre className="text-[11px] leading-relaxed text-slate-600 bg-slate-50 border border-slate-200 rounded-md p-3 overflow-x-auto whitespace-pre-wrap">{`Cotação #   ZH-260026
+DATA   27/08/2026
+Nome da empresa   COLD CONTROL AR CONDICIONADO
+ITEM   QTD   Modelo   Dimensão (mm)
+1   4   HF-GP-G4   660x150x25
+A) Prazo de entrega:   10 dias úteis`}</pre>
+        <p className="text-xs text-slate-500">
+          O sistema lê o número ZH-…, o cliente (no PDF ou no nome do arquivo,
+          ex.: ZH-260026 - COLD CONTROL AR CONDICIONADO.pdf), cada linha da
+          tabela (modelo + dimensão + quantidade) e o prazo em dias úteis.
+          Dica: mantenha o nome do cliente no arquivo, porque no PDF a empresa
+          às vezes aparece cortada.
+        </p>
       </div>
 
       <div

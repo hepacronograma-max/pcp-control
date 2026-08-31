@@ -1,5 +1,6 @@
 /**
- * API de importação de PDFs de pedidos (TOTVS, Omie).
+ * API de importação de PDFs de pedidos (manual: PCP HEPA, TOTVS ou Omie PDF).
+ * A sincronização pela API do Omie não passa por aqui.
  *
  * O prazo de entrega é extraído do PDF e salvo quando as colunas existem.
  * Se delivery_deadline/pcp_deadline não existirem: tenta criar via ensureDeliveryColumns(),
@@ -17,6 +18,22 @@ import {
   parseOmiePedido,
   isOmiePdf,
 } from "@/lib/pdf/parse-omie";
+import {
+  isPcpManualPdf,
+  parsePcpManualPdf,
+} from "@/lib/pdf/parse-pcp-manual";
+import {
+  isZenithQuotePdf,
+  parseZenithQuote,
+} from "@/lib/pdf/parse-zenith-quote";
+import {
+  applyManualImportDefaults,
+  isManualPdfOrigin,
+  parseManualImportKind,
+  resolveManualImportKind,
+  resolveManualOrderCollision,
+  type ManualImportKind,
+} from "@/lib/pdf/apply-manual-import";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasRequestLocalAuthCookie } from "@/lib/server-local-auth";
@@ -57,6 +74,7 @@ interface ExtractedData {
   orderNumber: string;
   clientName: string;
   deliveryDate: string | null;
+  pdfTipo?: ManualImportKind | null;
   items: {
     description: string;
     quantity: number;
@@ -151,6 +169,40 @@ async function extractFromPdf(
 
   console.log("[import-pdf] Texto extraído de", fileName, ":\n", text.substring(0, 3000));
 
+  if (isZenithQuotePdf(text)) {
+    const zenith = parseZenithQuote(text, fileName);
+    const isZenithFallback =
+      zenith.items.length === 1 &&
+      zenith.items[0].description.startsWith("Item importado de ");
+    if (!isZenithFallback && zenith.items.length > 0) {
+      return {
+        orderNumber: zenith.orderNumber,
+        clientName: zenith.clientName,
+        deliveryDate: zenith.deliveryDate ?? null,
+        items: zenith.items,
+        pdfTipo: null,
+        _rawText: text,
+      };
+    }
+  }
+
+  if (isPcpManualPdf(text)) {
+    const pcp = parsePcpManualPdf(text, fileName);
+    const isPcpFallback =
+      pcp.items.length === 1 &&
+      pcp.items[0].description.startsWith("Item importado de ");
+    if (!isPcpFallback && pcp.items.length > 0) {
+      return {
+        orderNumber: pcp.orderNumber,
+        clientName: pcp.clientName,
+        deliveryDate: pcp.deliveryDate ?? null,
+        items: pcp.items,
+        pdfTipo: pcp.tipo,
+        _rawText: text,
+      };
+    }
+  }
+
   const textLower = text.toLowerCase();
   const pareceTotvs =
     textLower.includes("orçamento nº") ||
@@ -229,6 +281,211 @@ async function extractFromPdf(
   };
 }
 
+async function findOrderByNumber(
+  supabase: SupabaseClient,
+  companyId: string,
+  orderNumber: string
+): Promise<{ id: string; notes: string | null } | null> {
+  const withNotes = await supabase
+    .from("orders")
+    .select("id, notes")
+    .eq("company_id", companyId)
+    .eq("order_number", orderNumber)
+    .maybeSingle();
+  if (!withNotes.error) return withNotes.data ?? null;
+  if (!/notes|schema cache|column|does not exist|PGRST204/i.test(withNotes.error.message)) {
+    return null;
+  }
+  const onlyId = await supabase
+    .from("orders")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("order_number", orderNumber)
+    .maybeSingle();
+  return onlyId.data ? { id: onlyId.data.id, notes: null } : null;
+}
+
+async function insertOrderWithFallbacks(
+  supabase: SupabaseClient,
+  payload: Record<string, unknown>
+) {
+  let ordersRes = await supabase.from("orders").insert(payload).select();
+  if (ordersRes.error?.message?.includes("delivery_deadline")) {
+    const added = await ensureDeliveryColumns();
+    if (added) {
+      ordersRes = await supabase.from("orders").insert(payload).select();
+    }
+    if (ordersRes.error?.message?.includes("delivery_deadline")) {
+      const { delivery_deadline: _, ...withoutDelivery } = payload;
+      ordersRes = await supabase.from("orders").insert(withoutDelivery).select();
+    }
+  }
+  if (ordersRes.error && /notes|schema cache|column|does not exist|PGRST204/i.test(ordersRes.error.message)) {
+    const { notes: _, ...withoutNotes } = payload;
+    ordersRes = await supabase.from("orders").insert(withoutNotes).select();
+  }
+  return ordersRes;
+}
+
+async function updateOrderWithFallbacks(
+  supabase: SupabaseClient,
+  orderId: string,
+  payload: Record<string, unknown>
+) {
+  let updateRes = await supabase.from("orders").update(payload).eq("id", orderId).select();
+  if (updateRes.error?.message?.includes("delivery_deadline")) {
+    const added = await ensureDeliveryColumns();
+    if (added) {
+      updateRes = await supabase.from("orders").update(payload).eq("id", orderId).select();
+    }
+    if (updateRes.error?.message?.includes("delivery_deadline")) {
+      const { delivery_deadline: _, ...withoutDelivery } = payload;
+      updateRes = await supabase.from("orders").update(withoutDelivery).eq("id", orderId).select();
+    }
+  }
+  if (updateRes.error && /notes|schema cache|column|does not exist|PGRST204/i.test(updateRes.error.message)) {
+    const { notes: _, ...withoutNotes } = payload;
+    updateRes = await supabase.from("orders").update(withoutNotes).eq("id", orderId).select();
+  }
+  return updateRes;
+}
+
+async function persistImportedOrder(
+  supabase: SupabaseClient,
+  companyId: string,
+  extracted: ExtractedData,
+  uiKind: ManualImportKind,
+  buffer: Buffer,
+  fileName: string,
+  ordersPath: string
+): Promise<NextResponse> {
+  await ensureDeliveryColumns();
+
+  const kind = resolveManualImportKind(uiKind, extracted.pdfTipo ?? null);
+  const defaults = applyManualImportDefaults({
+    orderNumber: extracted.orderNumber,
+    clientName: extracted.clientName,
+    kind,
+  });
+  extracted.orderNumber = defaults.orderNumber;
+  extracted.clientName = defaults.clientName;
+
+  const existing = await findOrderByNumber(supabase, companyId, extracted.orderNumber);
+  let decision = resolveManualOrderCollision({
+    orderNumber: extracted.orderNumber,
+    kind,
+    existingFound: !!existing,
+    existingNotes: existing?.notes ?? null,
+  });
+
+  let existingId: string | null =
+    decision.action === "update" && existing ? existing.id : null;
+
+  if (decision.action === "insert" && decision.orderNumber !== extracted.orderNumber) {
+    const second = await findOrderByNumber(supabase, companyId, decision.orderNumber);
+    if (second && isManualPdfOrigin(second.notes)) {
+      decision = { action: "update", orderNumber: decision.orderNumber };
+      existingId = second.id;
+    } else if (second && !isManualPdfOrigin(second.notes)) {
+      decision = { action: "insert", orderNumber: `${decision.orderNumber}-2`.slice(0, 50) };
+      existingId = null;
+    } else {
+      extracted.orderNumber = decision.orderNumber;
+    }
+  }
+
+  extracted.orderNumber = decision.orderNumber;
+
+  if (decision.action === "update" && existingId) {
+    const updatePayload: Record<string, unknown> = {
+      client_name: String(extracted.clientName).trim().slice(0, 255),
+      delivery_deadline: toDateOnly(extracted.deliveryDate),
+      notes: defaults.notes,
+    };
+    const updateRes = await updateOrderWithFallbacks(supabase, existingId, updatePayload);
+    const deliveryUpdated = !updateRes.error;
+    return NextResponse.json({
+      success: true,
+      savedToSupabase: true,
+      orderNumber: extracted.orderNumber,
+      clientName: extracted.clientName,
+      deliveryDate: extracted.deliveryDate,
+      itemCount: extracted.items.length,
+      updated: true,
+      deliveryUpdated,
+      importKind: kind,
+      message: deliveryUpdated
+        ? "Pedido já existia. Prazo de entrega e cliente foram atualizados."
+        : "Pedido atualizado sem prazo. Adicione as colunas em Configurações e re-importe para salvar o prazo.",
+    });
+  }
+
+  const orderPayload: Record<string, unknown> = {
+    company_id: companyId,
+    order_number: String(extracted.orderNumber).trim().slice(0, 50),
+    client_name: String(extracted.clientName).trim().slice(0, 255),
+    delivery_deadline: toDateOnly(extracted.deliveryDate),
+    status: "imported",
+    notes: defaults.notes,
+  };
+
+  const ordersRes = await insertOrderWithFallbacks(supabase, orderPayload);
+  const { data: createdOrders, error: orderError } = ordersRes;
+
+  if (orderError || !createdOrders?.[0]) {
+    console.error("Erro ao criar pedido:", orderError);
+    return NextResponse.json(
+      { success: false, error: orderError?.message ?? "Erro ao salvar pedido." },
+      { status: 500 }
+    );
+  }
+
+  const createdOrder = createdOrders[0];
+  const itemsRes = await insertImportedOrderItems(
+    supabase,
+    createdOrder.id,
+    extracted.items
+  );
+
+  if (itemsRes.error) {
+    console.error("Erro ao criar itens:", itemsRes.error);
+    return NextResponse.json(
+      { success: false, error: "Erro ao salvar itens do pedido." },
+      { status: 500 }
+    );
+  }
+
+  const savedPath = await savePdfToFolder(
+    buffer,
+    fileName,
+    extracted.orderNumber,
+    ordersPath
+  );
+
+  const createdOrderData = createdOrder as { id: string; delivery_deadline?: string | null };
+  const deliverySaved = !!createdOrderData?.delivery_deadline;
+  const collisionNote =
+    defaults.orderNumber !== extracted.orderNumber
+      ? `Número gravado como ${extracted.orderNumber} para não sobrescrever pedido Omie.`
+      : "";
+
+  return NextResponse.json({
+    success: true,
+    orderNumber: extracted.orderNumber,
+    clientName: extracted.clientName,
+    deliveryDate: extracted.deliveryDate,
+    deliverySaved,
+    itemCount: extracted.items.length,
+    savedToSupabase: true,
+    orderId: createdOrderData.id,
+    pdfSavedTo: savedPath ?? undefined,
+    importKind: kind,
+    message: !deliverySaved && extracted.deliveryDate
+      ? "Importado. Adicione as colunas em Configurações e re-importe para salvar o prazo."
+      : collisionNote.trim() || undefined,
+  });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const formData = await request.formData();
@@ -258,6 +515,10 @@ export async function POST(request: NextRequest) {
     if (partialFromFile) {
       extracted.orderNumber = partialFromFile;
     }
+
+    const uiKind = parseManualImportKind(
+      (formData.get("import_kind") as string) ?? ""
+    );
 
     // Pasta matriz: cliente pode enviar ou virá da empresa (Supabase)
     let ordersPath =
@@ -293,124 +554,15 @@ export async function POST(request: NextRequest) {
             error: "Nenhuma empresa cadastrada no banco. Importe o backup ou crie uma empresa primeiro.",
           }, { status: 400 });
         }
-        // Garante que as colunas de prazo existam antes de inserir/atualizar
-        await ensureDeliveryColumns();
-        const { data: existing } = await supabase
-          .from("orders")
-          .select("id")
-          .eq("company_id", companyId)
-          .eq("order_number", extracted.orderNumber)
-          .maybeSingle();
-
-        if (existing) {
-          // Re-importação: atualiza prazo de entrega e cliente no pedido existente
-          // REGRA: prazo extraído do PDF deve ser salvo - não aceitamos perder
-          const updatePayload: Record<string, unknown> = {
-            client_name: String(extracted.clientName).trim().slice(0, 255),
-            delivery_deadline: toDateOnly(extracted.deliveryDate),
-          };
-          let updateRes = await supabase
-            .from("orders")
-            .update(updatePayload)
-            .eq("id", existing.id)
-            .select();
-            if (updateRes.error?.message?.includes("delivery_deadline")) {
-              const added = await ensureDeliveryColumns();
-              if (added) {
-                updateRes = await supabase
-                  .from("orders")
-                  .update(updatePayload)
-                  .eq("id", existing.id)
-                  .select();
-              }
-              if (updateRes.error?.message?.includes("delivery_deadline")) {
-                const { delivery_deadline: _, ...payloadWithoutDelivery } = updatePayload;
-                await supabase.from("orders").update(payloadWithoutDelivery).eq("id", existing.id).select();
-              }
-            }
-          const deliveryUpdated = !updateRes.error;
-          return NextResponse.json({
-            success: true,
-            savedToSupabase: true,
-            orderNumber: extracted.orderNumber,
-            clientName: extracted.clientName,
-            deliveryDate: extracted.deliveryDate,
-            itemCount: extracted.items.length,
-            updated: true,
-            deliveryUpdated,
-            message: deliveryUpdated
-              ? "Pedido já existia. Prazo de entrega e cliente foram atualizados."
-              : "Pedido atualizado sem prazo. Adicione as colunas em Configurações e re-importe para salvar o prazo.",
-          });
-        }
-
-        const orderPayload = {
-          company_id: companyId,
-          order_number: String(extracted.orderNumber).trim().slice(0, 50),
-          client_name: String(extracted.clientName).trim().slice(0, 255),
-          delivery_deadline: toDateOnly(extracted.deliveryDate),
-          status: "imported",
-        };
-        let ordersRes = await supabase.from("orders").insert(orderPayload).select();
-        if (ordersRes.error?.message?.includes("delivery_deadline")) {
-          const added = await ensureDeliveryColumns();
-          if (added) {
-            ordersRes = await supabase.from("orders").insert(orderPayload).select();
-          }
-          if (ordersRes.error?.message?.includes("delivery_deadline")) {
-            const { delivery_deadline: _, ...payloadWithoutDelivery } = orderPayload;
-            ordersRes = await supabase.from("orders").insert(payloadWithoutDelivery).select();
-          }
-        }
-        const { data: createdOrders, error: orderError } = ordersRes;
-
-        if (orderError || !createdOrders?.[0]) {
-          console.error("Erro ao criar pedido (local auth):", orderError);
-          return NextResponse.json(
-            { success: false, error: orderError?.message ?? "Erro ao salvar pedido." },
-            { status: 500 }
-          );
-        }
-
-        const createdOrder = createdOrders[0];
-        const itemsRes = await insertImportedOrderItems(
+        return persistImportedOrder(
           supabase,
-          createdOrder.id,
-          extracted.items
-        );
-        const { error: itemsError } = itemsRes;
-
-        if (itemsError) {
-          console.error("Erro ao criar itens (local auth):", itemsError);
-          return NextResponse.json(
-            { success: false, error: "Erro ao salvar itens do pedido." },
-            { status: 500 }
-          );
-        }
-
-        const savedPath = await savePdfToFolder(
+          companyId,
+          extracted,
+          uiKind,
           buffer,
           file.name,
-          extracted.orderNumber,
           ordersPath
         );
-
-        const createdOrderData = createdOrder as { id: string; delivery_deadline?: string | null };
-        const deliverySaved = !!createdOrderData?.delivery_deadline;
-        return NextResponse.json({
-          success: true,
-          orderNumber: extracted.orderNumber,
-          clientName: extracted.clientName,
-          deliveryDate: extracted.deliveryDate,
-          deliverySaved,
-          itemCount: extracted.items.length,
-          savedToSupabase: true,
-          orderId: createdOrderData.id,
-          pdfSavedTo: savedPath ?? undefined,
-          message: !deliverySaved && extracted.deliveryDate
-            ? "Importado. Adicione as colunas em Configurações e re-importe para salvar o prazo."
-            : undefined,
-        });
       } catch (err) {
         console.error("Erro na importação (local auth):", err);
         return NextResponse.json(
@@ -460,132 +612,15 @@ export async function POST(request: NextRequest) {
             (company?.orders_path || company?.import_path || "").trim();
         }
 
-        // Garante que as colunas de prazo existam antes de inserir/atualizar
-        await ensureDeliveryColumns();
-
-        // Verificar duplicidade
-        const { data: existing } = await supabase
-          .from("orders")
-          .select("id")
-          .eq("company_id", profile.company_id)
-          .eq("order_number", extracted.orderNumber)
-          .maybeSingle();
-
-        if (existing) {
-          // Re-importação: atualiza prazo de entrega e cliente no pedido existente
-          const updatePayload: Record<string, unknown> = {
-            client_name: String(extracted.clientName).trim().slice(0, 255),
-            delivery_deadline: toDateOnly(extracted.deliveryDate),
-          };
-          let updateRes = await supabase
-            .from("orders")
-            .update(updatePayload)
-            .eq("id", existing.id)
-            .select();
-          if (updateRes.error?.message?.includes("delivery_deadline")) {
-            const added = await ensureDeliveryColumns();
-            if (added) {
-              updateRes = await supabase
-                .from("orders")
-                .update(updatePayload)
-                .eq("id", existing.id)
-                .select();
-            }
-            if (updateRes.error?.message?.includes("delivery_deadline")) {
-              const { delivery_deadline: _, ...payloadWithoutDelivery } = updatePayload;
-              await supabase.from("orders").update(payloadWithoutDelivery).eq("id", existing.id).select();
-            }
-          }
-          const deliveryUpdated = !updateRes.error;
-          return NextResponse.json({
-            success: true,
-            savedToSupabase: true,
-            orderNumber: extracted.orderNumber,
-            clientName: extracted.clientName,
-            deliveryDate: extracted.deliveryDate,
-            itemCount: extracted.items.length,
-            updated: true,
-            deliveryUpdated,
-            message: deliveryUpdated
-              ? "Pedido já existia. Prazo de entrega e cliente foram atualizados."
-              : "Pedido atualizado sem prazo. Adicione as colunas em Configurações e re-importe para salvar o prazo.",
-          });
-        }
-
-        const orderPayload = {
-          company_id: profile.company_id,
-          order_number: String(extracted.orderNumber).trim().slice(0, 50),
-          client_name: String(extracted.clientName).trim().slice(0, 255),
-          delivery_deadline: toDateOnly(extracted.deliveryDate),
-          status: "imported",
-        };
-        let ordersRes = await supabase.from("orders").insert(orderPayload).select();
-        if (ordersRes.error?.message?.includes("delivery_deadline")) {
-          const added = await ensureDeliveryColumns();
-          if (added) {
-            ordersRes = await supabase.from("orders").insert(orderPayload).select();
-          }
-          if (ordersRes.error?.message?.includes("delivery_deadline")) {
-            const { delivery_deadline: _, ...payloadWithoutDelivery } = orderPayload;
-            ordersRes = await supabase.from("orders").insert(payloadWithoutDelivery).select();
-          }
-        }
-        const { data: createdOrders, error: orderError } = ordersRes;
-
-        if (orderError || !createdOrders?.[0]) {
-          console.error("Erro ao criar pedido:", orderError);
-          return NextResponse.json(
-            {
-              success: false,
-              error: orderError?.message ?? "Erro ao salvar pedido no banco.",
-            },
-            { status: 500 }
-          );
-        }
-
-        const createdOrder = createdOrders[0];
-        const itemsRes = await insertImportedOrderItems(
+        return persistImportedOrder(
           supabase,
-          createdOrder.id,
-          extracted.items
-        );
-        const { error: itemsError } = itemsRes;
-
-        if (itemsError) {
-          console.error("Erro ao criar itens:", itemsError);
-          // Pedido foi criado mas itens falharam - rollback opcional, por ora retornamos sucesso parcial
-          return NextResponse.json(
-            {
-              success: false,
-              error: "Pedido criado, mas houve erro ao salvar itens.",
-            },
-            { status: 500 }
-          );
-        }
-
-        const savedPath = await savePdfToFolder(
+          profile.company_id,
+          extracted,
+          uiKind,
           buffer,
           file.name,
-          extracted.orderNumber,
           ordersPath
         );
-
-        const createdOrderData = createdOrder as { id: string; delivery_deadline?: string | null };
-        const deliverySaved = !!createdOrderData?.delivery_deadline;
-        return NextResponse.json({
-          success: true,
-          orderNumber: extracted.orderNumber,
-          clientName: extracted.clientName,
-          deliveryDate: extracted.deliveryDate,
-          deliverySaved,
-          itemCount: extracted.items.length,
-          savedToSupabase: true,
-          orderId: createdOrderData.id,
-          pdfSavedTo: savedPath ?? undefined,
-          message: !deliverySaved && extracted.deliveryDate
-            ? "Importado. Adicione as colunas em Configurações e re-importe para salvar o prazo."
-            : undefined,
-        });
       } catch (supabaseErr) {
         console.error("Erro Supabase na importação:", supabaseErr);
         return NextResponse.json(
@@ -602,20 +637,27 @@ export async function POST(request: NextRequest) {
     }
 
     // Sem Supabase: retornar dados extraídos; salvar PDF na pasta se orders_path enviado
+    const previewKind = resolveManualImportKind(uiKind, extracted.pdfTipo ?? null);
+    const preview = applyManualImportDefaults({
+      orderNumber: extracted.orderNumber,
+      clientName: extracted.clientName,
+      kind: previewKind,
+    });
     const savedPath = await savePdfToFolder(
       buffer,
       file.name,
-      extracted.orderNumber,
+      preview.orderNumber,
       ordersPath
     );
 
     return NextResponse.json({
       success: true,
-      orderNumber: extracted.orderNumber,
-      clientName: extracted.clientName,
+      orderNumber: preview.orderNumber,
+      clientName: preview.clientName,
       deliveryDate: extracted.deliveryDate,
       items: extracted.items,
       savedToSupabase: false,
+      importKind: previewKind,
       pdfSavedTo: savedPath ?? undefined,
     });
   } catch (err) {

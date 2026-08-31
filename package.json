@@ -12,6 +12,8 @@
     "test:omie": "npx tsx --test tests/omie-*.test.ts",
     "test:etiqueta": "npx tsx --test tests/etiqueta-filtro.test.ts",
     "test:motor": "npx tsx --test tests/motor-vazao.test.ts",
+    "test:packaging": "npx tsx --test tests/packaging-*.test.ts",
+    "test:pdf": "npx tsx --test tests/parse-pcp-manual.test.ts tests/parse-zenith-quote.test.ts",
     "import-backup": "node import-backup-to-supabase.js",
     "cleanup": "node scripts/run-cleanup.js",
     "cleanup:dry": "node scripts/run-cleanup.js --dry-run",
