@@ -13,10 +13,10 @@ export default function AtividadesPage() {
     useEffectiveCompanyId(profile);
   const router = useRouter();
 
-  const allowed = profile && hasPermission(profile.role, "viewTasks");
+  const allowed = profile && hasPermission(profile, "viewTasks");
 
   useEffect(() => {
-    if (!loading && profile && !hasPermission(profile.role, "viewTasks")) {
+    if (!loading && profile && !hasPermission(profile, "viewTasks")) {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [loading, profile, router]);

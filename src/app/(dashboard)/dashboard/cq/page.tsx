@@ -17,10 +17,10 @@ export default function CQDashboardPage() {
   const router = useRouter();
 
   const allowed =
-    profile && hasPermission(profile.role, "viewCQDashboard");
+    profile && hasPermission(profile, "viewCQDashboard");
 
   useEffect(() => {
-    if (!loading && profile && !hasPermission(profile.role, "viewCQDashboard")) {
+    if (!loading && profile && !hasPermission(profile, "viewCQDashboard")) {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [loading, profile, router]);

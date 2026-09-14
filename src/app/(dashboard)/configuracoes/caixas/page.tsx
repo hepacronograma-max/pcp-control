@@ -17,13 +17,13 @@ export default function PackagingBoxesPage() {
     useEffectiveCompanyId(profile);
 
   const ok =
-    profile && hasPermission(profile.role, "managePackagingBoxes");
+    profile && hasPermission(profile, "managePackagingBoxes");
 
   useEffect(() => {
     if (
       !loading &&
       profile &&
-      !hasPermission(profile.role, "managePackagingBoxes")
+      !hasPermission(profile, "managePackagingBoxes")
     ) {
       router.replace(defaultAppPathForRole(profile.role));
     }

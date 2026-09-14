@@ -38,7 +38,7 @@ async function assertCanEditOrders(): Promise<
     .select("role")
     .eq("id", user.id)
     .single();
-  if (!profile || !hasPermission(profile.role, "editOrders")) {
+  if (!profile || !hasPermission(profile, "editOrders")) {
     return {
       ok: false,
       response: NextResponse.json(

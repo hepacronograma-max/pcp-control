@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
-import { hasPermission, normalizeUserRole } from "@/lib/utils/permissions";
+import { hasPermission } from "@/lib/utils/permissions";
 import { isUuid } from "@/lib/utils/is-uuid";
 
 /**
@@ -61,12 +61,11 @@ export async function assertTasksCompanyAccess(
 
   const { data: profile } = await admin
     .from("profiles")
-    .select("company_id, role")
+    .select("company_id, role, extra_roles")
     .eq("id", user.id)
     .maybeSingle();
 
-  const role = normalizeUserRole(profile?.role);
-  if (!profile || !hasPermission(role, "viewTasks")) {
+  if (!profile || !hasPermission(profile, "viewTasks")) {
     return { ok: false, error: "Sem permissão", status: 403 };
   }
 

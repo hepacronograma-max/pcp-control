@@ -9,6 +9,8 @@ export type UserRole =
   | "compras"
   /** Logística + almoxarifado (linhas em `operator_lines`) */
   | "logistica"
+  /** Só a aba Faturamento (listas de embarque / NF) */
+  | "faturamento"
   /** Valor comum em `profiles.role` no Supabase; tratado como manager nas permissões */
   | "admin";
 export type OrderStatus =
@@ -41,6 +43,8 @@ export interface Profile {
   full_name: string;
   email: string;
   role: UserRole;
+  /** Cargos extras além do `role` principal (ex.: Compras + Faturamento). */
+  extra_roles?: UserRole[];
   is_active: boolean;
   created_at: string;
   updated_at: string;

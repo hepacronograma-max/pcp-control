@@ -17,10 +17,10 @@ export default function CQCategoriasPage() {
     useEffectiveCompanyId(profile);
 
   const ok =
-    profile && hasPermission(profile.role, "manageCQCategorias");
+    profile && hasPermission(profile, "manageCQCategorias");
 
   useEffect(() => {
-    if (!loading && profile && !hasPermission(profile.role, "manageCQCategorias")) {
+    if (!loading && profile && !hasPermission(profile, "manageCQCategorias")) {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [loading, profile, router]);

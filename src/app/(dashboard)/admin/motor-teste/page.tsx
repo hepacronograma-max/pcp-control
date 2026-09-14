@@ -66,7 +66,7 @@ export default function AdminMotorTestePage() {
   const [numElementos, setNumElementos] = useState("");
 
   useEffect(() => {
-    if (!loading && profile && !hasPermission(profile.role, "viewSettings")) {
+    if (!loading && profile && !hasPermission(profile, "viewSettings")) {
       router.replace("/dashboard");
     }
   }, [loading, profile, router]);
@@ -111,7 +111,7 @@ export default function AdminMotorTestePage() {
     );
   }
 
-  if (!hasPermission(profile.role, "viewSettings")) {
+  if (!hasPermission(profile, "viewSettings")) {
     return null;
   }
 

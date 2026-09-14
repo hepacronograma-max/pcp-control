@@ -3,7 +3,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
-import { hasPermission, normalizeUserRole } from "@/lib/utils/permissions";
+import { hasPermission } from "@/lib/utils/permissions";
 import { isUuid } from "@/lib/utils/is-uuid";
 
 export type PackagingAccessOk = { ok: true; admin: SupabaseClient };
@@ -66,15 +66,14 @@ export async function assertPackagingCompanyAccess(
 
   const { data: profile } = await admin
     .from("profiles")
-    .select("company_id, role")
+    .select("company_id, role, extra_roles")
     .eq("id", user.id)
     .maybeSingle();
 
-  const role = normalizeUserRole(profile?.role);
   if (!profile) {
     return { ok: false, error: "Sem permissão", status: 403 };
   }
-  if (opts.requireSettings && !hasPermission(role, "managePackagingBoxes")) {
+  if (opts.requireSettings && !hasPermission(profile, "managePackagingBoxes")) {
     return { ok: false, error: "Sem permissão", status: 403 };
   }
 

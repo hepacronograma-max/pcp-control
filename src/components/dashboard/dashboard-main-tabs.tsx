@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { CQDashboard } from "@/components/cq/CQDashboard";
-import { hasPermission, normalizeUserRole } from "@/lib/utils/permissions";
+import { hasPermission } from "@/lib/utils/permissions";
 import { ComprasDashboard } from "./compras-dashboard";
 import { ManagerDashboard } from "./manager-dashboard";
 
@@ -15,17 +15,19 @@ const TAB_QUERY = "aba";
 interface DashboardMainTabsProps {
   companyId: string;
   userRole: string;
+  extraRoles?: string[] | null;
 }
 
 export function DashboardMainTabs({
   companyId,
   userRole,
+  extraRoles,
 }: DashboardMainTabsProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const normalized = normalizeUserRole(userRole);
-  const canCompras = hasPermission(normalized, "viewCompras");
-  const canCQ = hasPermission(normalized, "viewCQDashboard");
+  const actor = { role: userRole, extra_roles: extraRoles ?? [] };
+  const canCompras = hasPermission(actor, "viewCompras");
+  const canCQ = hasPermission(actor, "viewCQDashboard");
 
   const tabFromUrl = searchParams.get(TAB_QUERY)?.toLowerCase();
 

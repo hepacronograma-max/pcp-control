@@ -19,30 +19,24 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
+import {
+  STAFF_POSITIONS,
+  actorUsesOperatorLines,
+  formatStaffPositionsLabel,
+  parseExtraRoles,
+  parseStaffPosition,
+  type StaffPosition,
+} from "@/lib/utils/permissions";
 
 const LOCAL_LINES_KEY = "pcp-local-lines";
 
-type StaffFormRole = "pcp" | "operator" | "comercial" | "compras" | "logistica";
+type StaffFormRole = StaffPosition;
 
-function profileRoleLabel(role: string) {
-  switch (role) {
-    case "manager":
-      return "Manager";
-    case "pcp":
-      return "PCP";
-    case "comercial":
-      return "Comercial";
-    case "compras":
-      return "Compras";
-    case "logistica":
-      return "Logística";
-    case "operator":
-      return "Operador";
-    case "super_admin":
-      return "Super Admin";
-    default:
-      return role;
-  }
+function profileRoleLabel(
+  role: string,
+  extra?: (string | null | undefined)[] | null
+) {
+  return formatStaffPositionsLabel(role, extra);
 }
 
 /** Alinhado à API: domínio com ponto (Supabase Auth rejeita ex.: @hepaf sem .com). */
@@ -85,6 +79,7 @@ export default function UsersSettingsPage() {
   const [formEmail, setFormEmail] = useState("");
   const [formPassword, setFormPassword] = useState("");
   const [formRole, setFormRole] = useState<StaffFormRole>("operator");
+  const [formExtraRoles, setFormExtraRoles] = useState<StaffPosition[]>([]);
   const [formLineIds, setFormLineIds] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -203,6 +198,7 @@ export default function UsersSettingsPage() {
     setFormEmail("");
     setFormPassword("");
     setFormRole("operator");
+    setFormExtraRoles([]);
     setFormLineIds([]);
   }
 
@@ -215,13 +211,8 @@ export default function UsersSettingsPage() {
     const localUsers = getLocalUsers();
     const lu = localUsers.find((u) => u.id === user.id);
     setFormPassword(lu?.password ?? "");
-    setFormRole(
-      (["pcp", "operator", "comercial", "compras", "logistica"] as const).includes(
-        user.role as StaffFormRole
-      )
-        ? (user.role as StaffFormRole)
-        : "operator"
-    );
+    setFormRole(parseStaffPosition(user.role));
+    setFormExtraRoles(parseExtraRoles(user.extra_roles, user.role));
     setFormLineIds(user.lines.map((l) => l.id));
   }
 
@@ -272,6 +263,13 @@ export default function UsersSettingsPage() {
       setSaving(false);
       return;
     }
+    const extraRoles = parseExtraRoles(formExtraRoles, formRole);
+    const lineIds = actorUsesOperatorLines({
+      role: formRole,
+      extra_roles: extraRoles,
+    })
+      ? formLineIds
+      : [];
     setSaving(true);
     try {
       if (isLocal) {
@@ -289,8 +287,9 @@ export default function UsersSettingsPage() {
             email: formEmail.trim(),
             password: formPassword,
             role: formRole,
+            extraRoles,
             companyId: profile.company_id,
-            lineIds: formRole === "operator" || formRole === "logistica" ? formLineIds : [],
+            lineIds,
           });
           toast.success("Usuário criado com sucesso");
         } else if (modalMode === "edit" && editUserId) {
@@ -299,7 +298,8 @@ export default function UsersSettingsPage() {
             email: formEmail.trim(),
             password: formPassword || undefined,
             role: formRole,
-            lineIds: formRole === "operator" || formRole === "logistica" ? formLineIds : [],
+            extraRoles,
+            lineIds,
           });
           if (ok) {
             toast.success("Usuário atualizado");
@@ -324,8 +324,9 @@ export default function UsersSettingsPage() {
             password: formPassword,
             fullName: formName.trim(),
             role: formRole,
+            extraRoles,
             companyId: apiCompanyId,
-            lineIds: formRole === "operator" || formRole === "logistica" ? formLineIds : [],
+            lineIds,
           }),
         });
         let data: {
@@ -359,7 +360,8 @@ export default function UsersSettingsPage() {
             email: formEmail.trim(),
             password: formPassword || undefined,
             role: formRole,
-            lineIds: formRole === "operator" || formRole === "logistica" ? formLineIds : [],
+            extraRoles,
+            lineIds,
           }),
         });
         let data: { success?: boolean; error?: string } = {};
@@ -515,7 +517,7 @@ export default function UsersSettingsPage() {
               rows: users.map((u) => [
                 u.full_name,
                 u.email,
-                profileRoleLabel(u.role),
+                profileRoleLabel(u.role, u.extra_roles),
                 u.is_active ? "Ativo" : "Inativo",
                 u.lines.map((l) => l.name).join("; ") || "—",
               ]),
@@ -576,7 +578,7 @@ export default function UsersSettingsPage() {
                 <td className="px-2 py-1 align-middle">{u.full_name}</td>
                 <td className="px-2 py-1 align-middle">{u.email}</td>
                 <td className="px-2 py-1 align-middle">
-                  {profileRoleLabel(u.role)}
+                  {profileRoleLabel(u.role, u.extra_roles)}
                 </td>
                 <td className="px-2 py-1 align-middle">
                   {u.is_active ? "✅" : "❌"}
@@ -617,7 +619,7 @@ export default function UsersSettingsPage() {
       {/* Modal Criar / Editar */}
       {modalMode && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-lg space-y-3 text-sm">
+          <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-lg space-y-3 text-sm">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-800">
                 {modalMode === "create" ? "Novo Usuário" : "Editar Usuário"}
@@ -645,22 +647,57 @@ export default function UsersSettingsPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label>Perfil</Label>
+                <Label>Perfil principal</Label>
                 <select
                   className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs h-9"
                   value={formRole}
-                  onChange={(e) => setFormRole(e.target.value as StaffFormRole)}
+                  onChange={(e) => {
+                    const next = e.target.value as StaffFormRole;
+                    setFormRole(next);
+                    setFormExtraRoles((prev) => prev.filter((r) => r !== next));
+                  }}
                 >
-                  <option value="pcp">PCP</option>
-                  <option value="operator">Operador</option>
-                  <option value="comercial">Comercial</option>
-                  <option value="compras">Compras</option>
-                  <option value="logistica">Logística</option>
+                  {STAFF_POSITIONS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
 
-            {(formRole === "operator" || formRole === "logistica") && (
+            <div className="space-y-1">
+              <Label>Também atua em</Label>
+              <p className="text-[10px] text-slate-500">
+                Marque as outras áreas. Ex.: Compras + Faturamento para a Bruna.
+              </p>
+              <div className="grid grid-cols-2 gap-2 border border-slate-100 rounded-md p-2">
+                {STAFF_POSITIONS.filter((p) => p.value !== formRole).map((p) => {
+                  const checked = formExtraRoles.includes(p.value);
+                  return (
+                    <label key={p.value} className="flex items-center gap-2 text-xs">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setFormExtraRoles((prev) =>
+                            checked
+                              ? prev.filter((r) => r !== p.value)
+                              : [...prev, p.value]
+                          )
+                        }
+                      />
+                      {p.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {actorUsesOperatorLines({
+              role: formRole,
+              extra_roles: formExtraRoles,
+            }) && (
               <div className="space-y-1">
                 <Label>Linhas (produção / logística / almox.)</Label>
                 {lines.length === 0 ? (

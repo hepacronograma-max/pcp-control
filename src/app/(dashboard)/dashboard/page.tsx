@@ -7,6 +7,7 @@ import { DashboardMainTabs } from "@/components/dashboard/dashboard-main-tabs";
 
 export default function DashboardPage() {
   const [role, setRole] = useState<string | null>(null);
+  const [extraRoles, setExtraRoles] = useState<string[]>([]);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -23,9 +24,13 @@ export default function DashboardPage() {
           const parsed = JSON.parse(localProfile) as {
             company_id?: string;
             role?: string;
+            extra_roles?: string[];
           };
           cid = parsed.company_id || null;
           localRole = parsed.role ?? null;
+          if (Array.isArray(parsed.extra_roles)) {
+            setExtraRoles(parsed.extra_roles.filter(Boolean));
+          }
         } catch {
           /* ignore */
         }
@@ -62,10 +67,15 @@ export default function DashboardPage() {
         if (!r.ok) throw new Error("not authenticated");
         return r.json();
       })
-      .then((data: { profile?: { role?: string; company_id?: string | null } }) => {
+      .then((data: { profile?: { role?: string; company_id?: string | null; extra_roles?: string[] } }) => {
         if (data.profile) {
           setRole(data.profile.role ?? null);
           setCompanyId(data.profile.company_id ?? null);
+          setExtraRoles(
+            Array.isArray(data.profile.extra_roles)
+              ? data.profile.extra_roles.filter(Boolean)
+              : []
+          );
         }
         setLoading(false);
       })
@@ -101,7 +111,11 @@ export default function DashboardPage() {
           </div>
         }
       >
-        <DashboardMainTabs companyId={companyId} userRole={role ?? "manager"} />
+        <DashboardMainTabs
+                companyId={companyId}
+                userRole={role ?? "manager"}
+                extraRoles={extraRoles}
+              />
       </Suspense>
     );
   }

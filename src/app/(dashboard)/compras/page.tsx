@@ -64,25 +64,25 @@ export default function ComprasPage() {
   const [newNotes, setNewNotes] = useState("");
   const [importingOmie, setImportingOmie] = useState(false);
 
-  const allowed = profile && hasPermission(profile.role, "viewCompras");
-  const canEditCompras = profile && hasPermission(profile.role, "editCompras");
+  const allowed = profile && hasPermission(profile, "viewCompras");
+  const canEditCompras = profile && hasPermission(profile, "editCompras");
   const readOnly = Boolean(allowed && !canEditCompras);
   const canMarkMaterialArrived =
-    !!profile && hasPermission(profile.role, "markComprasMaterialArrived");
+    !!profile && hasPermission(profile, "markComprasMaterialArrived");
   const canImport =
-    profile && hasPermission(profile.role, "importComprasPdfs");
+    profile && hasPermission(profile, "importComprasPdfs");
   const canImportOmie =
-    profile && hasPermission(profile.role, "editCompras");
+    profile && hasPermission(profile, "editCompras");
 
   useEffect(() => {
     if (userLoading) return;
-    if (profile && !hasPermission(profile.role, "viewCompras")) {
+    if (profile && !hasPermission(profile, "viewCompras")) {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [userLoading, profile, router]);
 
   const load = useCallback(async () => {
-    if (!profile || !hasPermission(profile.role, "viewCompras")) return;
+    if (!profile || !hasPermission(profile, "viewCompras")) return;
     const useApi = shouldUseLocalServiceApi(profile);
     if (useApi && profile.company_id === "local-company" && !effectiveLoaded) {
       return;

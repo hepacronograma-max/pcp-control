@@ -64,13 +64,13 @@ export default function AdminOmiePage() {
   const [importSkipped, setImportSkipped] = useState(false);
 
   useEffect(() => {
-    if (!loading && profile && !hasPermission(profile.role, "viewSettings")) {
+    if (!loading && profile && !hasPermission(profile, "viewSettings")) {
       router.replace("/dashboard");
     }
   }, [loading, profile, router]);
 
   const load = useCallback(async () => {
-    if (!profile || !hasPermission(profile.role, "viewSettings")) return;
+    if (!profile || !hasPermission(profile, "viewSettings")) return;
     setLoadingData(true);
     setError(null);
     try {

@@ -99,10 +99,10 @@ export default function FaturamentoPage() {
   const [syncingOmie, setSyncingOmie] = useState(false);
   const [omieConfigured, setOmieConfigured] = useState(true);
 
-  const allowed = profile && hasPermission(profile.role, "viewFaturamento");
+  const allowed = profile && hasPermission(profile, "viewFaturamento");
 
   useEffect(() => {
-    if (!loading && profile && !hasPermission(profile.role, "viewFaturamento")) {
+    if (!loading && profile && !hasPermission(profile, "viewFaturamento")) {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [loading, profile, router]);

@@ -71,7 +71,7 @@ export default function LinePage() {
 
   useEffect(() => {
     if (loading) return;
-    if (profile && !canViewProductionLineMenu(profile.role)) {
+    if (profile && !canViewProductionLineMenu(profile)) {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [loading, profile, router]);
@@ -1166,7 +1166,7 @@ export default function LinePage() {
                 onChangeNotes={handleChangeNotes}
                 onComplete={handleComplete}
                 onReopenCompleted={
-                  profile && hasPermission(profile.role, "finishOrders")
+                  profile && hasPermission(profile, "finishOrders")
                     ? handleReopenCompleted
                     : undefined
                 }

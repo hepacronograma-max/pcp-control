@@ -89,7 +89,7 @@ export default function PedidosPage() {
       profile &&
       profile.role !== "operator" &&
       profile.role !== "logistica" &&
-      !hasPermission(profile.role, "viewOrders")
+      !hasPermission(profile, "viewOrders")
     ) {
       router.replace(defaultAppPathForRole(profile.role));
     }

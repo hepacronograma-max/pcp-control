@@ -4,6 +4,11 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import type { Profile } from "@/lib/types/database";
+import {
+  actorUsesOperatorLines,
+  parseExtraRoles,
+  parseStaffPosition,
+} from "@/lib/utils/permissions";
 
 function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -11,18 +16,39 @@ function isUuid(s: string): boolean {
   );
 }
 
-const STAFF_ROLES = new Set(["pcp", "operator", "comercial", "compras", "logistica"]);
-
 function parseStaffRole(
   role: string | null | undefined
-): "pcp" | "operator" | "comercial" | "compras" | "logistica" {
-  const s = String(role ?? "").trim();
-  if (STAFF_ROLES.has(s)) return s as "pcp" | "operator" | "comercial" | "compras" | "logistica";
-  return "operator";
+): ReturnType<typeof parseStaffPosition> {
+  return parseStaffPosition(role);
 }
 
-function roleUsesOperatorLines(role: string): boolean {
-  return role === "operator" || role === "logistica";
+function roleUsesOperatorLines(
+  role: string,
+  extra: string[] = []
+): boolean {
+  return actorUsesOperatorLines({ role, extra_roles: extra });
+}
+
+async function persistExtraRoles(
+  admin: SupabaseClient,
+  userId: string,
+  extra: string[]
+): Promise<{ error: { message: string } | null }> {
+  const { error } = await admin
+    .from("profiles")
+    .update({ extra_roles: extra })
+    .eq("id", userId);
+  if (!error) return { error: null };
+  if (isMissingColumnOrSchemaError(error.message)) {
+    if (extra.length === 0) return { error: null };
+    return {
+      error: {
+        message:
+          "Execute supabase-profiles-extra-roles.sql no Supabase (coluna extra_roles) para gravar mais de um cargo.",
+      },
+    };
+  }
+  return { error };
 }
 
 function canManageUsers(role: string | null | undefined): boolean {
@@ -373,13 +399,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { email, password, fullName, role, companyId, lineIds } = body as {
+    const { email, password, fullName, role, companyId, lineIds, extraRoles } = body as {
       email?: string;
       password?: string;
       fullName?: string;
       role?: string;
       companyId?: string;
       lineIds?: string[];
+      extraRoles?: unknown;
     };
 
     const hasLocalAuth = await hasServerLocalAuthCookie();
@@ -513,6 +540,7 @@ export async function POST(request: NextRequest) {
       }
 
       const roleVal = parseStaffRole(role);
+      const extraVal = parseExtraRoles(extraRoles, roleVal);
 
       if (password != null && String(password).length > 0) {
         const { error: pwdErr } =
@@ -543,9 +571,17 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const extraErr = await persistExtraRoles(supabaseAdmin, existingId, extraVal);
+      if (extraErr.error) {
+        return NextResponse.json(
+          { success: false, error: extraErr.error.message },
+          { status: 503 }
+        );
+      }
+
       await supabaseAdmin.from("operator_lines").delete().eq("user_id", existingId);
 
-      if (roleUsesOperatorLines(roleVal) && Array.isArray(lineIds) && lineIds.length > 0) {
+      if (roleUsesOperatorLines(roleVal, extraVal) && Array.isArray(lineIds) && lineIds.length > 0) {
         const { error: olErr } = await insertOperatorLineAssociations(
           supabaseAdmin,
           existingId,
@@ -580,6 +616,7 @@ export async function POST(request: NextRequest) {
 
     const userId = authData.user.id;
     const roleVal = parseStaffRole(role);
+    const extraVal = parseExtraRoles(extraRoles, roleVal);
 
     const { error: profileErr } = await upsertProfileForCompany(
       supabaseAdmin,
@@ -598,9 +635,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const extraErr = await persistExtraRoles(supabaseAdmin, userId, extraVal);
+    if (extraErr.error) {
+      return NextResponse.json(
+        { success: false, error: extraErr.error.message },
+        { status: 503 }
+      );
+    }
+
     await supabaseAdmin.from("operator_lines").delete().eq("user_id", userId);
 
-    if (roleUsesOperatorLines(roleVal) && Array.isArray(lineIds) && lineIds.length > 0) {
+    if (roleUsesOperatorLines(roleVal, extraVal) && Array.isArray(lineIds) && lineIds.length > 0) {
       const { error: olErr } = await insertOperatorLineAssociations(
         supabaseAdmin,
         userId,
@@ -653,6 +698,7 @@ export async function PATCH(request: NextRequest) {
       password,
       role,
       lineIds,
+      extraRoles,
       isActive,
       onlyActive,
     } = body as {
@@ -662,6 +708,7 @@ export async function PATCH(request: NextRequest) {
       password?: string;
       role?: string;
       lineIds?: string[];
+      extraRoles?: unknown;
       isActive?: boolean;
       onlyActive?: boolean;
     };
@@ -750,6 +797,7 @@ export async function PATCH(request: NextRequest) {
     const nameVal = String(fullName ?? "").trim();
     const emailVal = String(email ?? "").trim();
     const roleVal = parseStaffRole(role);
+    const extraVal = parseExtraRoles(extraRoles, roleVal);
 
     const { data: authUserWrap, error: authGetErr } =
       await supabaseAdmin.auth.admin.getUserById(userId);
@@ -808,9 +856,17 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    const extraErr = await persistExtraRoles(supabaseAdmin, userId, extraVal);
+    if (extraErr.error) {
+      return NextResponse.json(
+        { success: false, error: extraErr.error.message },
+        { status: 503 }
+      );
+    }
+
     await supabaseAdmin.from("operator_lines").delete().eq("user_id", userId);
 
-    if (roleUsesOperatorLines(roleVal) && Array.isArray(lineIds) && lineIds.length > 0) {
+    if (roleUsesOperatorLines(roleVal, extraVal) && Array.isArray(lineIds) && lineIds.length > 0) {
       const { error: insErr } = await insertOperatorLineAssociations(
         supabaseAdmin,
         userId,

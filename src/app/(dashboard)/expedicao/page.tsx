@@ -97,10 +97,10 @@ export default function ExpedicaoPage() {
   const [busy, setBusy] = useState(false);
   const openedFromUrl = useRef(false);
 
-  const allowed = profile && hasPermission(profile.role, "viewExpedicao");
+  const allowed = profile && hasPermission(profile, "viewExpedicao");
 
   useEffect(() => {
-    if (!loading && profile && !hasPermission(profile.role, "viewExpedicao")) {
+    if (!loading && profile && !hasPermission(profile, "viewExpedicao")) {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [loading, profile, router]);

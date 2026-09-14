@@ -361,7 +361,7 @@ export function LineTable({
 
   const sel = selectedItemIds ?? new Set<string>();
   const canReopenCompleted =
-    !!onReopenCompleted && hasPermission(profile.role, "finishOrders");
+    !!onReopenCompleted && hasPermission(profile, "finishOrders");
   const allVisibleSelected =
     items.length > 0 && items.every((it) => sel.has(it.id));
   const someSelected = items.some((it) => sel.has(it.id));

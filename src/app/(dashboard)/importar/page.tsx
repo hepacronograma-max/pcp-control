@@ -35,7 +35,7 @@ export default function ImportPage() {
 
   useEffect(() => {
     if (profileLoading) return;
-    if (profile && !hasPermission(profile.role, "importOrders")) {
+    if (profile && !hasPermission(profile, "importOrders")) {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [profileLoading, profile, router]);

@@ -1,6 +1,9 @@
-import type { Profile, ProductionLine } from "@/lib/types/database";
+import type { Profile, ProductionLine, UserRole } from "@/lib/types/database";
+import { parseExtraRoles, type StaffPosition } from "@/lib/utils/permissions";
 
 export const LOCAL_USERS_KEY = "pcp-local-users";
+
+type StaffLocalRole = StaffPosition;
 
 export interface LocalUser extends Omit<Profile, "id"> {
   id: string;
@@ -72,7 +75,8 @@ export function createLocalUser(data: {
   fullName: string;
   email: string;
   password: string;
-  role: "pcp" | "operator" | "comercial" | "compras" | "logistica";
+  role: StaffLocalRole;
+  extraRoles?: string[];
   companyId: string;
   lineIds: string[];
 }): LocalUser {
@@ -86,6 +90,7 @@ export function createLocalUser(data: {
     email: data.email.trim(),
     password: data.password,
     role: data.role,
+    extra_roles: parseExtraRoles(data.extraRoles, data.role) as UserRole[],
     is_active: true,
     created_at: now,
     updated_at: now,
@@ -112,7 +117,8 @@ export function updateLocalUser(
     fullName?: string;
     email?: string;
     password?: string;
-    role?: "pcp" | "operator" | "comercial" | "compras" | "logistica";
+    role?: StaffLocalRole;
+    extraRoles?: string[];
     lineIds?: string[];
   }
 ): boolean {
@@ -123,6 +129,12 @@ export function updateLocalUser(
   if (data.email !== undefined) users[idx].email = data.email.trim();
   if (data.password !== undefined && data.password.length > 0) users[idx].password = data.password;
   if (data.role !== undefined) users[idx].role = data.role;
+  if (data.extraRoles !== undefined) {
+    users[idx].extra_roles = parseExtraRoles(
+      data.extraRoles,
+      data.role ?? users[idx].role
+    ) as UserRole[];
+  }
   if (data.lineIds !== undefined) users[idx].line_ids = data.lineIds;
   users[idx].updated_at = new Date().toISOString();
   setLocalUsers(users);

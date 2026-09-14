@@ -24,17 +24,17 @@ export default function ComercialPage() {
   const [fetching, setFetching] = useState(false);
   const [lastAt, setLastAt] = useState<Date | null>(null);
 
-  const allowed = profile && hasPermission(profile.role, "viewComercial");
+  const allowed = profile && hasPermission(profile, "viewComercial");
 
   useEffect(() => {
     if (userLoading) return;
-    if (profile && !hasPermission(profile.role, "viewComercial")) {
+    if (profile && !hasPermission(profile, "viewComercial")) {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [userLoading, profile, router]);
 
   const load = useCallback(async () => {
-    if (!profile || !hasPermission(profile.role, "viewComercial")) return;
+    if (!profile || !hasPermission(profile, "viewComercial")) return;
     const useApi = shouldUseLocalServiceApi(profile);
     if (useApi && profile.company_id === "local-company" && !effectiveLoaded) {
       return;

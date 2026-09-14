@@ -12,7 +12,7 @@ export default function ConfiguracoesLayout({ children }: { children: ReactNode 
 
   useEffect(() => {
     if (loading) return;
-    if (profile && !hasPermission(profile.role, "viewSettings")) {
+    if (profile && !hasPermission(profile, "viewSettings")) {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [loading, profile, router]);

@@ -34,7 +34,7 @@ export default function ComprasImportarPage() {
 
   useEffect(() => {
     if (profileLoading) return;
-    if (profile && !hasPermission(profile.role, "importComprasPdfs")) {
+    if (profile && !hasPermission(profile, "importComprasPdfs")) {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [profileLoading, profile, router]);
@@ -156,7 +156,7 @@ export default function ComprasImportarPage() {
     return <div className="text-sm text-slate-500 py-8">Carregando…</div>;
   }
 
-  if (profile && !hasPermission(profile.role, "importComprasPdfs")) {
+  if (profile && !hasPermission(profile, "importComprasPdfs")) {
     return null;
   }
 

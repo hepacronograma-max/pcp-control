@@ -9,7 +9,9 @@ import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { getOperatorLineIdsForLocalUser } from "@/lib/local-users";
 import type { ProductionLine, Profile } from "@/lib/types/database";
 import {
+  actorUsesOperatorLines,
   canViewProductionLineMenu,
+  formatStaffPositionsLabel,
   hasPermission,
 } from "@/lib/utils/permissions";
 import { isUuid } from "@/lib/utils/is-uuid";
@@ -122,7 +124,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           const rawLines = (json.lines ?? []) as ProductionLine[];
           setLines(rawLines.filter((l) => l.is_active !== false));
           setUnprogrammedByLine(json.unprogrammedByLine ?? {});
-          if (profile?.role === "operator" || profile?.role === "logistica") {
+          if (profile && actorUsesOperatorLines(profile)) {
             const lineIds = getOperatorLineIdsForLocalUser(profile.id);
             setOperatorLines(lineIds.map((line_id) => ({ line_id })));
           }
@@ -150,7 +152,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       setCompany({ id: companyId, name: "Empresa Local", logo_url: null });
       setLines([]);
       setUnprogrammedByLine({});
-      if (profile.role === "operator" || profile.role === "logistica") {
+      if (actorUsesOperatorLines(profile)) {
         const lineIds = getOperatorLineIdsForLocalUser(profile.id);
         setOperatorLines(lineIds.map((line_id) => ({ line_id })));
       }
@@ -174,7 +176,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         .order("sort_order", { ascending: true });
       setLines(linesData ?? []);
 
-      if (profile?.role === "operator" || profile?.role === "logistica") {
+      if (actorUsesOperatorLines(profile)) {
         /** `/api/me` usa service role — não depende de RLS em `operator_lines` no browser. */
         let nextOperatorLines: OperatorLine[] = [];
         try {
@@ -270,7 +272,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
   const visibleLines = useMemo(() => {
     if (!profile) return [];
-    if (profile.role === "operator" || profile.role === "logistica") {
+    if (hasPermission(profile, "viewAllLines")) return lines;
+    if (actorUsesOperatorLines(profile)) {
       const allowedIds = new Set(operatorLines.map((ol) => ol.line_id));
       return lines.filter((l) => allowedIds.has(l.id));
     }
@@ -333,38 +336,26 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }
 
   const roleLabel = profile
-    ? profile.role === "super_admin"
-      ? "Super Admin"
-      : profile.role === "manager"
-      ? "Manager"
-      : profile.role === "pcp"
-      ? "PCP"
-      : profile.role === "comercial"
-      ? "Comercial"
-      : profile.role === "compras"
-      ? "Compras"
-      : profile.role === "logistica"
-      ? "Logística"
-      : "Operador"
+    ? formatStaffPositionsLabel(profile.role, profile.extra_roles)
     : "";
 
   // Quando profile é null (ex: perfil não existe no Supabase), mostramos menu completo
   // para o usuário poder navegar e configurar. Evita sidebar vazio no ambiente local.
   const canViewDashboard =
-    !profile || hasPermission(profile.role, "viewDashboard");
+    !profile || hasPermission(profile, "viewDashboard");
   const canViewOrders =
-    !profile || hasPermission(profile.role, "viewOrders");
+    !profile || hasPermission(profile, "viewOrders");
   const canViewSettings =
-    !profile || hasPermission(profile.role, "viewSettings");
+    !profile || hasPermission(profile, "viewSettings");
   const canViewComercial =
-    !profile || hasPermission(profile.role, "viewComercial");
+    !profile || hasPermission(profile, "viewComercial");
   const canViewCompras =
-    !profile || hasPermission(profile.role, "viewCompras");
-  const canViewTasks = !profile || hasPermission(profile.role, "viewTasks");
+    !profile || hasPermission(profile, "viewCompras");
+  const canViewTasks = !profile || hasPermission(profile, "viewTasks");
   const canViewFaturamento =
-    !profile || hasPermission(profile.role, "viewFaturamento");
+    !profile || hasPermission(profile, "viewFaturamento");
   const canViewExpedicao =
-    !profile || hasPermission(profile.role, "viewExpedicao");
+    !profile || hasPermission(profile, "viewExpedicao");
   /** Sem Supabase, ou perfil com id não‑UUID → contagem só em localStorage. */
   const tasksPendingUsesLocalOnly = useMemo(() => {
     if (!supabase) return true;
@@ -372,7 +363,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     return !isUuid(profile.id);
   }, [profile?.id, supabase]);
   const showProductionLines =
-    profile && canViewProductionLineMenu(profile.role);
+    profile && canViewProductionLineMenu(profile);
   const showLogisticaGroup =
     Boolean(showProductionLines && navBuckets.logistica.length > 0) ||
     Boolean(canViewExpedicao);
