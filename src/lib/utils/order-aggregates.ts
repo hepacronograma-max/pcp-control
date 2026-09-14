@@ -250,3 +250,27 @@ export function orderComercialObsNeedsPcpReply(order: OrderWithItems): boolean {
   }
   return !replyText;
 }
+
+/**
+ * Recado do PCP mais recente do que o último texto do Comercial (ou PCP escreveu primeiro).
+ * Usado na tela Comercial para destacar o botão Recado.
+ */
+export function orderPcpRecadoNeedsComercialAttention(
+  order: Pick<
+    OrderWithItems,
+    | "comercial_pcp_observation"
+    | "comercial_pcp_observation_at"
+    | "pcp_reply_comercial_observation"
+    | "pcp_reply_comercial_observation_at"
+  >
+): boolean {
+  const reply = (order.pcp_reply_comercial_observation ?? "").trim();
+  if (!reply) return false;
+  const obs = (order.comercial_pcp_observation ?? "").trim();
+  const obsAt = order.comercial_pcp_observation_at;
+  const replyAt = order.pcp_reply_comercial_observation_at;
+  if (!obs) return true;
+  if (replyAt && obsAt) return replyAt > obsAt;
+  if (replyAt && !obsAt) return true;
+  return false;
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { formatShortDate } from "@/lib/utils/date";
+import { formatBrazilianDateTime, formatShortDate } from "@/lib/utils/date";
 import { Button } from "@/components/ui/button";
 import { CQField } from "@/components/cq/CQField";
 import { CQList } from "@/components/cq/CQList";
@@ -45,6 +45,9 @@ export type PurchaseOrderRow = {
   follow_up_date?: string | null;
   /** Observação da área de compras (separada das notas de importação). */
   compras_observation?: string | null;
+  /** Chegada física (PCP/Compras), independente de NF/Omie. */
+  material_arrived_at?: string | null;
+  material_arrived_by?: string | null;
   status: string;
   notes: string | null;
   created_at: string;
@@ -73,6 +76,10 @@ function poStatusLabel(s: string) {
   return m[s] ?? s;
 }
 
+function poIsAwaitingMaterial(p: PurchaseOrderRow) {
+  return p.status === "open" && !p.material_arrived_at;
+}
+
 function formatCell(iso: string | null) {
   if (!iso) return "—";
   const s = formatShortDate(iso);
@@ -85,6 +92,8 @@ interface PurchaseOrdersTableProps {
   schemaMissing: boolean;
   /** PCP: só visualização (sem vincular, excluir ou editar prazos/notas). */
   readOnly?: boolean;
+  /** PCP e Compras: sinalizar chegada física, sem depender da NF. */
+  canMarkMaterialArrived?: boolean;
   cqUserId?: string;
   cqCompanyId?: string | null;
   cqUserRole?: string;
@@ -95,6 +104,7 @@ interface PurchaseOrdersTableProps {
     poId: string,
     fields: { follow_up_date?: string | null; compras_observation?: string | null }
   ) => void | Promise<void>;
+  onMarkMaterialArrived: (poId: string, arrived: boolean) => void | Promise<void>;
 }
 
 export function PurchaseOrdersTable({
@@ -102,6 +112,7 @@ export function PurchaseOrdersTable({
   orderItemsForLink,
   schemaMissing,
   readOnly = false,
+  canMarkMaterialArrived = false,
   cqUserId,
   cqCompanyId,
   cqUserRole,
@@ -109,6 +120,7 @@ export function PurchaseOrdersTable({
   onUnlink,
   onDeletePo,
   onUpdatePoFields,
+  onMarkMaterialArrived,
 }: PurchaseOrdersTableProps) {
   const [tab, setTab] = useState<TabKey>("open");
   const [search, setSearch] = useState("");
@@ -131,19 +143,19 @@ export function PurchaseOrdersTable({
   }, [orderItemsForLink]);
 
   const openCount = useMemo(
-    () => purchaseOrders.filter((p) => p.status === "open").length,
+    () => purchaseOrders.filter((p) => poIsAwaitingMaterial(p)).length,
     [purchaseOrders]
   );
   const closedCount = useMemo(
-    () => purchaseOrders.filter((p) => p.status !== "open").length,
+    () => purchaseOrders.filter((p) => !poIsAwaitingMaterial(p)).length,
     [purchaseOrders]
   );
 
   const visible = useMemo(() => {
     const list =
       tab === "open"
-        ? purchaseOrders.filter((p) => p.status === "open")
-        : purchaseOrders.filter((p) => p.status !== "open");
+        ? purchaseOrders.filter((p) => poIsAwaitingMaterial(p))
+        : purchaseOrders.filter((p) => !poIsAwaitingMaterial(p));
     const q = search.trim().toLowerCase();
     if (!q) return list;
     return list.filter((p) => {
@@ -227,9 +239,14 @@ export function PurchaseOrdersTable({
         const ex = expanded.has(p.id);
         const fu = p.follow_up_date?.slice(0, 10) ?? "";
         const ob = p.compras_observation ?? "";
+        const arrived = !!p.material_arrived_at;
         return (
           <div key={p.id} className="border-b border-slate-100 last:border-0 text-xs">
-            <div className="flex flex-wrap items-end gap-x-3 gap-y-2 px-2 sm:px-3 py-2.5 bg-white hover:bg-slate-50/80">
+            <div
+              className={`flex flex-wrap items-end gap-x-3 gap-y-2 px-2 sm:px-3 py-2.5 hover:bg-slate-50/80 ${
+                arrived ? "bg-emerald-50/80" : "bg-white"
+              }`}
+            >
               <div className="flex shrink-0 items-start self-start pt-1">
                 <button
                   type="button"
@@ -331,8 +348,76 @@ export function PurchaseOrdersTable({
                 <span className="text-[9px] uppercase tracking-wide text-slate-500 block leading-tight">
                   Status
                 </span>
-                <div className="text-slate-700">{poStatusLabel(p.status)}</div>
+                <div className="text-slate-700">
+                  {arrived && p.status === "open"
+                    ? "Chegou"
+                    : poStatusLabel(p.status)}
+                </div>
               </div>
+              {canMarkMaterialArrived && (
+                <div className="shrink-0 flex flex-col items-stretch justify-end self-center mb-0.5 min-w-[7.5rem]">
+                  {arrived ? (
+                    <div className="flex flex-col items-end gap-0.5">
+                      <span
+                        className="rounded-md bg-emerald-600 text-white px-2 py-1 text-[10px] font-medium leading-tight"
+                        title={
+                          [
+                            p.material_arrived_by && `Por ${p.material_arrived_by}`,
+                            p.material_arrived_at &&
+                              formatBrazilianDateTime(p.material_arrived_at),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "Material chegou"
+                        }
+                      >
+                        Material chegou
+                      </span>
+                      <button
+                        type="button"
+                        className="text-[10px] text-slate-500 hover:text-slate-800 hover:underline"
+                        disabled={schemaMissing}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              "Desfazer a chegada deste material? O PC volta para Abertos até a NF ou uma nova sinalização."
+                            )
+                          ) {
+                            void onMarkMaterialArrived(p.id, false);
+                          }
+                        }}
+                      >
+                        Desfazer
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="rounded-md border border-emerald-500 bg-white px-2 py-1.5 text-[11px] font-medium text-emerald-800 hover:bg-emerald-50 disabled:opacity-50 whitespace-nowrap"
+                      disabled={schemaMissing}
+                      title="Sinaliza que o material já chegou, mesmo sem nota fiscal / faturamento do PC"
+                      onClick={() => void onMarkMaterialArrived(p.id, true)}
+                    >
+                      Material chegou
+                    </button>
+                  )}
+                </div>
+              )}
+              {!canMarkMaterialArrived && arrived && (
+                <div
+                  className="shrink-0 self-center mb-0.5 rounded-md bg-emerald-600 text-white px-2 py-1 text-[10px] font-medium"
+                  title={
+                    [
+                      p.material_arrived_by && `Por ${p.material_arrived_by}`,
+                      p.material_arrived_at &&
+                        formatBrazilianDateTime(p.material_arrived_at),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "Material chegou"
+                  }
+                >
+                  Material chegou
+                </div>
+              )}
               {!readOnly && (
                 <div className="shrink-0 flex justify-end self-center mb-0.5">
                   <button

@@ -13,6 +13,7 @@ import {
   areAllOrderDeadlinesSameDay,
   getOrderDeadlineTrafficLight,
   getOrderPrincipalStatus,
+  orderPcpRecadoNeedsComercialAttention,
   type OrderPrincipalStatus,
 } from "@/lib/utils/order-aggregates";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
@@ -546,6 +547,7 @@ export function ComercialOrdersView({
                 const hasThread =
                   !!(row.comercial_pcp_observation ?? "").trim() ||
                   !!(row.pcp_reply_comercial_observation ?? "").trim();
+                const pcpRecadoNovo = orderPcpRecadoNeedsComercialAttention(o);
                 const gridTitle =
                   traffic === "white"
                     ? undefined
@@ -637,6 +639,10 @@ export function ComercialOrdersView({
                           type="button"
                           className={`rounded-md p-1 min-h-[28px] min-w-[28px] flex items-center justify-center border border-transparent hover:bg-white/80 hover:border-slate-200 transition-colors ${
                             hasThread ? "text-sky-700" : "text-slate-400"
+                          } ${
+                            pcpRecadoNovo
+                              ? "motion-safe:animate-comercial-obs-pulse motion-reduce:animate-none ring-2 ring-emerald-400 ring-offset-1 ring-offset-transparent motion-reduce:ring-0"
+                              : ""
                           }`}
                           title={
                             hasThread
@@ -651,6 +657,11 @@ export function ComercialOrdersView({
                               : canEditObservation
                                 ? "Registrar observação para o PCP"
                                 : "Ver recados com o PCP"
+                          }
+                          aria-label={
+                            pcpRecadoNovo
+                              ? "Recado novo do PCP — não lido"
+                              : "Recado"
                           }
                           aria-expanded={obsExpandedId === row.id}
                           onClick={() =>
@@ -667,17 +678,16 @@ export function ComercialOrdersView({
                       <div className="px-3 sm:px-4 py-3 bg-white/70 border-t border-slate-100 text-xs space-y-2">
                         <div>
                           <p className="text-[11px] font-semibold text-slate-800">
-                            Observação para o PCP
+                            Recado com o PCP
                           </p>
                           <p className="text-[10px] text-slate-500 mt-0.5">
-                            Visível na tela Pedidos para quem programa produção (badge e painel ao expandir o
-                            pedido).
+                            O PCP também pode escrever pela tela Pedidos. Os dois recados ficam neste mesmo fio.
                           </p>
                         </div>
                         {!!(row.pcp_reply_comercial_observation ?? "").trim() && (
                           <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-slate-800">
                             <p className="text-[11px] font-semibold text-emerald-950">
-                              Resposta do PCP ao Comercial
+                              Recado do PCP
                             </p>
                             <p className="whitespace-pre-wrap mt-1">
                               {row.pcp_reply_comercial_observation}

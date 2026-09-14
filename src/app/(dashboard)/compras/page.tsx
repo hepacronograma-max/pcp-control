@@ -55,6 +55,7 @@ export default function ComprasPage() {
   const [orderItemsForLink, setOrderItemsForLink] = useState<ItemForLink[]>([]);
   const [schemaMissing, setSchemaMissing] = useState(false);
   const [schemaMsg, setSchemaMsg] = useState<string | null>(null);
+  const [arrivedSchemaMsg, setArrivedSchemaMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [newNumber, setNewNumber] = useState("");
@@ -66,6 +67,8 @@ export default function ComprasPage() {
   const allowed = profile && hasPermission(profile.role, "viewCompras");
   const canEditCompras = profile && hasPermission(profile.role, "editCompras");
   const readOnly = Boolean(allowed && !canEditCompras);
+  const canMarkMaterialArrived =
+    !!profile && hasPermission(profile.role, "markComprasMaterialArrived");
   const canImport =
     profile && hasPermission(profile.role, "importComprasPdfs");
   const canImportOmie =
@@ -317,6 +320,58 @@ export default function ComprasPage() {
     }
   }
 
+  async function markMaterialArrived(poId: string, arrived: boolean) {
+    const companyId = effectiveCompanyId;
+    if (!companyId || !poId) return;
+    try {
+      const res = await fetch(
+        `/api/purchase-orders?companyId=${encodeURIComponent(companyId)}`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "mark_material_arrived",
+            purchase_order_id: poId,
+            arrived,
+          }),
+        }
+      );
+      const j2 = (await res.json()) as {
+        error?: string;
+        material_arrived_at?: string | null;
+        material_arrived_by?: string | null;
+      };
+      if (!res.ok) {
+        toast.error(j2.error || "Não foi possível atualizar a chegada");
+        if (/material-arrived|chegada do material/i.test(j2.error ?? "")) {
+          setArrivedSchemaMsg(j2.error ?? null);
+        }
+        return;
+      }
+      setArrivedSchemaMsg(null);
+      toast.success(
+        arrived
+          ? "Material sinalizado como chegou. Produção liberada, independente da NF."
+          : "Chegada desfeita. PC volta para Abertos."
+      );
+      setPurchaseOrders((prev) =>
+        prev.map((p) =>
+          p.id === poId
+            ? {
+                ...p,
+                material_arrived_at: j2.material_arrived_at ?? null,
+                material_arrived_by: j2.material_arrived_by ?? null,
+                updated_at: new Date().toISOString(),
+              }
+            : p
+        )
+      );
+    } catch {
+      toast.error("Erro de rede");
+    }
+  }
+
   async function updatePoFields(
     poId: string,
     fields: { follow_up_date?: string | null; compras_observation?: string | null }
@@ -407,6 +462,7 @@ export default function ComprasPage() {
                 "Follow-up",
                 "Obs. compras",
                 "Status",
+                "Material chegou",
                 "Item venda vinculado",
                 "PV",
                 "Prazo vendas (item)",
@@ -426,6 +482,9 @@ export default function ComprasPage() {
                       formatDateOnly(p.follow_up_date ?? null),
                       p.compras_observation?.trim() || "—",
                       poStatusLabel(p.status),
+                      p.material_arrived_at
+                        ? formatDateOnly(p.material_arrived_at)
+                        : "Não",
                       v.item_description ?? "—",
                       v.order_number,
                       formatDateOnly(v.sales_deadline),
@@ -443,6 +502,9 @@ export default function ComprasPage() {
                       formatDateOnly(p.follow_up_date ?? null),
                       p.compras_observation?.trim() || "—",
                       poStatusLabel(p.status),
+                      p.material_arrived_at
+                        ? formatDateOnly(p.material_arrived_at)
+                        : "Não",
                       "—",
                       "—",
                       "—",
@@ -458,6 +520,9 @@ export default function ComprasPage() {
                   formatDateOnly(p.follow_up_date ?? null),
                   p.compras_observation?.trim() || "—",
                   poStatusLabel(p.status),
+                  p.material_arrived_at
+                    ? formatDateOnly(p.material_arrived_at)
+                    : "Não",
                   l.description ?? "—",
                   l.order_number,
                   formatDateOnly(l.sales_deadline ?? null),
@@ -504,10 +569,17 @@ export default function ComprasPage() {
         </div>
       )}
 
+      {arrivedSchemaMsg && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 text-sm">
+          {arrivedSchemaMsg}
+        </div>
+      )}
+
       {readOnly && !schemaMissing && (
         <div className="rounded-md border border-slate-200 bg-slate-50 text-slate-700 px-3 py-2 text-sm">
-          <strong>Modo leitura (PCP):</strong> visualização dos pedidos de compra. Alterações e vínculos ficam
-          com o perfil <strong>Compras</strong> ou gestão.
+          <strong>PCP:</strong> use <strong>Material chegou</strong> quando o item já está na fábrica —
+          não depende da nota fiscal nem do faturamento do pedido de compra. Vínculos e prazos
+          continuam com o perfil Compras.
         </div>
       )}
 
@@ -520,6 +592,7 @@ export default function ComprasPage() {
         orderItemsForLink={orderItemsForLink}
         schemaMissing={schemaMissing}
         readOnly={readOnly}
+        canMarkMaterialArrived={canMarkMaterialArrived}
         cqUserId={profile?.id}
         cqCompanyId={effectiveCompanyId}
         cqUserRole={profile?.role}
@@ -527,6 +600,7 @@ export default function ComprasPage() {
         onUnlink={doUnlink}
         onDeletePo={deletePo}
         onUpdatePoFields={updatePoFields}
+        onMarkMaterialArrived={markMaterialArrived}
       />
 
       {showNew && (

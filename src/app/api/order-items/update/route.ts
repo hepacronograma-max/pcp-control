@@ -11,6 +11,10 @@ import {
   reopenShippingListForOrder,
 } from "@/lib/packaging/shipping-list";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
+import {
+  itemPcArrivalForProduction,
+  orderItemLinkedPoMaterialArrivedAt,
+} from "@/lib/utils/pc-purchase-dates";
 
 async function assertCanEditOrders(): Promise<
   { ok: true } | { ok: false; response: NextResponse }
@@ -431,9 +435,16 @@ export async function POST(request: NextRequest) {
         .select("pc_delivery_date, production_start, production_end")
         .eq("id", itemId)
         .maybeSingle();
-      const pcDelivery = itemRow?.pc_delivery_date
-        ? toDateOnly(itemRow.pc_delivery_date as string)
-        : null;
+      const materialArrivedAt = await orderItemLinkedPoMaterialArrivedAt(
+        supabase,
+        itemId
+      );
+      const pcDelivery = itemPcArrivalForProduction(
+        null,
+        null,
+        itemRow?.pc_delivery_date as string | null,
+        materialArrivedAt
+      );
       const existingStart = itemRow?.production_start
         ? toDateOnly(itemRow.production_start as string)
         : null;

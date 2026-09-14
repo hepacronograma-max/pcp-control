@@ -37,6 +37,7 @@ interface ComprasDashboardPayload {
 
 const STATUS_COLORS: Record<string, string> = {
   Abertos: "#f59e0b",
+  Chegou: "#10b981",
   Recebidos: "#22c55e",
   Cancelados: "#94a3b8",
 };

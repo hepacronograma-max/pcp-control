@@ -306,7 +306,7 @@ export function OrderRow({
       onComercialObservationThreadUpdated?.(order.id, patch);
       setPcpReplyDraft(patch.pcp_reply_comercial_observation ?? "");
       toast.success(
-        payloadText ? "Resposta do PCP salva." : "Resposta do PCP removida."
+        payloadText ? "Recado enviado ao Comercial." : "Recado para o Comercial removido."
       );
     } catch {
       toast.error("Erro de rede ao salvar resposta.");
@@ -495,12 +495,16 @@ export function OrderRow({
                   ]
                     .filter(Boolean)
                     .join(" | ") || "Recado"
-                : "Recado com o Comercial"
+                : canReplyAsPcp
+                  ? "Escrever recado para o Comercial"
+                  : "Recado com o Comercial"
             }
             aria-label={
               showComercialObsPulse
                 ? "Recado novo do Comercial — não lido"
-                : "Recado"
+                : canReplyAsPcp
+                  ? "Recado para o Comercial"
+                  : "Recado"
             }
             aria-expanded={recadoOpen}
             onClick={(e) => {
@@ -682,14 +686,8 @@ export function OrderRow({
       )}
 
       {(recadoOpen ||
-        (expanded &&
-          (hasRecadoThread || (canReplyAsPcp && obsText.length > 0)))) && (
+        (expanded && (hasRecadoThread || canReplyAsPcp))) && (
         <div className="mx-3 mb-2 space-y-2">
-          {!hasRecadoThread && recadoOpen && !expanded && (
-            <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              Nenhum recado neste pedido. O Comercial registra a observação na tela Comercial.
-            </p>
-          )}
           {obsText.length > 0 && (
             <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-slate-800">
               <p className="text-[11px] font-semibold text-sky-950">
@@ -726,14 +724,19 @@ export function OrderRow({
               )}
             </div>
           )}
-          {canReplyAsPcp && obsText.length > 0 && (
+          {canReplyAsPcp && (
             <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs space-y-2">
-              <p className="text-[11px] font-semibold text-slate-800">
-                Sua resposta ao Comercial
-              </p>
+              <div>
+                <p className="text-[11px] font-semibold text-slate-800">
+                  Recado para o Comercial
+                </p>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  Visível na tela Comercial. Pode escrever mesmo sem recado anterior do Comercial.
+                </p>
+              </div>
               <textarea
                 className="w-full rounded-md border border-slate-300 px-2 py-2 text-xs text-slate-800 min-h-[4rem] resize-y max-h-[12rem]"
-                placeholder="Ex.: prazo mantido na programação atual / linha X às quintas…"
+                placeholder="Ex.: peça chega sexta / falta código no item 2 / prazo da linha confirmado…"
                 maxLength={2000}
                 rows={3}
                 value={pcpReplyDraft}
@@ -744,7 +747,7 @@ export function OrderRow({
                 (order.pcp_reply_comercial_observation_by ||
                   order.pcp_reply_comercial_observation_at) && (
                   <p className="text-[10px] text-slate-500">
-                    Última resposta registrada:{" "}
+                    Último envio ao Comercial:{" "}
                     {order.pcp_reply_comercial_observation_by ?? "—"}
                     {order.pcp_reply_comercial_observation_at
                       ? ` · ${formatBrazilianDateTime(order.pcp_reply_comercial_observation_at)}`
@@ -768,7 +771,7 @@ export function OrderRow({
                   disabled={savingPcpReply}
                   onClick={() => void submitPcpReply()}
                 >
-                  {savingPcpReply ? "Salvando…" : "Salvar resposta"}
+                  {savingPcpReply ? "Salvando…" : "Enviar ao Comercial"}
                 </button>
               </div>
             </div>

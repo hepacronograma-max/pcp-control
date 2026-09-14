@@ -34,6 +34,7 @@ export interface LineItemWithOrder extends OrderItem {
   /** Preenchido na carga: datas do `purchase_orders` vinculado (Compras). */
   po_expected_delivery?: string | null;
   po_follow_up_date?: string | null;
+  po_material_arrived_at?: string | null;
 }
 
 function generateDays(startDate: Date, numDays: number, holidays: Holiday[]): GanttDay[] {

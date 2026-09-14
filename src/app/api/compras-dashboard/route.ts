@@ -87,6 +87,7 @@ export async function GET(request: NextRequest) {
     supplier_name: string | null;
     expected_delivery: string | null;
     follow_up_date: string | null;
+    material_arrived_at: string | null;
     status: string;
     created_at: string;
     updated_at: string;
@@ -95,9 +96,22 @@ export async function GET(request: NextRequest) {
   let full = await admin
     .from("purchase_orders")
     .select(
-      "id, number, supplier_name, expected_delivery, follow_up_date, status, created_at, updated_at"
+      "id, number, supplier_name, expected_delivery, follow_up_date, material_arrived_at, status, created_at, updated_at"
     )
     .eq("company_id", companyId);
+
+  if (
+    full.error &&
+    /material_arrived_at/i.test(full.error.message) &&
+    /column|does not exist/i.test(full.error.message)
+  ) {
+    full = await admin
+      .from("purchase_orders")
+      .select(
+        "id, number, supplier_name, expected_delivery, follow_up_date, status, created_at, updated_at"
+      )
+      .eq("company_id", companyId);
+  }
 
   if (
     full.error &&
@@ -114,6 +128,7 @@ export async function GET(request: NextRequest) {
       list = (stripped.data ?? []).map((r) => ({
         ...r,
         follow_up_date: null as string | null,
+        material_arrived_at: null as string | null,
       }));
     } else {
       console.error("[compras-dashboard]", stripped.error.message);
@@ -134,10 +149,19 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   } else {
-    list = full.data ?? [];
+    list = (full.data ?? []).map((r) => ({
+      ...r,
+      follow_up_date: (r.follow_up_date as string | null) ?? null,
+      material_arrived_at:
+        "material_arrived_at" in r
+          ? ((r.material_arrived_at as string | null) ?? null)
+          : null,
+    }));
   }
 
-  const openRows = list.filter((r) => r.status === "open");
+  const openRows = list.filter(
+    (r) => r.status === "open" && !r.material_arrived_at
+  );
 
   const delayedPcList: DelayedPcRow[] = [];
   for (const po of openRows) {
@@ -174,12 +198,16 @@ export async function GET(request: NextRequest) {
 
   const statusCounts = new Map<string, number>();
   for (const po of list) {
-    const key = po.status || "open";
+    const key =
+      po.status === "open" && po.material_arrived_at
+        ? "arrived"
+        : po.status || "open";
     statusCounts.set(key, (statusCounts.get(key) ?? 0) + 1);
   }
   const chartByPcStatus: ChartRow[] = [];
   const label: Record<string, string> = {
     open: "Abertos",
+    arrived: "Chegou",
     received: "Recebidos",
     cancelled: "Cancelados",
   };

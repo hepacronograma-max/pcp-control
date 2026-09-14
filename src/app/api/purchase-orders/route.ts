@@ -10,6 +10,11 @@ import {
   stripLineFallbackForDisplay,
 } from "@/lib/compras/pc-lines-fallback";
 
+const PO_LIST_COLUMNS =
+  "id, company_id, number, supplier_name, expected_delivery, follow_up_date, compras_observation, status, notes, created_at, updated_at, material_arrived_at, material_arrived_by";
+const PO_LIST_COLUMNS_NO_ARRIVED =
+  "id, company_id, number, supplier_name, expected_delivery, follow_up_date, compras_observation, status, notes, created_at, updated_at";
+
 function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     s.trim()
@@ -30,6 +35,25 @@ function canViewPurchases(role: string | null | undefined): boolean {
     canManagePurchases(role) ||
     role === "pcp"
   );
+}
+
+async function resolveActorDisplayName(isLocalAuth: boolean): Promise<string> {
+  if (isLocalAuth) return "Administrador local";
+  const supabaseAuth = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await supabaseAuth.auth.getUser();
+  if (!user?.id) return "PCP";
+  const { data: profile } = await supabaseAuth
+    .from("profiles")
+    .select("full_name, email")
+    .eq("id", user.id)
+    .maybeSingle();
+  const name = String(profile?.full_name ?? "").trim();
+  if (name) return name.slice(0, 120);
+  const mail = String(profile?.email ?? user.email ?? "").trim();
+  if (mail) return mail.slice(0, 120);
+  return `Usuário ${user.id.slice(0, 8)}`;
 }
 
 async function resolveCompanyId(
@@ -129,13 +153,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ purchaseOrders: [], unlinkedItemSamples: [] });
   }
 
-  const { data: pos, error: pe } = await supabase
+  let posQuery = await supabase
     .from("purchase_orders")
-    .select(
-      "id, company_id, number, supplier_name, expected_delivery, follow_up_date, compras_observation, status, notes, created_at, updated_at"
-    )
+    .select(PO_LIST_COLUMNS)
     .eq("company_id", companyId)
     .order("expected_delivery", { ascending: true, nullsFirst: false });
+
+  if (
+    posQuery.error &&
+    /material_arrived_at|material_arrived_by/i.test(posQuery.error.message) &&
+    /column|does not exist|schema cache/i.test(posQuery.error.message)
+  ) {
+    posQuery = await supabase
+      .from("purchase_orders")
+      .select(PO_LIST_COLUMNS_NO_ARRIVED)
+      .eq("company_id", companyId)
+      .order("expected_delivery", { ascending: true, nullsFirst: false });
+  }
+
+  const { data: pos, error: pe } = posQuery;
 
   if (pe) {
     if (
@@ -393,28 +429,99 @@ type UpdatePoBody = {
   compras_observation?: string | null;
 };
 
+type MarkArrivedBody = {
+  action: "mark_material_arrived";
+  purchase_order_id: string;
+  arrived: boolean;
+};
+
 /**
- * POST: criar PC, (des)vincular item ou atualizar prazo/observação do PC.
+ * POST: criar PC, (des)vincular item, atualizar prazo/observação ou sinalizar chegada física.
  */
 export async function POST(request: NextRequest) {
   const supabase = createSupabaseAdminClient();
   const isLocalAuth = await hasServerLocalAuthCookie();
 
+  let body:
+    | (CreateBody & { action?: string })
+    | LinkBody
+    | UpdatePoBody
+    | MarkArrivedBody;
+  try {
+    body = (await request.json()) as
+      | (CreateBody & { action?: string })
+      | LinkBody
+      | UpdatePoBody
+      | MarkArrivedBody;
+  } catch {
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+  }
+
+  const isMarkArrived =
+    body &&
+    "action" in body &&
+    (body as MarkArrivedBody).action === "mark_material_arrived";
+
   const { companyId, error } = await resolveCompanyId(
     supabase,
     request,
-    isLocalAuth
+    isLocalAuth,
+    isMarkArrived ? "read" : "write"
   );
   if (error) return error;
   if (!companyId) {
     return NextResponse.json({ error: "no company" }, { status: 400 });
   }
 
-  let body: (CreateBody & { action?: string }) | LinkBody | UpdatePoBody;
-  try {
-    body = (await request.json()) as (CreateBody & { action?: string }) | LinkBody | UpdatePoBody;
-  } catch {
-    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+  if (isMarkArrived) {
+    const b = body as MarkArrivedBody;
+    if (!b.purchase_order_id || !isUuid(b.purchase_order_id)) {
+      return NextResponse.json({ error: "purchase_order_id inválido" }, { status: 400 });
+    }
+    const arrived = b.arrived === true;
+    const { data: poRow } = await supabase
+      .from("purchase_orders")
+      .select("id")
+      .eq("id", b.purchase_order_id)
+      .eq("company_id", companyId)
+      .maybeSingle();
+    if (!poRow) {
+      return NextResponse.json({ error: "Pedido de compra não encontrado" }, { status: 404 });
+    }
+    let actor = "PCP";
+    try {
+      actor = await resolveActorDisplayName(isLocalAuth);
+    } catch {
+      actor = "PCP";
+    }
+    const nowIso = new Date().toISOString();
+    const patch: Record<string, unknown> = {
+      updated_at: nowIso,
+      material_arrived_at: arrived ? nowIso : null,
+      material_arrived_by: arrived ? actor.slice(0, 120) : null,
+    };
+    const { error: ue } = await supabase
+      .from("purchase_orders")
+      .update(patch)
+      .eq("id", b.purchase_order_id)
+      .eq("company_id", companyId);
+    if (ue) {
+      if (/column|does not exist|schema cache/i.test(ue.message)) {
+        return NextResponse.json(
+          {
+            error:
+              "Execute supabase-purchase-orders-material-arrived.sql no Supabase (coluna de chegada do material).",
+          },
+          { status: 503 }
+        );
+      }
+      return NextResponse.json({ error: ue.message }, { status: 500 });
+    }
+    return NextResponse.json({
+      success: true,
+      material_arrived_at: arrived ? nowIso : null,
+      material_arrived_by: arrived ? actor.slice(0, 120) : null,
+    });
   }
 
   if (body && "action" in body && (body as UpdatePoBody).action === "update_po") {

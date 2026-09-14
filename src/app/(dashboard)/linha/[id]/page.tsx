@@ -397,7 +397,8 @@ export default function LinePage() {
     const pcArrivalMin = itemPcArrivalForProduction(
       targetItem.po_expected_delivery,
       targetItem.po_follow_up_date,
-      targetItem.pc_delivery_date
+      targetItem.pc_delivery_date,
+      targetItem.po_material_arrived_at
     );
     const pcDelivery = pcArrivalMin ? toDateOnly(pcArrivalMin) : null;
     const valueNorm = toDateOnly(value);
@@ -1028,7 +1029,8 @@ export default function LinePage() {
                   const pcEntrega = itemPcArrivalForProduction(
                     it.po_expected_delivery,
                     it.po_follow_up_date,
-                    it.pc_delivery_date
+                    it.pc_delivery_date,
+                    it.po_material_arrived_at
                   );
                   return [
                     it.order.order_number,

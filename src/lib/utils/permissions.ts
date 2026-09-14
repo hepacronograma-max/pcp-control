@@ -3,7 +3,7 @@ import type { UserRole } from "@/lib/types/database";
 /**
  * Matriz de permissões (áreas e ações).
  * - Operador / Logística: só as linhas em `operator_lines`.
- * - PCP: vê Compras em modo leitura; edita produção, logística, almox. conforme ações.
+ * - PCP: vê Compras; pode sinalizar “material chegou” (independente da NF); não cria PC nem vínculos.
  * - Comercial: área comercial + dashboard de produção (não edita pedidos gerais).
  * - Compras: vê/altera compras; dashboard dedicado a compras (sem lista Pedidos).
  * - Manager / super_admin: configuração e tudo o resto.
@@ -29,6 +29,17 @@ export const PERMISSIONS = {
 
   /** Criar/editar/excluir PC, vínculos, importar PDF de compra */
   editCompras: ["super_admin", "manager", "compras"] as UserRole[],
+
+  /**
+   * Sinalizar que o material do PC já chegou (físico), independente de NF/Omie.
+   * PCP usa isso para liberar produção enquanto a nota ainda não entrou.
+   */
+  markComprasMaterialArrived: [
+    "super_admin",
+    "manager",
+    "compras",
+    "pcp",
+  ] as UserRole[],
 
   viewAllLines: ["super_admin", "manager", "pcp"] as UserRole[],
 

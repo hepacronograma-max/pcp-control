@@ -798,7 +798,8 @@ export function LineTable({
           const pcArrival = itemPcArrivalForProduction(
             item.po_expected_delivery,
             item.po_follow_up_date,
-            item.pc_delivery_date
+            item.pc_delivery_date,
+            item.po_material_arrived_at
           );
           const dayPc = pcArrival ? toDateOnly(pcArrival) : null;
           const dayStart = item.production_start ? toDateOnly(item.production_start) : null;
@@ -876,16 +877,24 @@ export function LineTable({
                 {pcpDisplay ?? "--"}
               </Cell>
               <Cell
-                className="text-center flex justify-center items-center text-[10px] min-w-0 tabular-nums"
+                className={`text-center flex justify-center items-center text-[10px] min-w-0 tabular-nums ${
+                  item.po_material_arrived_at ? "text-emerald-800 font-semibold" : ""
+                }`}
                 title={
-                  item.pc_number
-                    ? `PC ${item.pc_number} — ${pcArrival ? formatShortDate(safeParse(pcArrival)) : "sem data"}`
-                    : pcArrival
-                      ? formatShortDate(safeParse(pcArrival))
-                      : undefined
+                  item.po_material_arrived_at
+                    ? `Material chegou${item.pc_number ? ` (PC ${item.pc_number})` : ""} — produção liberada, independente da NF`
+                    : item.pc_number
+                      ? `PC ${item.pc_number} — ${pcArrival ? formatShortDate(safeParse(pcArrival)) : "sem data"}`
+                      : pcArrival
+                        ? formatShortDate(safeParse(pcArrival))
+                        : undefined
                 }
               >
-                {pcArrival ? formatDayMonth(safeParse(pcArrival)) : "--"}
+                {item.po_material_arrived_at
+                  ? "Chegou"
+                  : pcArrival
+                    ? formatDayMonth(safeParse(pcArrival))
+                    : "--"}
               </Cell>
               <Cell className="flex items-stretch p-0 h-full min-h-0 !overflow-visible z-[1]">
                 <CompactDateCell
