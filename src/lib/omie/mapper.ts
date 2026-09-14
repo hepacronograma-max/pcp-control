@@ -69,6 +69,23 @@ export function normalizeOmieOrderNumber(omie: OmiePedidoCompleto): string {
   throw new Error("Pedido Omie sem numero_pedido");
 }
 
+/** Nº do pedido do cliente no Omie (`informacoes_adicionais.numero_pedido_cliente`). */
+export function extractOmieClientOrderNumber(
+  payload: unknown
+): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const root = payload as Record<string, unknown>;
+  const nested =
+    root.pedido_venda_produto && typeof root.pedido_venda_produto === "object"
+      ? (root.pedido_venda_produto as Record<string, unknown>)
+      : root;
+  const inf = nested.informacoes_adicionais;
+  if (!inf || typeof inf !== "object") return null;
+  const n = (inf as Record<string, unknown>).numero_pedido_cliente;
+  const s = String(n ?? "").trim();
+  return s || null;
+}
+
 export function extractClientNameFromPedido(omie: OmiePedidoCompleto): string {
   const cab = omie.cabecalho ?? {};
   const inf = omie.informacoes_adicionais ?? {};

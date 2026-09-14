@@ -63,6 +63,21 @@ export function addBusinessDays(isoDate: string, days: number): string | null {
   return date.toISOString().slice(0, 10);
 }
 
+/**
+ * Prazo Zenith: a contagem começa no dia útil subsequente ao fechamento
+ * e só então soma os N dias úteis do PDF.
+ * Ex.: fechamento 31/08 (seg) + 10 dias úteis → 15/09, não 14/09.
+ */
+export function zenithDeliveryDeadline(
+  quoteDate: string,
+  leadDays: number
+): string | null {
+  if (leadDays <= 0) return null;
+  const subsequent = addBusinessDays(quoteDate, 1);
+  if (!subsequent) return null;
+  return addBusinessDays(subsequent, leadDays);
+}
+
 export function isZenithQuotePdf(text: string): boolean {
   const t = normalizarTextoPdf(text);
   if (!t) return false;
@@ -169,7 +184,7 @@ export function parseZenithQuote(text: string, fileName: string): ParsedZenithRe
   }
 
   const deliveryDate =
-    quoteDate && leadDays ? addBusinessDays(quoteDate, leadDays) : null;
+    quoteDate && leadDays ? zenithDeliveryDeadline(quoteDate, leadDays) : null;
 
   const items = parseZenithItems(linhas);
   if (items.length === 0) {

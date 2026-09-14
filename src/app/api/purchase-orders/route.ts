@@ -540,7 +540,7 @@ export async function POST(request: NextRequest) {
       }
       const { data: poRow } = await supabase
         .from("purchase_orders")
-        .select("number")
+        .select("number, expected_delivery")
         .eq("id", b.purchase_order_id)
         .eq("company_id", companyId)
         .maybeSingle();
@@ -558,12 +558,14 @@ export async function POST(request: NextRequest) {
       ) as string | null | undefined;
       if (poRow) {
         const n = String(poRow.number ?? "").trim().slice(0, 80);
+        const pcDate =
+          toDateOnly(poRow.expected_delivery ?? null) ?? toDateOnly(salesDl ?? null);
         const { error: uErr } = await supabase
           .from("order_items")
           .update({
             pc_number: n || null,
-            /** Prazo do pedido de venda (Prazo Vendas) — deixa de ser preenchido à mão no PCP. */
-            pc_delivery_date: toDateOnly(salesDl ?? null),
+            /** Prazo de entrega do PC (Omie/cadastro); fallback para prazo de vendas. */
+            pc_delivery_date: pcDate,
           })
           .eq("id", b.order_item_id);
         if (uErr && !/pc_number|pc_delivery|schema cache|does not exist/i.test(uErr.message)) {

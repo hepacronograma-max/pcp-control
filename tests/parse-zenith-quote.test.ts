@@ -5,6 +5,7 @@ import {
   clientNameFromZenithFileName,
   isZenithQuotePdf,
   parseZenithQuote,
+  zenithDeliveryDeadline,
 } from "../src/lib/pdf/parse-zenith-quote";
 
 const SAMPLE_ZH = `
@@ -52,7 +53,7 @@ describe("parseZenithQuote (modelo ZH-260026)", () => {
     );
     assert.equal(r.orderNumber, "ZH-260026");
     assert.equal(r.clientName, "COLD CONTROL AR CONDICIONADO");
-    assert.equal(r.deliveryDate, "2026-09-10");
+    assert.equal(r.deliveryDate, "2026-09-11");
     assert.equal(r.items.length, 8);
     assert.equal(r.items[0].product_code, "HF-GP-G4");
     assert.equal(r.items[0].quantity, 4);
@@ -75,7 +76,28 @@ describe("parseZenithQuote (modelo ZH-260026)", () => {
     );
   });
 
-  it("27/08/2026 + 10 dias úteis = 10/09/2026", () => {
+  it("27/08/2026 + 10 dias úteis a contar do subsequente = 11/09/2026", () => {
     assert.equal(addBusinessDays("2026-08-27", 10), "2026-09-10");
+    assert.equal(zenithDeliveryDeadline("2026-08-27", 10), "2026-09-11");
+  });
+
+  it("PHARMALAB 31/08/2026 + 10 dias úteis = 15/09/2026", () => {
+    const text = `
+DATA   31/08/2026
+Cotação #   ZH-260024
+vendas@zenith-hvac.com | www.zenith-hvac.com
+Nome da empresa   PHARMALAB
+ITEM   QTD   Modelo   Dimensão (mm)   Preço Unit   Preço Total
+1   7   HF-ABSP-H14-T-D   305x305x75   210,14   1.470,97 R$
+SUBTOTAL   1.470,97 R$
+A) Prazo de entrega:   10 dias úteis, a contar da data útil subsequente a confirmação do pedido.
+`;
+    const r = parseZenithQuote(text, "ZH-260024- PHARMALAB.pdf");
+    assert.equal(r.orderNumber, "ZH-260024");
+    assert.equal(r.clientName, "PHARMALAB");
+    assert.equal(zenithDeliveryDeadline("2026-08-31", 10), "2026-09-15");
+    assert.equal(r.deliveryDate, "2026-09-15");
+    assert.equal(r.items[0].product_code, "HF-ABSP-H14-T-D");
+    assert.equal(r.items[0].quantity, 7);
   });
 });

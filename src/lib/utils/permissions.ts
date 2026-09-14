@@ -59,6 +59,21 @@ export const PERMISSIONS = {
 
   manageHolidays: ["super_admin", "manager"] as UserRole[],
 
+  /** Catálogo de caixas de papelão (etiqueta de embalagem) */
+  managePackagingBoxes: ["super_admin", "manager"] as UserRole[],
+
+  /** Aba Faturamento: listas de embarque */
+  viewFaturamento: ["super_admin", "manager", "pcp", "logistica"] as UserRole[],
+
+  /** Aba Expedição (Logística): bipar volumes, foto da carga, finalizar */
+  viewExpedicao: [
+    "super_admin",
+    "manager",
+    "pcp",
+    "logistica",
+    "operator",
+  ] as UserRole[],
+
   /** CQ: categorias em Configurações */
   manageCQCategorias: ["super_admin", "manager"] as UserRole[],
 

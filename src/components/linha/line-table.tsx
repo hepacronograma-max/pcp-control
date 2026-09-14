@@ -1,7 +1,7 @@
 import { CompactDateCell } from "@/components/ui/compact-date-cell";
 import * as React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BadgeCheck, Tag } from "lucide-react";
+import { BadgeCheck, Package, Tag } from "lucide-react";
 import type { ItemStatus, Profile, ProductionLine } from "@/lib/types/database";
 import type { LineItemWithOrder } from "./gantt-calendar";
 import { formatDayMonth, formatShortDate, isPastDeadline, overdueRescheduleMessage, parseLocalDate } from "@/lib/utils/date";
@@ -69,7 +69,7 @@ function ensureDocsColumnWidth(
 
   if (withDocs) {
     const docsIdx = selectCol ? 12 : 11;
-    const minDocs = Math.max(defaults[docsIdx] ?? 152, 152);
+    const minDocs = Math.max(defaults[docsIdx] ?? 168, 168);
     if ((next[docsIdx] ?? 0) < minDocs) {
       if (!changed) {
         next = [...next];
@@ -246,6 +246,8 @@ interface LineTableProps {
   onGerarEtiqueta?: (item: LineItemWithOrder) => void;
   /** Abrir modal de certificado de qualidade (linha de produção). */
   onGerarCertificado?: (item: LineItemWithOrder) => void;
+  /** Abrir modal de etiqueta de embalagem (caixa). */
+  onGerarEmbalagem?: (item: LineItemWithOrder) => void;
 }
 
 export function LineTable({
@@ -270,22 +272,25 @@ export function LineTable({
   onAlmoxSupply,
   onGerarEtiqueta,
   onGerarCertificado,
+  onGerarEmbalagem,
 }: LineTableProps) {
   /**
    * Datas na linha usam dia/mês (`21/7`) — colunas mais estreitas (~64–76px).
    */
   const selectCol = Boolean(onToggleItemSelected);
-  const showEtq = Boolean(onGerarEtiqueta || onGerarCertificado);
+  const showEtq = Boolean(
+    onGerarEtiqueta || onGerarCertificado || onGerarEmbalagem
+  );
   const defaultWidths = useMemo(
     () =>
       isAlmoxarifado
         ? [100, 88, 72, 200, 44, 88, 88, 88, 56]
         : selectCol
           ? showEtq
-            ? [32, 58, 120, 72, 220, 40, 56, 56, 72, 72, 100, 64, 152, 36]
+            ? [32, 58, 120, 72, 220, 40, 56, 56, 72, 72, 100, 64, 168, 36]
             : [32, 58, 120, 72, 220, 40, 56, 56, 72, 72, 100, 64, 36]
           : showEtq
-            ? [58, 120, 72, 220, 40, 56, 56, 72, 72, 100, 64, 152, 36]
+            ? [58, 120, 72, 220, 40, 56, 56, 72, 72, 100, 64, 168, 36]
             : [58, 120, 72, 220, 40, 56, 56, 72, 72, 100, 64, 36],
     [isAlmoxarifado, selectCol, showEtq]
   );
@@ -346,10 +351,10 @@ export function LineTable({
         ? [56, 64, 52, 96, 36, 72, 72, 64, 40]
         : selectCol
           ? showEtq
-            ? [28, 44, 72, 52, 96, 36, 48, 48, 60, 60, 64, 52, 140, 32]
+            ? [28, 44, 72, 52, 96, 36, 48, 48, 60, 60, 64, 52, 156, 32]
             : [28, 44, 72, 52, 96, 36, 48, 48, 60, 60, 64, 52, 32]
           : showEtq
-            ? [44, 72, 52, 96, 36, 48, 48, 60, 60, 64, 52, 140, 32]
+            ? [44, 72, 52, 96, 36, 48, 48, 60, 60, 64, 52, 156, 32]
             : [44, 72, 52, 96, 36, 48, 48, 60, 60, 64, 52, 32],
     [isAlmoxarifado, selectCol, showEtq]
   );
@@ -976,6 +981,17 @@ export function LineTable({
                     ) : (
                       <span />
                     )}
+                    {onGerarEmbalagem ? (
+                      <button
+                        type="button"
+                        onClick={() => onGerarEmbalagem(item)}
+                        className="col-span-2 inline-flex h-7 min-w-0 flex-row items-center justify-center gap-1 rounded-md bg-amber-700 px-1 text-[8px] font-semibold leading-none text-white shadow-sm transition-colors hover:bg-amber-800 active:scale-[0.98] touch-manipulation"
+                        title="Gerar etiqueta de embalagem (caixa)"
+                      >
+                        <Package className="h-3 w-3 shrink-0" aria-hidden />
+                        Embalagem
+                      </button>
+                    ) : null}
                   </div>
                   {item.motor_vazao != null ? (
                     <span

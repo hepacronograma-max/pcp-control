@@ -19,6 +19,7 @@ import {
 } from "@/components/compras/purchase-orders-table";
 import { toast } from "sonner";
 import { formatShortDate } from "@/lib/utils/date";
+import type { OmiePurchaseImportReport } from "@/lib/omie/types";
 
 type ItemForLink = {
   id: string;
@@ -60,12 +61,15 @@ export default function ComprasPage() {
   const [newSupplier, setNewSupplier] = useState("");
   const [newExpected, setNewExpected] = useState("");
   const [newNotes, setNewNotes] = useState("");
+  const [importingOmie, setImportingOmie] = useState(false);
 
   const allowed = profile && hasPermission(profile.role, "viewCompras");
   const canEditCompras = profile && hasPermission(profile.role, "editCompras");
   const readOnly = Boolean(allowed && !canEditCompras);
   const canImport =
     profile && hasPermission(profile.role, "importComprasPdfs");
+  const canImportOmie =
+    profile && hasPermission(profile.role, "editCompras");
 
   useEffect(() => {
     if (userLoading) return;
@@ -198,7 +202,7 @@ export default function ComprasPage() {
         toast.error(j2.error || "Falha ao vincular");
         return;
       }
-      toast.success("Item vinculado — PC e prazo de vendas atualizados no item");
+      toast.success("Item vinculado — nº do PC e prazo de entrega atualizados no item");
       void load();
     } catch {
       toast.error("Erro de rede");
@@ -231,6 +235,65 @@ export default function ComprasPage() {
       void load();
     } catch {
       toast.error("Erro de rede");
+    }
+  }
+
+  async function handleImportOmie() {
+    setImportingOmie(true);
+    const loadingToast = toast.loading("Importando pedidos de compra do Omie…");
+    try {
+      const res = await fetch("/api/admin/omie-compras", {
+        method: "POST",
+        credentials: "include",
+      });
+      const json = (await res.json()) as {
+        ok?: boolean;
+        skipped?: boolean;
+        report?: OmiePurchaseImportReport;
+        error?: string;
+      };
+      if (!res.ok) {
+        toast.error(json.error ?? `Erro ${res.status}`, { id: loadingToast });
+        return;
+      }
+      if (json.skipped) {
+        toast.info("Outra importação já está em andamento. Tente de novo em instantes.", {
+          id: loadingToast,
+        });
+        return;
+      }
+      const r = json.report;
+      if (!r) {
+        toast.success("Importação concluída", { id: loadingToast });
+        void load();
+        return;
+      }
+      if (r.modo === "shadow") {
+        toast.info(
+          `Simulação shadow: ${r.encontrados} PC(s) no Omie — nada gravado. Ative OMIE_INTEGRATION_MODE=active para gravar.`,
+          { id: loadingToast }
+        );
+        return;
+      }
+      const parts = [
+        `${r.encontrados} no Omie`,
+        r.pedidos_novos ? `${r.pedidos_novos} novo(s)` : null,
+        r.pedidos_atualizados ? `${r.pedidos_atualizados} atualizado(s)` : null,
+        r.erros.length ? `${r.erros.length} erro(s)` : null,
+      ].filter(Boolean);
+      const title = r.erros.length
+        ? "Importação Omie com erros"
+        : "Pedidos de compra importados do Omie";
+      const fn = r.erros.length ? toast.warning : toast.success;
+      fn(title, {
+        id: loadingToast,
+        description: parts.join(" · ") || undefined,
+      });
+      void load();
+    } catch {
+      toast.error("Erro de rede ao importar do Omie", { id: loadingToast });
+    } finally {
+      setImportingOmie(false);
     }
   }
 
@@ -318,8 +381,8 @@ export default function ComprasPage() {
         <div>
           <h1 className="text-lg font-semibold text-slate-900">Compras</h1>
           <p className="text-sm text-slate-600">
-            Pedidos de compra, importação de PDF, vínculo a itens de venda (preenche nº de PC e
-            prazo de vendas no item) e acompanhamento de prazos.
+            Pedidos de compra do Omie, vínculo a item de pedido de venda (preenche nº de PC e
+            prazo de entrega na produção) e acompanhamento de prazos.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap shrink-0 justify-end">
@@ -411,6 +474,16 @@ export default function ComprasPage() {
           >
             ➕ Novo PC
           </Button>
+          {canImportOmie && (
+            <Button
+              type="button"
+              className="text-xs h-8"
+              onClick={() => void handleImportOmie()}
+              disabled={schemaMissing || importingOmie}
+            >
+              {importingOmie ? "Importando…" : "Importar do Omie"}
+            </Button>
+          )}
           {canImport && (
             <Button
               className="text-xs h-8"

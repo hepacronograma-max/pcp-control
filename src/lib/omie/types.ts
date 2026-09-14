@@ -32,10 +32,40 @@ export interface OmiePedidoItemDet {
   produto?: OmiePedidoItemProduto;
 }
 
+export interface OmieInfoCadastro {
+  faturado?: string;
+  dFat?: string;
+  hFat?: string;
+  cancelado?: string;
+}
+
+export interface OmieListaNfe {
+  numero_nfe?: string;
+  numeroNF?: string;
+  nNF?: string;
+  status_nfe?: string;
+  cancelada?: string;
+}
+
 export interface OmiePedidoCompleto {
   cabecalho?: OmiePedidoCabecalho;
   det?: OmiePedidoItemDet[];
   informacoes_adicionais?: Record<string, unknown>;
+  infoCadastro?: OmieInfoCadastro;
+  lista_nfe?: OmieListaNfe[];
+  /** StatusPedido usa este nome (documentação Omie). */
+  ListaNfe?: OmieListaNfe[];
+}
+
+/** Retorno de StatusPedido — onde o Omie lista as NF-es do pedido. */
+export interface OmiePedidoStatus {
+  codigo_pedido?: number;
+  numero_pedido?: string;
+  etapa?: string;
+  cancelada?: string;
+  faturada?: string;
+  lista_nfe?: OmieListaNfe[];
+  ListaNfe?: OmieListaNfe[];
 }
 
 export interface OmiePedidoResumo {
@@ -132,3 +162,77 @@ export type OmieSyncIncrementalCounters = Pick<
   | "itens_marcados_removido_no_omie"
   | "itens_marcados_divergente_no_omie"
 >;
+
+/** Cabeçalho de pedido de compra Omie (`cabecalho_consulta`). */
+export interface OmiePedidoCompraCabecalho {
+  nCodPed?: number;
+  cCodIntPed?: string;
+  cNumero?: string;
+  dDtPrevisao?: string;
+  cEtapa?: string;
+  nCodFor?: number;
+  cNumPedido?: string;
+  cObs?: string;
+  cObsInt?: string;
+  /** Campos extras que às vezes vêm no JSON. */
+  cRazaoFor?: string;
+  nome_fornecedor?: string;
+  razao_social?: string;
+  nome_fantasia?: string;
+}
+
+export interface OmiePedidoCompraProduto {
+  nCodItem?: number;
+  nCodProd?: number;
+  cProduto?: string;
+  cDescricao?: string;
+  cNCM?: string;
+  cUnidade?: string;
+  nQtde?: number;
+  nQtdeRec?: number;
+  cObs?: string;
+}
+
+export interface OmiePedidoCompra {
+  cabecalho_consulta?: OmiePedidoCompraCabecalho;
+  produtos_consulta?: OmiePedidoCompraProduto[];
+}
+
+export interface OmiePesquisarPedCompraResponse {
+  nPagina?: number;
+  nRegsPorPagina?: number;
+  nTotalPaginas?: number;
+  nTotalRegistros?: number;
+  pedidos_pesquisa?: OmiePedidoCompra[];
+}
+
+export interface PcpPurchaseImportDraft {
+  companyId: string;
+  number: string;
+  supplierName: string | null;
+  expectedDelivery: string | null;
+  status: "open" | "received";
+  notes: string | null;
+  omieCodigo: number;
+  omieEtapa: string | null;
+  items: Array<{
+    lineNumber: number;
+    productCode: string | null;
+    description: string | null;
+    ncm: string | null;
+    quantity: number | null;
+    unit: string | null;
+  }>;
+}
+
+export interface OmiePurchaseImportReport {
+  modo: "shadow" | "active";
+  encontrados: number;
+  pedidos_novos: number;
+  pedidos_atualizados: number;
+  itens_gravados: number;
+  skipped: number;
+  skipped_reason?: "locked";
+  erros: Array<{ omie_codigo_pedcompra?: number; message: string }>;
+  shadow_logs?: string[];
+}

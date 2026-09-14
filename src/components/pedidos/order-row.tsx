@@ -109,6 +109,7 @@ export function OrderRow({
     order.pcp_reply_comercial_observation ?? ""
   );
   const [savingPcpReply, setSavingPcpReply] = useState(false);
+  const [recadoOpen, setRecadoOpen] = useState(false);
 
   useEffect(() => {
     setPcpReplyDraft(order.pcp_reply_comercial_observation ?? "");
@@ -150,13 +151,19 @@ export function OrderRow({
   }, [order.id]);
 
   useEffect(() => {
-    if (!expanded || !canReplyAsPcp || obsText.length === 0 || !needsComercialObsReply) {
+    if (
+      (!expanded && !recadoOpen) ||
+      !canReplyAsPcp ||
+      obsText.length === 0 ||
+      !needsComercialObsReply
+    ) {
       return;
     }
     writeComercialObsSeen(order.id, obsSeenToken);
     setStoredObsSeenToken(obsSeenToken);
   }, [
     expanded,
+    recadoOpen,
     order.id,
     obsSeenToken,
     canReplyAsPcp,
@@ -164,15 +171,11 @@ export function OrderRow({
     needsComercialObsReply,
   ]);
 
-  /** Pendência real no pedido; o piscar só enquanto o recado atual não foi “visto” (expandir linha). */
+  /** Pendência real no pedido; o piscar só enquanto o recado atual não foi “visto”. */
   const showComercialObsPulse =
     comercialObsPendingForPcp && storedObsSeenToken !== obsSeenToken;
 
-  /** Na lista: PCP/gestão só vê o badge com recado novo não lido; após expandir some até novo recado. Outros perfis: sempre que houver texto. */
-  const showObsComercialBadgeInRow =
-    obsText.length > 0 &&
-    (!canReplyAsPcp ||
-      (needsComercialObsReply && storedObsSeenToken !== obsSeenToken));
+  const hasRecadoThread = obsText.length > 0 || pcpReplyText.length > 0;
 
   const principalStatus = getOrderPrincipalStatus(order);
   const displayProductionDeadline = effectiveOrderProductionDeadline(order);
@@ -317,8 +320,8 @@ export function OrderRow({
       <div
         className={`grid gap-2 px-3 sm:px-4 py-1.5 border-b border-slate-200 text-xs items-center transition-colors ${
           showSelect
-            ? "grid-cols-[28px_minmax(0,0.82fr)_minmax(0,1.28fr)_minmax(0,0.88fr)_minmax(0,0.88fr)_minmax(0,1.02fr)_minmax(0,0.88fr)_28px_minmax(0,1.95fr)_4.75rem]"
-            : "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.35fr)_minmax(0,0.92fr)_minmax(0,0.92fr)_minmax(0,1.06fr)_minmax(0,0.92fr)_minmax(0,2.1fr)_4.75rem]"
+            ? "grid-cols-[28px_minmax(0,0.82fr)_minmax(0,1.28fr)_minmax(0,0.88fr)_minmax(0,0.88fr)_minmax(0,1.02fr)_minmax(0,0.88fr)_28px_minmax(0,1.7fr)_2.75rem_4.75rem]"
+            : "grid-cols-[28px_minmax(0,0.9fr)_minmax(0,1.35fr)_minmax(0,0.92fr)_minmax(0,0.92fr)_minmax(0,1.06fr)_minmax(0,0.92fr)_minmax(0,1.85fr)_2.75rem_4.75rem]"
         } ${rowTrafficClass}`}
         title={
           traffic === "white"
@@ -392,41 +395,12 @@ export function OrderRow({
           </div>
         )}
         <div className="flex flex-nowrap items-center justify-end gap-1 overflow-x-auto min-w-0">
-          {showObsComercialBadgeInRow && (
-            <span
-              className={`inline-flex shrink-0 max-w-[10rem] truncate rounded-full bg-sky-100 text-sky-900 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap border border-sky-200 ${
-                showComercialObsPulse
-                  ? "motion-safe:animate-comercial-obs-pulse motion-reduce:animate-none ring-2 ring-sky-400 ring-offset-1 ring-offset-transparent motion-reduce:ring-0"
-                  : ""
-              }`}
-              title={
-                showComercialObsPulse
-                  ? "Novo recado do Comercial — expanda o pedido para ler e responder"
-                  : (order.comercial_pcp_observation ?? undefined)
-              }
-              aria-label={
-                showComercialObsPulse
-                  ? "Recado novo do Comercial — não lido"
-                  : "Observação do Comercial"
-              }
-            >
-              Obs. Comercial
-            </span>
-          )}
           {omieAlertCount > 0 && (
             <span
               className="inline-flex shrink-0 max-w-[12rem] truncate rounded-full bg-red-100 text-red-900 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap border border-red-300"
               title={`${omieAlertCount} item(ns) com alerta Omie — expanda o pedido para ver detalhes`}
             >
               Alerta Omie ({omieAlertCount})
-            </span>
-          )}
-          {pcpReplyText.length > 0 && !comercialObsPendingForPcp && (
-            <span
-              className="inline-flex shrink-0 max-w-[10rem] truncate rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap border border-emerald-200"
-              title={order.pcp_reply_comercial_observation ?? undefined}
-            >
-              Resp. PCP
             </span>
           )}
           {principalStatus === "atrasado" && (
@@ -502,6 +476,42 @@ export function OrderRow({
               </button>
             </>
           )}
+        </div>
+        <div className="flex justify-center items-center">
+          <button
+            type="button"
+            className={`rounded-md p-1 min-h-[28px] min-w-[28px] flex items-center justify-center border border-transparent hover:bg-white/80 hover:border-slate-200 transition-colors ${
+              hasRecadoThread ? "text-sky-700" : "text-slate-400"
+            } ${
+              showComercialObsPulse
+                ? "motion-safe:animate-comercial-obs-pulse motion-reduce:animate-none ring-2 ring-sky-400 ring-offset-1 ring-offset-transparent motion-reduce:ring-0"
+                : ""
+            }`}
+            title={
+              hasRecadoThread
+                ? [
+                    obsText && `Comercial: ${obsText.slice(0, 240)}`,
+                    pcpReplyText && `PCP: ${pcpReplyText.slice(0, 240)}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" | ") || "Recado"
+                : "Recado com o Comercial"
+            }
+            aria-label={
+              showComercialObsPulse
+                ? "Recado novo do Comercial — não lido"
+                : "Recado"
+            }
+            aria-expanded={recadoOpen}
+            onClick={(e) => {
+              e.stopPropagation();
+              setRecadoOpen((v) => !v);
+            }}
+          >
+            <span className="text-base leading-none" aria-hidden>
+              {hasRecadoThread ? "●" : "○"}
+            </span>
+          </button>
         </div>
         <div className="flex justify-center items-center gap-1 min-w-0 py-0.5">
           {cqCompanyId ? (
@@ -671,111 +681,115 @@ export function OrderRow({
         </div>
       )}
 
-      {expanded && (
-        <>
-          {(obsText.length > 0 ||
-            pcpReplyText.length > 0 ||
-            (canReplyAsPcp && obsText.length > 0)) && (
-            <div className="mx-3 mb-2 space-y-2">
-              {obsText.length > 0 && (
-                <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-slate-800">
-                  <p className="text-[11px] font-semibold text-sky-950">
-                    Comercial → PCP
-                  </p>
-                  <p className="whitespace-pre-wrap mt-1">{order.comercial_pcp_observation}</p>
-                  {(order.comercial_pcp_observation_by ||
-                    order.comercial_pcp_observation_at) && (
-                    <p className="text-[10px] text-sky-900/85 mt-1.5">
-                      Por {order.comercial_pcp_observation_by ?? "—"}
-                      {order.comercial_pcp_observation_at
-                        ? ` · ${formatBrazilianDateTime(order.comercial_pcp_observation_at)}`
-                        : ""}
-                    </p>
-                  )}
-                </div>
-              )}
-              {pcpReplyText.length > 0 && !canReplyAsPcp && (
-                <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-slate-800">
-                  <p className="text-[11px] font-semibold text-emerald-950">
-                    PCP → Comercial
-                  </p>
-                  <p className="whitespace-pre-wrap mt-1">
-                    {order.pcp_reply_comercial_observation}
-                  </p>
-                  {(order.pcp_reply_comercial_observation_by ||
-                    order.pcp_reply_comercial_observation_at) && (
-                    <p className="text-[10px] text-emerald-900/85 mt-1.5">
-                      Por {order.pcp_reply_comercial_observation_by ?? "—"}
-                      {order.pcp_reply_comercial_observation_at
-                        ? ` · ${formatBrazilianDateTime(order.pcp_reply_comercial_observation_at)}`
-                        : ""}
-                    </p>
-                  )}
-                </div>
-              )}
-              {canReplyAsPcp && obsText.length > 0 && (
-                <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs space-y-2">
-                  <p className="text-[11px] font-semibold text-slate-800">
-                    Sua resposta ao Comercial
-                  </p>
-                  <textarea
-                    className="w-full rounded-md border border-slate-300 px-2 py-2 text-xs text-slate-800 min-h-[4rem] resize-y max-h-[12rem]"
-                    placeholder="Ex.: prazo mantido na programação atual / linha X às quintas…"
-                    maxLength={2000}
-                    rows={3}
-                    value={pcpReplyDraft}
-                    onChange={(e) => setPcpReplyDraft(e.target.value.slice(0, 2000))}
-                    disabled={savingPcpReply}
-                  />
-                  {pcpReplyText.length > 0 &&
-                    (order.pcp_reply_comercial_observation_by ||
-                      order.pcp_reply_comercial_observation_at) && (
-                      <p className="text-[10px] text-slate-500">
-                        Última resposta registrada:{" "}
-                        {order.pcp_reply_comercial_observation_by ?? "—"}
-                        {order.pcp_reply_comercial_observation_at
-                          ? ` · ${formatBrazilianDateTime(order.pcp_reply_comercial_observation_at)}`
-                          : ""}
-                      </p>
-                    )}
-                  <div className="flex flex-wrap gap-2 justify-end">
-                    <button
-                      type="button"
-                      className="rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100 disabled:opacity-50"
-                      disabled={savingPcpReply}
-                      onClick={() =>
-                        setPcpReplyDraft(order.pcp_reply_comercial_observation ?? "")
-                      }
-                    >
-                      Descartar edição
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded-md border border-emerald-400 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
-                      disabled={savingPcpReply}
-                      onClick={() => void submitPcpReply()}
-                    >
-                      {savingPcpReply ? "Salvando…" : "Salvar resposta"}
-                    </button>
-                  </div>
-                </div>
+      {(recadoOpen ||
+        (expanded &&
+          (hasRecadoThread || (canReplyAsPcp && obsText.length > 0)))) && (
+        <div className="mx-3 mb-2 space-y-2">
+          {!hasRecadoThread && recadoOpen && !expanded && (
+            <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Nenhum recado neste pedido. O Comercial registra a observação na tela Comercial.
+            </p>
+          )}
+          {obsText.length > 0 && (
+            <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-slate-800">
+              <p className="text-[11px] font-semibold text-sky-950">
+                Comercial → PCP
+              </p>
+              <p className="whitespace-pre-wrap mt-1">{order.comercial_pcp_observation}</p>
+              {(order.comercial_pcp_observation_by ||
+                order.comercial_pcp_observation_at) && (
+                <p className="text-[10px] text-sky-900/85 mt-1.5">
+                  Por {order.comercial_pcp_observation_by ?? "—"}
+                  {order.comercial_pcp_observation_at
+                    ? ` · ${formatBrazilianDateTime(order.comercial_pcp_observation_at)}`
+                    : ""}
+                </p>
               )}
             </div>
           )}
-          <OrderItems
-            items={order.items}
-            lines={lines}
-            orderPcpDeadline={order.pcp_deadline}
-            onChangeLine={onUpdateItemLine}
-            onChangeQuantity={onUpdateItemQuantity}
-            onChangeProductCode={onUpdateItemProductCode}
-            onChangeDescription={onUpdateItemDescription}
-            canEditItemDetails={canEditItemDetails}
-            onUpdateItemPc={onUpdateItemPc}
-            canReopenCompletedItem={canReopenCompletedItem}
-            onReopenCompletedItem={onReopenCompletedItem}
-          />
-        </>
+          {pcpReplyText.length > 0 && !canReplyAsPcp && (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-slate-800">
+              <p className="text-[11px] font-semibold text-emerald-950">
+                PCP → Comercial
+              </p>
+              <p className="whitespace-pre-wrap mt-1">
+                {order.pcp_reply_comercial_observation}
+              </p>
+              {(order.pcp_reply_comercial_observation_by ||
+                order.pcp_reply_comercial_observation_at) && (
+                <p className="text-[10px] text-emerald-900/85 mt-1.5">
+                  Por {order.pcp_reply_comercial_observation_by ?? "—"}
+                  {order.pcp_reply_comercial_observation_at
+                    ? ` · ${formatBrazilianDateTime(order.pcp_reply_comercial_observation_at)}`
+                    : ""}
+                </p>
+              )}
+            </div>
+          )}
+          {canReplyAsPcp && obsText.length > 0 && (
+            <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs space-y-2">
+              <p className="text-[11px] font-semibold text-slate-800">
+                Sua resposta ao Comercial
+              </p>
+              <textarea
+                className="w-full rounded-md border border-slate-300 px-2 py-2 text-xs text-slate-800 min-h-[4rem] resize-y max-h-[12rem]"
+                placeholder="Ex.: prazo mantido na programação atual / linha X às quintas…"
+                maxLength={2000}
+                rows={3}
+                value={pcpReplyDraft}
+                onChange={(e) => setPcpReplyDraft(e.target.value.slice(0, 2000))}
+                disabled={savingPcpReply}
+              />
+              {pcpReplyText.length > 0 &&
+                (order.pcp_reply_comercial_observation_by ||
+                  order.pcp_reply_comercial_observation_at) && (
+                  <p className="text-[10px] text-slate-500">
+                    Última resposta registrada:{" "}
+                    {order.pcp_reply_comercial_observation_by ?? "—"}
+                    {order.pcp_reply_comercial_observation_at
+                      ? ` · ${formatBrazilianDateTime(order.pcp_reply_comercial_observation_at)}`
+                      : ""}
+                  </p>
+                )}
+              <div className="flex flex-wrap gap-2 justify-end">
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-[11px] text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+                  disabled={savingPcpReply}
+                  onClick={() =>
+                    setPcpReplyDraft(order.pcp_reply_comercial_observation ?? "")
+                  }
+                >
+                  Descartar edição
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-emerald-400 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                  disabled={savingPcpReply}
+                  onClick={() => void submitPcpReply()}
+                >
+                  {savingPcpReply ? "Salvando…" : "Salvar resposta"}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {expanded && (
+        <OrderItems
+          items={order.items}
+          lines={lines}
+          orderPcpDeadline={order.pcp_deadline}
+          onChangeLine={onUpdateItemLine}
+          onChangeQuantity={onUpdateItemQuantity}
+          onChangeProductCode={onUpdateItemProductCode}
+          onChangeDescription={onUpdateItemDescription}
+          canEditItemDetails={canEditItemDetails}
+          onUpdateItemPc={onUpdateItemPc}
+          canReopenCompletedItem={canReopenCompletedItem}
+          onReopenCompletedItem={onReopenCompletedItem}
+        />
       )}
     </>
   );

@@ -309,8 +309,9 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     !!lineIdFromPath &&
     navBuckets.producao.some((l) => l.id === lineIdFromPath);
   const logisticaNavActive =
-    !!lineIdFromPath &&
-    navBuckets.logistica.some((l) => l.id === lineIdFromPath);
+    pathname?.startsWith("/expedicao") ||
+    (!!lineIdFromPath &&
+      navBuckets.logistica.some((l) => l.id === lineIdFromPath));
 
   function handleLogout() {
     const isLocalUser =
@@ -360,6 +361,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   const canViewCompras =
     !profile || hasPermission(profile.role, "viewCompras");
   const canViewTasks = !profile || hasPermission(profile.role, "viewTasks");
+  const canViewFaturamento =
+    !profile || hasPermission(profile.role, "viewFaturamento");
+  const canViewExpedicao =
+    !profile || hasPermission(profile.role, "viewExpedicao");
   /** Sem Supabase, ou perfil com id não‑UUID → contagem só em localStorage. */
   const tasksPendingUsesLocalOnly = useMemo(() => {
     if (!supabase) return true;
@@ -368,6 +373,9 @@ export function DashboardShell({ children }: { children: ReactNode }) {
   }, [profile?.id, supabase]);
   const showProductionLines =
     profile && canViewProductionLineMenu(profile.role);
+  const showLogisticaGroup =
+    Boolean(showProductionLines && navBuckets.logistica.length > 0) ||
+    Boolean(canViewExpedicao);
 
   /** Badge do menu «Atividades»: tarefas com status ≠ done. */
   useEffect(() => {
@@ -573,7 +581,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
               })}
             </SidebarNavGroup>
           )}
-          {showProductionLines && navBuckets.logistica.length > 0 && (
+          {showLogisticaGroup && (
             <SidebarNavGroup
               title="Logística"
               activeSubgroup={logisticaNavActive}
@@ -584,6 +592,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   : undefined
               }
             >
+              {canViewExpedicao ? (
+                <SidebarItem
+                  label="Expedição"
+                  href="/expedicao"
+                  active={pathname?.startsWith("/expedicao")}
+                />
+              ) : null}
               {navBuckets.logistica.map((line) => {
                 const sig = sidebarSignalByLineId[line.id] ?? 0;
                 const unp = (unprogrammedByLine[line.id] ?? 0) > 0;
@@ -600,6 +615,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                 );
               })}
             </SidebarNavGroup>
+          )}
+          {canViewFaturamento && (
+            <SidebarItem
+              label="Faturamento"
+              href="/faturamento"
+              active={pathname?.startsWith("/faturamento")}
+            />
           )}
           {canViewSettings && (
             <SidebarItem
@@ -766,7 +788,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   })}
                 </SidebarNavGroup>
               )}
-              {showProductionLines && navBuckets.logistica.length > 0 && (
+              {showLogisticaGroup && (
                 <SidebarNavGroup
                   title="Logística"
                   activeSubgroup={logisticaNavActive}
@@ -777,6 +799,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                       : undefined
                   }
                 >
+                  {canViewExpedicao ? (
+                    <SidebarItem
+                      label="Expedição"
+                      href="/expedicao"
+                      active={pathname?.startsWith("/expedicao")}
+                      onClick={() => setSidebarOpen(false)}
+                    />
+                  ) : null}
                   {navBuckets.logistica.map((line) => {
                     const sig = sidebarSignalByLineId[line.id] ?? 0;
                     const unp = (unprogrammedByLine[line.id] ?? 0) > 0;
@@ -794,6 +824,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                     );
                   })}
                 </SidebarNavGroup>
+              )}
+              {canViewFaturamento && (
+                <SidebarItem
+                  label="Faturamento"
+                  href="/faturamento"
+                  active={pathname?.startsWith("/faturamento")}
+                  onClick={() => setSidebarOpen(false)}
+                />
               )}
               {canViewSettings && (
                 <SidebarItem

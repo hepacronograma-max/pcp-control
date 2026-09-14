@@ -26,6 +26,7 @@ import {
 } from "@/components/linha/gantt-calendar";
 import { GerarEtiquetaModal } from "@/components/linha/gerar-etiqueta-modal";
 import { GerarCertificadoModal } from "@/components/linha/gerar-certificado-modal";
+import { GerarEmbalagemModal } from "@/components/linha/gerar-embalagem-modal";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { fetchLineDataRequest } from "@/lib/api/fetch-line-data";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
@@ -111,6 +112,8 @@ export default function LinePage() {
     null
   );
   const [certificadoItem, setCertificadoItem] =
+    useState<LineItemWithOrder | null>(null);
+  const [embalagemItem, setEmbalagemItem] =
     useState<LineItemWithOrder | null>(null);
 
   useEffect(() => {
@@ -1179,6 +1182,11 @@ export default function LinePage() {
                     ? undefined
                     : (item) => setCertificadoItem(item)
                 }
+                onGerarEmbalagem={
+                  isAlmoxarifado
+                    ? undefined
+                    : (item) => setEmbalagemItem(item)
+                }
                 allLines={allLines}
                 columnWidths={
                   linePrefs.columnWidths.length > 0
@@ -1262,6 +1270,12 @@ export default function LinePage() {
             prev && prev.id === itemId ? { ...prev, ...patch } : prev
           );
         }}
+      />
+      <GerarEmbalagemModal
+        item={embalagemItem}
+        companyId={effectiveCompanyId ?? profile.company_id}
+        open={embalagemItem != null}
+        onClose={() => setEmbalagemItem(null)}
       />
     </div>
   );

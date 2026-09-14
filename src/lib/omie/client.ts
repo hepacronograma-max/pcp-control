@@ -1,24 +1,32 @@
 import type {
   OmieListarPedidosResponse,
+  OmiePedidoCompra,
   OmiePedidoCompleto,
   OmiePedidoResumo,
+  OmiePedidoStatus,
+  OmiePesquisarPedCompraResponse,
   OmieRpcError,
 } from "./types";
 
 const PEDIDO_URL = "https://app.omie.com.br/api/v1/produtos/pedido/";
+const PEDIDO_COMPRA_URL = "https://app.omie.com.br/api/v1/produtos/pedidocompra/";
 const CLIENTES_URL = "https://app.omie.com.br/api/v1/geral/clientes/";
+const FORNECEDORES_URL = "https://app.omie.com.br/api/v1/geral/fornecedores/";
 const MIN_INTERVAL_MS = 1000;
 const MAX_RETRIES = 3;
 const TIMEOUT_MS = 30_000;
 
-/** Métodos de escrita proibidos nesta entrega (guard rail). */
+/** Métodos de escrita proibidos nesta entrega (guard rail). StatusPedido é consulta. */
 const BLOCKED_CALLS = new Set([
   "AlterarEtapaPedido",
   "IncluirPedido",
   "AlterarPedido",
   "ExcluirPedido",
-  "StatusPedido",
   "TrocarEtapaPedido",
+  "IncluirPedCompra",
+  "AlterarPedCompra",
+  "ExcluirPedCompra",
+  "UpsertPedCompra",
 ]);
 
 type RpcResponse<T> = T & { faultstring?: string; faultcode?: string };
@@ -52,8 +60,12 @@ export class OmieClient {
     private readonly appSecret = process.env.OMIE_APP_SECRET?.trim() ?? ""
   ) {}
 
+  isConfigured(): boolean {
+    return Boolean(this.appKey && this.appSecret);
+  }
+
   assertConfigured() {
-    if (!this.appKey || !this.appSecret) {
+    if (!this.isConfigured()) {
       throw new Error("OMIE_APP_KEY e OMIE_APP_SECRET são obrigatórios");
     }
   }
@@ -70,7 +82,8 @@ export class OmieClient {
     call: string,
     param: Record<string, unknown>,
     attempt = 0,
-    baseUrl = PEDIDO_URL
+    baseUrl = PEDIDO_URL,
+    timeoutMs = TIMEOUT_MS
   ): Promise<T> {
     if (BLOCKED_CALLS.has(call)) {
       throw new Error(`Método Omie bloqueado (somente leitura): ${call}`);
@@ -80,7 +93,7 @@ export class OmieClient {
     await this.throttle();
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const res = await fetch(baseUrl, {
@@ -111,7 +124,7 @@ export class OmieClient {
         if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
           const delay = Math.min(30_000, 1000 * 2 ** attempt);
           await new Promise((r) => setTimeout(r, delay));
-          return this.call<T>(call, param, attempt + 1, baseUrl);
+          return this.call<T>(call, param, attempt + 1, baseUrl, timeoutMs);
         }
         throw new Error(`Omie ${call} HTTP ${res.status}`);
       }
@@ -119,9 +132,9 @@ export class OmieClient {
       return json as T;
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        throw new Error(`Omie ${call}: timeout ${TIMEOUT_MS}ms`);
+        throw new Error(`Omie ${call}: timeout ${timeoutMs}ms`);
       }
-      if (attempt < MAX_RETRIES && err instanceof Error) {
+      if (attempt < MAX_RETRIES && err instanceof Error && call !== "StatusPedido") {
         const retryable =
           err.message.includes("429") ||
           err.message.includes("HTTP 5") ||
@@ -129,7 +142,7 @@ export class OmieClient {
         if (retryable) {
           const delay = Math.min(30_000, 1000 * 2 ** attempt);
           await new Promise((r) => setTimeout(r, delay));
-          return this.call<T>(call, param, attempt + 1, baseUrl);
+          return this.call<T>(call, param, attempt + 1, baseUrl, timeoutMs);
         }
       }
       throw err;
@@ -199,6 +212,17 @@ export class OmieClient {
     return res.pedido_venda_produto ?? (res as unknown as OmiePedidoCompleto);
   }
 
+  /** Consulta status e NF-es do pedido (somente leitura). */
+  async statusPedido(codigo_pedido: number): Promise<OmiePedidoStatus> {
+    return this.call<OmiePedidoStatus>(
+      "StatusPedido",
+      { codigo_pedido },
+      0,
+      PEDIDO_URL,
+      8_000
+    );
+  }
+
   /** Consulta cadastro do cliente (somente leitura). */
   async consultarCliente(codigo_cliente_omie: number): Promise<{
     codigo_cliente_omie?: number;
@@ -210,6 +234,84 @@ export class OmieClient {
       { codigo_cliente_omie },
       0,
       CLIENTES_URL
+    );
+  }
+
+  /** Lista pedidos de compra (somente leitura). */
+  async pesquisarPedCompra(opts: {
+    pagina?: number;
+    registros_por_pagina?: number;
+    dataInicial?: string;
+    dataFinal?: string;
+  }): Promise<{
+    pedidos: OmiePedidoCompra[];
+    total_de_paginas: number;
+    total_de_registros: number;
+  }> {
+    const pagina = opts.pagina ?? 1;
+    const param = {
+      nPagina: pagina,
+      nRegsPorPagina: opts.registros_por_pagina ?? 50,
+      lApenasImportadoApi: "F",
+      lExibirPedidosPendentes: "T",
+      lExibirPedidosFaturados: "T",
+      lExibirPedidosRecebidos: "T",
+      lExibirPedidosCancelados: "F",
+      lExibirPedidosEncerrados: "F",
+      lExibirPedidosRecParciais: "T",
+      lExibirPedidosFatParciais: "T",
+      ...(opts.dataInicial ? { dDataInicial: opts.dataInicial } : {}),
+      ...(opts.dataFinal ? { dDataFinal: opts.dataFinal } : {}),
+    };
+    let res: OmiePesquisarPedCompraResponse;
+    try {
+      res = await this.call<OmiePesquisarPedCompraResponse>(
+        "PesquisarPedCompra",
+        param,
+        0,
+        PEDIDO_COMPRA_URL
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/não existe|nao existe|unknown|inválid|invalid|SOAP-ENV/i.test(msg)) {
+        throw err;
+      }
+      res = await this.call<OmiePesquisarPedCompraResponse>(
+        "ListarPedCompra",
+        param,
+        0,
+        PEDIDO_COMPRA_URL
+      );
+    }
+
+    return {
+      pedidos: Array.isArray(res.pedidos_pesquisa) ? res.pedidos_pesquisa : [],
+      total_de_paginas: res.nTotalPaginas ?? pagina,
+      total_de_registros: res.nTotalRegistros ?? 0,
+    };
+  }
+
+  /** Consulta um pedido de compra com itens (somente leitura). */
+  async consultarPedCompra(nCodPed: number): Promise<OmiePedidoCompra> {
+    const res = await this.call<
+      OmiePesquisarPedCompraResponse & OmiePedidoCompra
+    >("ConsultarPedCompra", { nCodPed }, 0, PEDIDO_COMPRA_URL);
+    const first = res.pedidos_pesquisa?.[0];
+    if (first) return first;
+    return res as OmiePedidoCompra;
+  }
+
+  /** Cadastro do fornecedor (somente leitura) — nome para a lista de compras. */
+  async consultarFornecedor(codigo_fornecedor: number): Promise<{
+    codigo_fornecedor?: number;
+    razao_social?: string;
+    nome_fantasia?: string;
+  }> {
+    return this.call(
+      "ConsultarFornecedor",
+      { codigo_fornecedor },
+      0,
+      FORNECEDORES_URL
     );
   }
 }

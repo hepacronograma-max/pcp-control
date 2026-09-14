@@ -6,6 +6,10 @@ import { syncAlmoxarifadoOnProgram } from "@/lib/supabase/sync-almoxarifado-on-p
 import { syncAlmoxOnProductionEndChange } from "@/lib/supabase/sync-almox-on-production-end";
 import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
 import { hasPermission } from "@/lib/utils/permissions";
+import {
+  finalizeShippingListForOrder,
+  reopenShippingListForOrder,
+} from "@/lib/packaging/shipping-list";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 
 async function assertCanEditOrders(): Promise<
@@ -208,6 +212,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      await finalizeShippingListForOrder(supabase, orderId);
+
       return NextResponse.json({ success: true });
     }
 
@@ -294,6 +300,8 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      await reopenShippingListForOrder(supabase, orderId);
+
       return NextResponse.json({ success: true });
     }
 
@@ -379,6 +387,7 @@ export async function POST(request: NextRequest) {
               { status: 500 }
             );
           }
+          await reopenShippingListForOrder(supabase, orderFk);
         }
       }
 

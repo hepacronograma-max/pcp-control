@@ -94,6 +94,14 @@ export function DialogContent({
           className={`pointer-events-auto relative w-full max-w-lg rounded-lg border border-slate-200 bg-white p-4 shadow-lg ${className}`}
           onClick={(e) => e.stopPropagation()}
         >
+          <button
+            type="button"
+            className="absolute right-3 top-3 z-10 rounded-md px-2 py-1 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+            aria-label="Fechar"
+            onClick={() => ctx.onOpenChange(false)}
+          >
+            ✕
+          </button>
           {children}
         </div>
       </div>
@@ -109,7 +117,7 @@ export function DialogHeader({
   className?: string;
   children: React.ReactNode;
 }) {
-  return <div className={`space-y-1 ${className}`.trim()}>{children}</div>;
+  return <div className={`space-y-1 pr-8 ${className}`.trim()}>{children}</div>;
 }
 
 export function DialogTitle({

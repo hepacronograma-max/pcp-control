@@ -137,6 +137,78 @@ export interface Holiday {
   created_at: string;
 }
 
+/** Catálogo de caixas de papelão (etiqueta de embalagem). */
+export interface PackagingBox {
+  id: string;
+  company_id: string;
+  code: string;
+  name: string;
+  length_cm: number;
+  width_cm: number;
+  height_cm: number;
+  empty_weight_kg: number | null;
+  stock_quantity: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type PackagingVolumeStatus =
+  | "pending"
+  | "generated"
+  | "printed"
+  | "scanned";
+
+/** Peça(s) de um item de pedido dentro de um volume. */
+export interface PackagingVolumeItem {
+  volume_id: string;
+  order_item_id: string;
+  piece_quantity: number;
+  product_code?: string | null;
+  description?: string;
+}
+
+/** Uma linha = uma etiqueta de embalagem = uma caixa física. */
+export interface PackagingVolume {
+  id: string;
+  company_id: string;
+  order_id: string;
+  order_item_id: string;
+  box_id: string;
+  piece_quantity: number;
+  weight_kg: number | null;
+  sequence: number;
+  qr_token: string;
+  status: PackagingVolumeStatus;
+  scanned_at: string | null;
+  scanned_by: string | null;
+  created_at: string;
+  updated_at: string;
+  items?: PackagingVolumeItem[];
+}
+
+export type ShippingListStatus = "open" | "finalized" | "ready_to_invoice" | "invoiced" | "collected";
+
+/** Uma lista de embarque por pedido. */
+export interface ShippingList {
+  id: string;
+  company_id: string;
+  order_id: string;
+  status: ShippingListStatus;
+  received_by_name: string | null;
+  received_at: string | null;
+  finalized_at: string | null;
+  invoiced_at?: string | null;
+  collected_at?: string | null;
+  /** Número da NF-e no Omie (quando emitida). */
+  nfe_number?: string | null;
+  cargo_photo_url?: string | null;
+  cargo_photo_path?: string | null;
+  cargo_photo_taken_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface OrderWithItems extends Order {
   items: OrderItem[];
 }

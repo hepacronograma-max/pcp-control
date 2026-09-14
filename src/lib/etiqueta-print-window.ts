@@ -25,11 +25,13 @@ function maximizePrintWindow(win: Window): void {
 }
 
 /** Abre janela maximizada — deve ser chamado de forma síncrona no clique. */
-export function openEtiquetaPrintWindow(): Window | null {
+export function openEtiquetaPrintWindow(
+  windowName = "etiqueta-print-hepa"
+): Window | null {
   const { availWidth, availHeight } = window.screen;
   const printWin = window.open(
     "about:blank",
-    "etiqueta-print-hepa",
+    windowName,
     `width=${availWidth},height=${availHeight},left=0,top=0,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes`
   );
   if (printWin) {
@@ -111,29 +113,39 @@ const PRINT_WINDOW_SCRIPT = `<script>
 })();
 </script>`;
 
-function buildPrintDocumentHtml(etiquetas: EtiquetaFiltroData[]): string {
-  const sheetsHtml = renderToStaticMarkup(
-    createElement(EtiquetaPrintSheets, { etiquetas })
-  );
-  const bodyHtml = `<div class="etiqueta-print-root">${sheetsHtml}</div>`;
+export function wrapPrintDocument(opts: {
+  title: string;
+  css: string;
+  bodyHtml: string;
+}): string {
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Etiqueta HEPA</title>
-<style>${ETIQUETA_PRINT_CSS}</style>
+<title>${opts.title.replace(/</g, "")}</title>
+<style>${opts.css}</style>
 </head>
-<body>${bodyHtml}${PRINT_WINDOW_SCRIPT}</body>
+<body>${opts.bodyHtml}${PRINT_WINDOW_SCRIPT}</body>
 </html>`;
 }
 
+function buildPrintDocumentHtml(etiquetas: EtiquetaFiltroData[]): string {
+  const sheetsHtml = renderToStaticMarkup(
+    createElement(EtiquetaPrintSheets, { etiquetas })
+  );
+  return wrapPrintDocument({
+    title: "Etiqueta HEPA",
+    css: ETIQUETA_PRINT_CSS,
+    bodyHtml: `<div class="etiqueta-print-root">${sheetsHtml}</div>`,
+  });
+}
+
 /**
- * Escreve etiquetas na janela já aberta.
- * O print() roda DENTRO da popup (script inline) — o opener perde o gesto do usuário após await.
+ * Escreve HTML na janela já aberta. O print() roda no script da popup.
  */
-export async function printEtiquetaInWindow(
+export async function writePrintHtml(
   printWin: Window,
-  etiquetas: EtiquetaFiltroData[]
+  html: string
 ): Promise<EtiquetaPrintResult> {
   if (printWin.closed) {
     return {
@@ -142,17 +154,7 @@ export async function printEtiquetaInWindow(
     };
   }
 
-  if (etiquetas.length === 0) {
-    try {
-      printWin.close();
-    } catch {
-      /* ignore */
-    }
-    return { ok: false, error: "Nenhuma etiqueta para imprimir." };
-  }
-
   try {
-    const html = buildPrintDocumentHtml(etiquetas);
     const doc = printWin.document;
     doc.open();
     doc.write(html);
@@ -176,7 +178,7 @@ export async function printEtiquetaInWindow(
 
     return { ok: true };
   } catch (err) {
-    console.error("[etiqueta-print] falha na janela de impressão:", err);
+    console.error("[print-window] falha na janela de impressão:", err);
     try {
       printWin.close();
     } catch {
@@ -186,4 +188,23 @@ export async function printEtiquetaInWindow(
       err instanceof Error ? err.message : "Erro desconhecido ao imprimir.";
     return { ok: false, error: message };
   }
+}
+
+/**
+ * Escreve etiquetas de produto na janela já aberta.
+ * O print() roda DENTRO da popup (script inline) — o opener perde o gesto do usuário após await.
+ */
+export async function printEtiquetaInWindow(
+  printWin: Window,
+  etiquetas: EtiquetaFiltroData[]
+): Promise<EtiquetaPrintResult> {
+  if (etiquetas.length === 0) {
+    try {
+      printWin.close();
+    } catch {
+      /* ignore */
+    }
+    return { ok: false, error: "Nenhuma etiqueta para imprimir." };
+  }
+  return writePrintHtml(printWin, buildPrintDocumentHtml(etiquetas));
 }

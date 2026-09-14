@@ -26,13 +26,10 @@ export async function middleware(request: NextRequest) {
   const rawAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
   const url = rawUrl.trim();
   const anonKey = rawAnonKey.trim();
-
-  const urlPareceValida =
-    url.startsWith("http://") || url.startsWith("https://");
+  const origin = request.nextUrl.origin;
 
   const hasLocalAuth =
     allowLocalAuth() && request.cookies.get("pcp-local-auth")?.value === "1";
-  const origin = request.nextUrl.origin;
 
   if (!allowLocalAuth() && request.cookies.get("pcp-local-auth")?.value === "1") {
     const res = NextResponse.redirect(`${origin}/login`);
@@ -40,10 +37,15 @@ export async function middleware(request: NextRequest) {
     return res;
   }
 
+  /** Login local: não espera o Auth do Supabase em cada página/API. */
+  if (hasLocalAuth) {
+    return NextResponse.next({ request });
+  }
+
+  const urlPareceValida =
+    url.startsWith("http://") || url.startsWith("https://");
+
   if (!urlPareceValida || !anonKey) {
-    if (hasLocalAuth) {
-      return NextResponse.next({ request });
-    }
     const isLoginPage =
       request.nextUrl.pathname.startsWith("/login") ||
       request.nextUrl.pathname === "/login.html" ||
@@ -83,9 +85,6 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.pathname !== "/login.html" &&
     request.nextUrl.pathname !== "/entrar"
   ) {
-    if (hasLocalAuth) {
-      return NextResponse.next({ request });
-    }
     return NextResponse.redirect(`${origin}/login`);
   }
 

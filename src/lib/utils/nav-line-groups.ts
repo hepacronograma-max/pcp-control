@@ -14,6 +14,16 @@ function normLineName(name: string | undefined): string {
     .toLowerCase();
 }
 
+/**
+ * Linha de produção cujo nome é só "LOGISTICA" — duplica o grupo do menu.
+ * Expedição (rota) e Almoxarifado continuam visíveis.
+ */
+export function navLineIsRedundantLogisticaMenuItem(
+  line: ProductionLine
+): boolean {
+  return /^logistica$/.test(normLineName(line.name));
+}
+
 /** Fallback: texto sugere Almox/expedição (não depende apenas de `is_almoxarifado`). */
 export function navLineLooksLogisticaFallback(line: ProductionLine): boolean {
   if (productionLineIsAlmoxarifado(line)) return true;
@@ -62,6 +72,7 @@ export function bucketLinesForSidebar(lines: ProductionLine[]): {
   const producao: ProductionLine[] = [];
   const logistica: ProductionLine[] = [];
   for (const l of lines) {
+    if (navLineIsRedundantLogisticaMenuItem(l)) continue;
     const band = navLineSidebarBand(l);
     if (band === "log") {
       logistica.push(l);

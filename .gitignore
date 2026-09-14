@@ -23,6 +23,9 @@ public/*-backup*.json
 secrets/
 scripts/logs/
 
+# Google Drive (conta de serviço — nunca commitar)
+google-drive-service-account.json
+
 # PDF de teste (dados de cliente)
 public/test-pedido.pdf
 tmp-certificados/
