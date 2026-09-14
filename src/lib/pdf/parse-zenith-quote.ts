@@ -1,6 +1,6 @@
 /**
  * Parser da cotação Zenith HVAC (outro CNPJ, sem Omie).
- * Modelo: "Cotação # ZH-260026" com tabela ITEM / QTD / Modelo / Dimensão (mm).
+ * Modelo: "Cotação # ZH-260026" ou "ZHE-260001" com tabela ITEM / QTD / Modelo / Dimensão (mm).
  */
 
 export interface ParsedZenithItem {
@@ -78,10 +78,16 @@ export function zenithDeliveryDeadline(
   return addBusinessDays(subsequent, leadDays);
 }
 
+export function zenithQuoteNumberFromFileName(fileName: string): string | null {
+  const base = fileName.replace(/\.pdf$/i, "").trim();
+  const m = base.match(/^(ZHE?-\d+)/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
 export function isZenithQuotePdf(text: string): boolean {
   const t = normalizarTextoPdf(text);
   if (!t) return false;
-  if (/Cota[cç][aã]o\s*#\s*ZH-/i.test(t)) return true;
+  if (/Cota[cç][aã]o\s*#\s*ZHE?-\d+/i.test(t)) return true;
   if (/zenith-hvac/i.test(t) && /Dimens[aã]o\s*\(mm\)/i.test(t)) return true;
   if (/ZENITH HVAC/i.test(t) && /\bITEM\b.*\bQTD\b.*Modelo/i.test(t)) return true;
   return false;
@@ -89,13 +95,13 @@ export function isZenithQuotePdf(text: string): boolean {
 
 export function clientNameFromZenithFileName(fileName: string): string | null {
   const base = fileName.replace(/\.pdf$/i, "").trim();
-  const m = base.match(/^ZH-\d+\s*[-–—]\s*(.+)$/i);
+  const m = base.match(/^ZHE?-\d+\s*[-–—]\s*(.+)$/i);
   const name = m?.[1]?.trim();
   return name && name.length > 1 ? name.slice(0, 255) : null;
 }
 
 const RE_ITEM =
-  /^(\d{1,3})\s+(\d+(?:[.,]\d+)?)\s+([A-Z0-9][A-Z0-9._/-]{1,40})\s+(\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?)(?:\s|$)/;
+  /^(\d{1,3})\s+(\d+(?:[.,]\d+)?)\s+([A-Z0-9][A-Z0-9._/-]{1,40})\s+(\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?\s*[xX]\s*\d+(?:[.,]\d+)?)(?:\s*mm)?(?:\s|$)/i;
 
 function parseZenithItems(linhas: string[]): ParsedZenithItem[] {
   const items: ParsedZenithItem[] = [];
@@ -112,7 +118,7 @@ function parseZenithItems(linhas: string[]): ParsedZenithItem[] {
     if (!m) continue;
     const quantity = parseQuantity(m[2]);
     const product_code = m[3].trim();
-    const dim = m[4].replace(/\s+/g, "").toLowerCase();
+    const dim = m[4].replace(/\s+/g, "").replace(/mm$/i, "").toLowerCase();
     if (!quantity || !product_code) continue;
     items.push({
       product_code: product_code.slice(0, 120),
@@ -127,18 +133,20 @@ export function parseZenithQuote(text: string, fileName: string): ParsedZenithRe
   const norm = normalizarTextoPdf(text);
   const linhas = norm.split(/\n/).map((l) => l.trim()).filter(Boolean);
 
-  let orderNumber: string | null = null;
+  let orderNumberFromText: string | null = null;
   for (const l of linhas) {
-    const m = l.match(/Cota[cç][aã]o\s*#\s*(ZH-\d+)/i);
+    const m = l.match(/Cota[cç][aã]o\s*#\s*(ZHE?-\d+)/i);
     if (m) {
-      orderNumber = m[1].toUpperCase();
+      orderNumberFromText = m[1].toUpperCase();
       break;
     }
   }
-  if (!orderNumber) {
-    const fromFile = fileName.match(/ZH-\d+/i);
-    orderNumber = fromFile ? fromFile[0].toUpperCase() : fileName.replace(/\.pdf$/i, "").slice(0, 50);
-  }
+  // O PDF Zenith às vezes reimprime o mesmo nº no corpo (ex.: os três ZHE
+  // de 11/09/2026 dizem ZHE-260001). O nome do arquivo é a fonte confiável.
+  const orderNumber =
+    zenithQuoteNumberFromFileName(fileName) ||
+    orderNumberFromText ||
+    fileName.replace(/\.pdf$/i, "").slice(0, 50);
 
   let clientFromPdf: string | null = null;
   for (const l of linhas) {

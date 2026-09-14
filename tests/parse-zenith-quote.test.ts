@@ -100,4 +100,54 @@ A) Prazo de entrega:   10 dias úteis, a contar da data útil subsequente a conf
     assert.equal(r.items[0].product_code, "HF-ABSP-H14-T-D");
     assert.equal(r.items[0].quantity, 7);
   });
+
+  it("aceita prefixo ZHE e prioriza o número do arquivo quando o corpo repete outro", () => {
+    const text = `
+DATA   11/09/2026
+Cotação #   ZHE-260001
+vendas@zenith-hvac.com | www.zenith-hvac.com
+Nome da empresa   HEPA
+ITEM   QTD   Modelo   Dimensão (mm)   Preço Unit   Preço Total
+1   5   HF-ABSP-H14-AG-T-S   915X610X75mm   0   - R$
+2   70   HF-ABSP-H14-AG-T-S   305x305x75mm   0   - R$
+SUBTOTAL   0 R$
+`;
+    assert.equal(isZenithQuotePdf(text), true);
+    const r = parseZenithQuote(text, "ZHE-260002.pdf");
+    assert.equal(r.orderNumber, "ZHE-260002");
+    assert.equal(r.clientName, "HEPA");
+    assert.equal(r.deliveryDate, null);
+    assert.equal(r.items.length, 2);
+    assert.equal(r.items[0].product_code, "HF-ABSP-H14-AG-T-S");
+    assert.equal(r.items[0].quantity, 5);
+    assert.equal(r.items[0].description, "HF-ABSP-H14-AG-T-S 915x610x75mm");
+    assert.equal(r.items[1].quantity, 70);
+  });
+
+  it("lê modelo HF-PL-/M5 e dimensão com mm colado", () => {
+    const text = `
+DATA   11/09/2026
+Cotação #   ZHE-260001
+vendas@zenith-hvac.com | www.zenith-hvac.com
+Nome da empresa   HEPA
+ITEM   QTD   Modelo   Dimensão (mm)
+1   30   HF-PL-/M5   595X595X45mm   0   - R$
+2   30   HF-PL-/M5   295X595X25mm   0   - R$
+SUBTOTAL
+`;
+    const r = parseZenithQuote(text, "ZHE-260003.pdf");
+    assert.equal(r.orderNumber, "ZHE-260003");
+    assert.equal(r.items.length, 2);
+    assert.equal(r.items[0].product_code, "HF-PL-/M5");
+    assert.equal(r.items[0].quantity, 30);
+    assert.equal(r.items[0].description, "HF-PL-/M5 595x595x45mm");
+    assert.equal(r.items[1].description, "HF-PL-/M5 295x595x25mm");
+  });
+
+  it("extrai cliente do arquivo com prefixo ZHE", () => {
+    assert.equal(
+      clientNameFromZenithFileName("ZHE-260001 - FILTROS ESPECIAIS.pdf"),
+      "FILTROS ESPECIAIS"
+    );
+  });
 });

@@ -171,19 +171,14 @@ async function extractFromPdf(
 
   if (isZenithQuotePdf(text)) {
     const zenith = parseZenithQuote(text, fileName);
-    const isZenithFallback =
-      zenith.items.length === 1 &&
-      zenith.items[0].description.startsWith("Item importado de ");
-    if (!isZenithFallback && zenith.items.length > 0) {
-      return {
-        orderNumber: zenith.orderNumber,
-        clientName: zenith.clientName,
-        deliveryDate: zenith.deliveryDate ?? null,
-        items: zenith.items,
-        pdfTipo: null,
-        _rawText: text,
-      };
-    }
+    return {
+      orderNumber: zenith.orderNumber,
+      clientName: zenith.clientName,
+      deliveryDate: zenith.deliveryDate ?? null,
+      items: zenith.items,
+      pdfTipo: null,
+      _rawText: text,
+    };
   }
 
   if (isPcpManualPdf(text)) {
