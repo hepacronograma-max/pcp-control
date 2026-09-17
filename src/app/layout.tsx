@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "sonner";
+import { UnregisterLegacySw } from "@/components/unregister-legacy-sw";
 
 export const metadata = {
   title: "PCP Control",
@@ -31,6 +32,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <link rel="apple-touch-icon" href="/icons/icon-192.png" />
       </head>
       <body className="min-h-screen min-h-[100dvh] overflow-x-hidden bg-slate-50 antialiased">
+        <UnregisterLegacySw />
         <Toaster position="top-center" richColors />
         {children}
       </body>

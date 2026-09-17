@@ -229,6 +229,51 @@ export default function UsersSettingsPage() {
     );
   }
 
+  function selectedStaffPositions(): StaffPosition[] {
+    return STAFF_POSITIONS.map((p) => p.value).filter(
+      (v) => v === formRole || formExtraRoles.includes(v)
+    );
+  }
+
+  function applyStaffSelection(
+    selected: Set<StaffPosition>,
+    nextPrimary?: StaffPosition
+  ) {
+    const ordered = STAFF_POSITIONS.map((p) => p.value).filter((v) =>
+      selected.has(v)
+    );
+    if (ordered.length === 0) return;
+    const primary =
+      nextPrimary && selected.has(nextPrimary)
+        ? nextPrimary
+        : selected.has(formRole)
+          ? formRole
+          : ordered[0];
+    setFormRole(primary);
+    setFormExtraRoles(ordered.filter((v) => v !== primary));
+  }
+
+  function toggleStaffPosition(value: StaffPosition) {
+    const selected = new Set<StaffPosition>(selectedStaffPositions());
+    if (selected.has(value)) {
+      if (selected.size <= 1) {
+        toast.error("Marque pelo menos uma função.");
+        return;
+      }
+      selected.delete(value);
+      applyStaffSelection(selected);
+      return;
+    }
+    selected.add(value);
+    applyStaffSelection(selected);
+  }
+
+  function setPrimaryStaffPosition(value: StaffPosition) {
+    const selected = new Set<StaffPosition>(selectedStaffPositions());
+    selected.add(value);
+    applyStaffSelection(selected, value);
+  }
+
   async function handleSave() {
     if (!profile?.company_id) return;
     if (!formName.trim() || !formEmail.trim()) {
@@ -619,7 +664,7 @@ export default function UsersSettingsPage() {
       {/* Modal Criar / Editar */}
       {modalMode && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-xl rounded-lg bg-white p-4 shadow-lg space-y-3 text-sm">
+          <div className="w-full max-w-xl max-h-[90vh] overflow-y-auto rounded-lg bg-white p-4 shadow-lg space-y-3 text-sm">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-slate-800">
                 {modalMode === "create" ? "Novo Usuário" : "Editar Usuário"}
@@ -639,56 +684,61 @@ export default function UsersSettingsPage() {
                 <Input type="email" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label>{modalMode === "edit" ? "Senha" : "Senha"}</Label>
+                <Label>Senha</Label>
                 <Input
                   type={modalMode === "edit" ? "text" : "password"}
                   value={formPassword}
                   onChange={(e) => setFormPassword(e.target.value)}
                 />
-              </div>
-              <div className="space-y-1">
-                <Label>Perfil principal</Label>
-                <select
-                  className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs h-9"
-                  value={formRole}
-                  onChange={(e) => {
-                    const next = e.target.value as StaffFormRole;
-                    setFormRole(next);
-                    setFormExtraRoles((prev) => prev.filter((r) => r !== next));
-                  }}
-                >
-                  {STAFF_POSITIONS.map((p) => (
-                    <option key={p.value} value={p.value}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
+                {modalMode === "edit" && (
+                  <p className="text-[10px] text-slate-500">
+                    Deixe em branco para não alterar.
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="space-y-1">
-              <Label>Também atua em</Label>
+              <Label>Funções</Label>
               <p className="text-[10px] text-slate-500">
-                Marque as outras áreas. Ex.: Compras + Faturamento para a Bruna.
+                Marque todas as áreas em que a pessoa atua. Pode ser mais de uma
+                (ex.: Compras e Faturamento).
               </p>
-              <div className="grid grid-cols-2 gap-2 border border-slate-100 rounded-md p-2">
-                {STAFF_POSITIONS.filter((p) => p.value !== formRole).map((p) => {
-                  const checked = formExtraRoles.includes(p.value);
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border border-slate-200 rounded-md p-2 bg-slate-50/60">
+                {STAFF_POSITIONS.map((p) => {
+                  const checked =
+                    formRole === p.value || formExtraRoles.includes(p.value);
+                  const isPrimary = formRole === p.value;
                   return (
-                    <label key={p.value} className="flex items-center gap-2 text-xs">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          setFormExtraRoles((prev) =>
-                            checked
-                              ? prev.filter((r) => r !== p.value)
-                              : [...prev, p.value]
-                          )
-                        }
-                      />
-                      {p.label}
-                    </label>
+                    <div
+                      key={p.value}
+                      className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-xs ${
+                        checked ? "bg-white border border-slate-200" : ""
+                      }`}
+                    >
+                      <label className="flex items-center gap-2 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleStaffPosition(p.value)}
+                        />
+                        <span className="truncate">{p.label}</span>
+                      </label>
+                      {checked && isPrimary && (
+                        <span className="shrink-0 text-[10px] text-[#1B4F72] font-medium">
+                          principal
+                        </span>
+                      )}
+                      {checked && !isPrimary && (
+                        <button
+                          type="button"
+                          className="shrink-0 text-[10px] text-slate-500 hover:underline"
+                          onClick={() => setPrimaryStaffPosition(p.value)}
+                        >
+                          tornar principal
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>
