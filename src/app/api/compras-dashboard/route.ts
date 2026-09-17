@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
   const admin = createSupabaseAdminClient();
   const today = todayIso();
 
-  let list: {
+  type PoDashRow = {
     id: string;
     number: string;
     supplier_name: string | null;
@@ -91,32 +91,51 @@ export async function GET(request: NextRequest) {
     status: string;
     created_at: string;
     updated_at: string;
-  }[] = [];
+  };
 
-  let full = await admin
+  let list: PoDashRow[] = [];
+
+  const withArrived = await admin
     .from("purchase_orders")
     .select(
       "id, number, supplier_name, expected_delivery, follow_up_date, material_arrived_at, status, created_at, updated_at"
     )
     .eq("company_id", companyId);
 
-  if (
-    full.error &&
-    /material_arrived_at/i.test(full.error.message) &&
-    /column|does not exist/i.test(full.error.message)
+  let loadError: string | null = withArrived.error?.message ?? null;
+
+  if (!withArrived.error) {
+    list = (withArrived.data ?? []).map((r) => ({
+      ...r,
+      follow_up_date: (r.follow_up_date as string | null) ?? null,
+      material_arrived_at: (r.material_arrived_at as string | null) ?? null,
+    }));
+  } else if (
+    /material_arrived_at/i.test(withArrived.error.message) &&
+    /column|does not exist/i.test(withArrived.error.message)
   ) {
-    full = await admin
+    const withoutArrived = await admin
       .from("purchase_orders")
       .select(
         "id, number, supplier_name, expected_delivery, follow_up_date, status, created_at, updated_at"
       )
       .eq("company_id", companyId);
+    if (!withoutArrived.error) {
+      loadError = null;
+      list = (withoutArrived.data ?? []).map((r) => ({
+        ...r,
+        follow_up_date: (r.follow_up_date as string | null) ?? null,
+        material_arrived_at: null,
+      }));
+    } else {
+      loadError = withoutArrived.error.message;
+    }
   }
 
   if (
-    full.error &&
-    /follow_up_date/i.test(full.error.message) &&
-    /column|does not exist/i.test(full.error.message)
+    loadError &&
+    /follow_up_date/i.test(loadError) &&
+    /column|does not exist/i.test(loadError)
   ) {
     const stripped = await admin
       .from("purchase_orders")
@@ -125,38 +144,27 @@ export async function GET(request: NextRequest) {
       )
       .eq("company_id", companyId);
     if (!stripped.error) {
+      loadError = null;
       list = (stripped.data ?? []).map((r) => ({
         ...r,
-        follow_up_date: null as string | null,
-        material_arrived_at: null as string | null,
+        follow_up_date: null,
+        material_arrived_at: null,
       }));
     } else {
-      console.error("[compras-dashboard]", stripped.error.message);
-      return NextResponse.json(
-        { error: "Erro ao carregar pedidos de compra." },
-        { status: 500 }
-      );
+      loadError = stripped.error.message;
     }
-  } else if (full.error) {
-    console.error("[compras-dashboard]", full.error.message);
+  }
+
+  if (loadError) {
+    console.error("[compras-dashboard]", loadError);
     return NextResponse.json(
       {
-        error:
-          /relation|does not exist/i.test(full.error.message)
-            ? "Execute supabase-purchase-orders.sql no Supabase para habilitar métricas de compras."
-            : "Erro ao carregar pedidos de compra.",
+        error: /relation|does not exist/i.test(loadError)
+          ? "Execute supabase-purchase-orders.sql no Supabase para habilitar métricas de compras."
+          : "Erro ao carregar pedidos de compra.",
       },
       { status: 500 }
     );
-  } else {
-    list = (full.data ?? []).map((r) => ({
-      ...r,
-      follow_up_date: (r.follow_up_date as string | null) ?? null,
-      material_arrived_at:
-        "material_arrived_at" in r
-          ? ((r.material_arrived_at as string | null) ?? null)
-          : null,
-    }));
   }
 
   const openRows = list.filter(

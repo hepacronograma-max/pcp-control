@@ -153,25 +153,34 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ purchaseOrders: [], unlinkedItemSamples: [] });
   }
 
-  let posQuery = await supabase
+  const posWithArrived = await supabase
     .from("purchase_orders")
     .select(PO_LIST_COLUMNS)
     .eq("company_id", companyId)
     .order("expected_delivery", { ascending: true, nullsFirst: false });
 
+  let pos = posWithArrived.data;
+  let pe = posWithArrived.error;
+
   if (
-    posQuery.error &&
-    /material_arrived_at|material_arrived_by/i.test(posQuery.error.message) &&
-    /column|does not exist|schema cache/i.test(posQuery.error.message)
+    pe &&
+    /material_arrived_at|material_arrived_by/i.test(pe.message) &&
+    /column|does not exist|schema cache/i.test(pe.message)
   ) {
-    posQuery = await supabase
+    const withoutArrived = await supabase
       .from("purchase_orders")
       .select(PO_LIST_COLUMNS_NO_ARRIVED)
       .eq("company_id", companyId)
       .order("expected_delivery", { ascending: true, nullsFirst: false });
+    pe = withoutArrived.error;
+    pos = pe
+      ? null
+      : (withoutArrived.data ?? []).map((p) => ({
+          ...p,
+          material_arrived_at: null,
+          material_arrived_by: null,
+        }));
   }
-
-  const { data: pos, error: pe } = posQuery;
 
   if (pe) {
     if (
