@@ -96,6 +96,13 @@ describe("impressão da lista de embarque", () => {
       }),
       "ABC-1"
     );
-    assert.equal(extractOmieClientOrderNumber({}), null);
+    assert.equal(
+      extractOmieClientOrderNumber({
+        pedido_venda_produto: {
+          informacoes_adicionais: { numero_pedido_cliente: "ZHE-1" },
+        },
+      }),
+      "ZHE-1"
+    );
   });
 });

@@ -7,6 +7,7 @@ import { syncAlmoxOnProductionEndChange } from "@/lib/supabase/sync-almox-on-pro
 import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
 import { hasPermission } from "@/lib/utils/permissions";
 import { fetchActorProfile } from "@/lib/supabase/fetch-actor-profile";
+import { finishOrderIfAllItemsCompleted } from "@/lib/supabase/finish-order-if-all-items-completed";
 import {
   finalizeShippingListForOrder,
   reopenShippingListForOrder,
@@ -602,6 +603,16 @@ export async function POST(request: NextRequest) {
         actorUserId:
           typeof completedBy === "string" && completedBy.trim() ? completedBy.trim() : null,
       });
+
+      const { data: completedRow } = await supabase
+        .from("order_items")
+        .select("order_id")
+        .eq("id", itemId)
+        .maybeSingle();
+      await finishOrderIfAllItemsCompleted(
+        supabase,
+        completedRow?.order_id as string | undefined
+      );
 
       return NextResponse.json({ success: true });
     }

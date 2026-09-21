@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useRef, useState } from "react";
 import {
+  formatOsEPedidoEtiqueta,
   formatSerieEtiqueta,
   ROTULO_DPI_FAIXA,
   ROTULO_DPF_FAIXA,
@@ -28,6 +29,10 @@ export type EtiquetaFiltroData = {
   qrDataUrl: string;
   /** Data URL do logo — impressão usa só memória, sem rede no iframe. */
   logoDataUrl?: string;
+  /** Pedido interno (Omie) — na etiqueta sai como OS. */
+  osNumber?: string | null;
+  /** Nº do pedido do cliente (Omie `numero_pedido_cliente`). */
+  pedidoCliente?: string | null;
 };
 
 type Props = EtiquetaFiltroData & {
@@ -48,9 +53,12 @@ export function EtiquetaFiltro100x20({
   perdaFinal,
   qrDataUrl,
   logoDataUrl,
+  osNumber,
+  pedidoCliente,
   className = "",
 }: Props) {
   const isCompleta = modelo === "completa";
+  const osPedidoLine = formatOsEPedidoEtiqueta(osNumber, pedidoCliente);
 
   return (
     <div
@@ -99,6 +107,7 @@ export function EtiquetaFiltro100x20({
                 <span>
                   SÉRIE: {formatSerieEtiqueta(serie, serieTotal)} · LOTE: {lote}
                 </span>
+                {osPedidoLine ? <span>{osPedidoLine}</span> : null}
               </div>
 
               <div className="etiqueta-filtro__warn">
@@ -119,6 +128,7 @@ export function EtiquetaFiltro100x20({
               <div className="etiqueta-filtro__trace">
                 <span>LOTE: {lote}</span>
                 <span>SÉRIE: {formatSerieEtiqueta(serie, serieTotal)}</span>
+                {osPedidoLine ? <span>{osPedidoLine}</span> : null}
               </div>
             </>
           )}

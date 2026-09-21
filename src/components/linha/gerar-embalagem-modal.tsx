@@ -37,6 +37,7 @@ import {
   writePrintHtml,
 } from "@/lib/etiqueta-print-window";
 import type { PackagingBox, PackagingVolume } from "@/lib/types/database";
+import { useClientOrderNumber } from "@/lib/hooks/use-client-order-number";
 
 type Props = {
   item: LineItemWithOrder | null;
@@ -97,6 +98,7 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
   const [volumeItemsMissing, setVolumeItemsMissing] = useState(false);
 
   const itemId = item?.id ?? null;
+  const clientOrderNumber = useClientOrderNumber(item?.order.id, open);
   const itemQty = item
     ? Math.max(1, Math.floor(Number(item.quantity) || 1))
     : 1;
@@ -365,6 +367,7 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
             sequence: v.sequence,
             clientName: item.order.client_name,
             orderNumber: item.order.order_number,
+            clientOrderNumber,
             productCode: lines[0]?.productCode ?? item.product_code ?? null,
             description: lines[0]?.description ?? item.description,
             pieceQuantity: v.piece_quantity,
@@ -441,8 +444,12 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
           <div className="space-y-3 text-sm">
             <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs space-y-1">
               <p>
-                <span className="font-semibold text-slate-700">Pedido:</span>{" "}
+                <span className="font-semibold text-slate-700">OS:</span>{" "}
                 {item.order.order_number} — {item.order.client_name}
+              </p>
+              <p>
+                <span className="font-semibold text-slate-700">Pedido:</span>{" "}
+                {clientOrderNumber || "—"}
               </p>
               <p>
                 <span className="font-semibold text-slate-700">Item:</span>{" "}

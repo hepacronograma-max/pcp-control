@@ -18,6 +18,8 @@ import {
 
   formatDataLote,
 
+  formatOsEPedidoEtiqueta,
+
   formatSerieEtiqueta,
 
   gerarEtiquetasComSeries,
@@ -519,6 +521,19 @@ describe("gerarEtiquetasSeriesEspecificas", () => {
 
   });
 
+});
+
+describe("formatOsEPedidoEtiqueta", () => {
+  it("OS interna e pedido do cliente", () => {
+    assert.equal(
+      formatOsEPedidoEtiqueta("260358", "PO-99"),
+      "OS: 260358 · PEDIDO: PO-99"
+    );
+  });
+
+  it("só OS quando o cliente não tem número", () => {
+    assert.equal(formatOsEPedidoEtiqueta("260358", null), "OS: 260358");
+  });
 });
 
 describe("ETIQUETA_PRINT_CSS", () => {

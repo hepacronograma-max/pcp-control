@@ -116,6 +116,19 @@ export function formatSerieEtiqueta(serie: number, total: number): string {
   return `${serie}/${total}`;
 }
 
+/** Linha compacta da etiqueta: OS (interno/Omie) e pedido do cliente. */
+export function formatOsEPedidoEtiqueta(
+  osNumber: string | null | undefined,
+  pedidoCliente: string | null | undefined
+): string {
+  const parts: string[] = [];
+  const os = String(osNumber ?? "").trim();
+  if (os) parts.push(`OS: ${os}`);
+  const ped = String(pedidoCliente ?? "").trim();
+  if (ped) parts.push(`PEDIDO: ${ped}`);
+  return parts.join(" · ");
+}
+
 export type LayoutFaixaTecnica = "uma-linha" | "duas-linhas";
 
 /** Rótulos da faixa técnica (modelo completa). Δ = U+0394. */

@@ -136,6 +136,19 @@ export default function PedidosPage() {
     void reloadOrders();
   }, [profile, effectiveCompanyId, effectiveLoaded, useApi, reloadOrders]);
 
+  useEffect(() => {
+    function refreshIfVisible() {
+      if (document.visibilityState === "hidden") return;
+      void reloadOrders();
+    }
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
+  }, [reloadOrders]);
+
   const userRole: UserRole | null = profile ? profile.role : null;
   const canImport = !!profile && hasPermission(profile, "importOrders");
 
@@ -973,6 +986,7 @@ export default function PedidosPage() {
           visibleOrders={visibleOrders}
           lines={lines}
           userRole={userRole as UserRole}
+          extraRoles={profile?.extra_roles}
           cqUserId={profile?.id}
           cqCompanyId={effectiveCompanyId}
           onUpdateOrderPcpDate={handleUpdateOrderPcpDate}

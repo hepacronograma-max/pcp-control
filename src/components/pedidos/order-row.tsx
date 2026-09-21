@@ -31,6 +31,7 @@ export interface OrderRowProps {
   order: OrderWithItems;
   lines: ProductionLine[];
   userRole: UserRole;
+  extraRoles?: string[] | null;
   cqUserId?: string;
   cqCompanyId?: string | null;
   onUpdateOrderPcpDate: (orderId: string, date: string | null) => void;
@@ -74,6 +75,7 @@ export function OrderRow({
   order,
   lines,
   userRole,
+  extraRoles,
   onUpdateOrderPcpDate,
   onUpdateItemLine,
   onUpdateItemQuantity,
@@ -115,24 +117,24 @@ export function OrderRow({
     setPcpReplyDraft(order.pcp_reply_comercial_observation ?? "");
   }, [order.id, order.pcp_reply_comercial_observation]);
 
+  const actor = { role: userRole, extra_roles: extraRoles };
   const allItemsCompleted =
     order.items.length > 0 &&
     order.items.every((item) => item.status === "completed");
   const canFinish =
-    hasPermission(userRole, "finishOrders") &&
+    hasPermission(actor, "finishOrders") &&
     order.status !== "finished" &&
     allItemsCompleted;
   const canReopenOrder =
-    hasPermission(userRole, "finishOrders") &&
+    hasPermission(actor, "finishOrders") &&
     order.status === "finished" &&
     !!onReopenOrder;
   const canReopenCompletedItem =
-    hasPermission(userRole, "finishOrders") && !!onReopenCompletedItem;
-  const canEdit = hasPermission(userRole, "viewOrders");
-  const canEditItemDetails = hasPermission(userRole, "editOrders");
+    hasPermission(actor, "finishOrders") && !!onReopenCompletedItem;
+  const canEdit = hasPermission(actor, "viewOrders");
+  const canEditItemDetails = hasPermission(actor, "editOrders");
   const omieAlertCount = orderOmieSyncAlertCount(order);
-  const canReplyAsPcp =
-    canPatchPcpReplyRole(userRole) && hasPermission(userRole, "viewOrders");
+  const canReplyAsPcp = hasPermission(actor, "viewOrders");
   const obsText = (order.comercial_pcp_observation ?? "").trim();
   const pcpReplyText = (order.pcp_reply_comercial_observation ?? "").trim();
   const comercialObsPendingForPcp =

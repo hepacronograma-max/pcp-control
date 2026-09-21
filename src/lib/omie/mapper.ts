@@ -79,11 +79,26 @@ export function extractOmieClientOrderNumber(
     root.pedido_venda_produto && typeof root.pedido_venda_produto === "object"
       ? (root.pedido_venda_produto as Record<string, unknown>)
       : root;
-  const inf = nested.informacoes_adicionais;
-  if (!inf || typeof inf !== "object") return null;
-  const n = (inf as Record<string, unknown>).numero_pedido_cliente;
-  const s = String(n ?? "").trim();
-  return s || null;
+  const inf =
+    nested.informacoes_adicionais &&
+    typeof nested.informacoes_adicionais === "object"
+      ? (nested.informacoes_adicionais as Record<string, unknown>)
+      : {};
+  const cab =
+    nested.cabecalho && typeof nested.cabecalho === "object"
+      ? (nested.cabecalho as Record<string, unknown>)
+      : {};
+  for (const raw of [
+    inf.numero_pedido_cliente,
+    inf.codigo_pedido_cliente,
+    inf.cNumPedCli,
+    cab.numero_pedido_cliente,
+    nested.numero_pedido_cliente,
+  ]) {
+    const s = String(raw ?? "").trim();
+    if (s) return s;
+  }
+  return null;
 }
 
 export function extractClientNameFromPedido(omie: OmiePedidoCompleto): string {

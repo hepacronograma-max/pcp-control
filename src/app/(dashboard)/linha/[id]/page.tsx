@@ -38,6 +38,7 @@ import {
 } from "@/lib/supabase/fetch-almox-scheduled-items";
 import { productionLineIsAlmoxarifado } from "@/lib/supabase/sync-almoxarifado-on-program";
 import { syncAlmoxOnProductionEndChange } from "@/lib/supabase/sync-almox-on-production-end";
+import { finishOrderIfAllItemsCompleted } from "@/lib/supabase/finish-order-if-all-items-completed";
 import { isUuid } from "@/lib/utils/is-uuid";
 import { toast } from "sonner";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
@@ -602,6 +603,7 @@ export default function LinePage() {
           previousProductionEnd: prevPeNorm,
           actorUserId: profile?.id && isUuid(profile.id) ? profile.id : null,
         });
+        await finishOrderIfAllItemsCompleted(supabase, targetItem.order?.id);
       } else return;
     }
 

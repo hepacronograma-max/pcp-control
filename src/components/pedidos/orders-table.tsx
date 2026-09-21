@@ -24,6 +24,7 @@ interface OrdersTableProps {
   visibleOrders: OrderWithItems[];
   lines: ProductionLine[];
   userRole: UserRole;
+  extraRoles?: string[] | null;
   cqUserId?: string;
   cqCompanyId?: string | null;
   onUpdateOrderPcpDate: (orderId: string, date: string | null) => void;
@@ -55,6 +56,7 @@ export function OrdersTable({
   visibleOrders,
   lines,
   userRole,
+  extraRoles,
   cqUserId,
   cqCompanyId,
   onUpdateOrderPcpDate,
@@ -75,7 +77,8 @@ export function OrdersTable({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const selectAllRef = useRef<HTMLInputElement>(null);
   const showBulk =
-    hasPermission(userRole, "finishOrders") && !!onFinishOrdersBulk;
+    hasPermission({ role: userRole, extra_roles: extraRoles }, "finishOrders") &&
+    !!onFinishOrdersBulk;
   const [sortKey, setSortKey] = useState<SortKey>("delivery_deadline");
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -290,6 +293,7 @@ export function OrdersTable({
                 order={order}
                 lines={lines}
                 userRole={userRole}
+                extraRoles={extraRoles}
                 onUpdateOrderPcpDate={onUpdateOrderPcpDate}
                 onUpdateItemLine={onUpdateItemLine}
                 onUpdateItemQuantity={onUpdateItemQuantity}

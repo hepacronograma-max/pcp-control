@@ -12,6 +12,8 @@ export type EmbalagemLabelInput = {
   sequence: number;
   clientName: string;
   orderNumber: string;
+  /** Nº do pedido do cliente (Omie). Na etiqueta sai como Pedido. */
+  clientOrderNumber?: string | null;
   productCode: string | null;
   description: string;
   pieceQuantity: number;
@@ -74,7 +76,8 @@ function sheetHtml(label: EmbalagemLabelInput): string {
   </header>
   <div class="emb-meta">
     <div><strong>Cliente:</strong> ${escapeHtml(label.clientName)}</div>
-    <div><strong>Pedido:</strong> ${escapeHtml(label.orderNumber)}</div>
+    <div><strong>OS:</strong> ${escapeHtml(label.orderNumber)}</div>
+    <div><strong>Pedido:</strong> ${escapeHtml(label.clientOrderNumber?.trim() || "—")}</div>
     <div><strong>Caixa:</strong> ${escapeHtml(label.boxLabel)} &nbsp; <strong>Peso:</strong> ${escapeHtml(formatWeightKg(label.weightKg))} kg</div>
   </div>
   <div class="emb-table-wrap">

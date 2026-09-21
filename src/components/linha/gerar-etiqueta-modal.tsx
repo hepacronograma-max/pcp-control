@@ -36,6 +36,7 @@ import {
   getHepaLogoDataUrl,
   invalidateHepaLogoCache,
 } from "@/lib/etiqueta-assets-cache";
+import { useClientOrderNumber } from "@/lib/hooks/use-client-order-number";
 
 const QR_URL = "https://www.hepafiltros.com.br";
 
@@ -81,6 +82,7 @@ export function GerarEtiquetaModal({
     () => Math.max(1, Math.floor(Number(item?.quantity) || 1)),
     [item?.quantity]
   );
+  const clientOrderNumber = useClientOrderNumber(item?.order.id, open);
 
   const [classe, setClasse] = useState("");
   const [reimprimirSeries, setReimprimirSeries] = useState("");
@@ -185,6 +187,8 @@ export function GerarEtiquetaModal({
         perdaFinal: perdaFinal.trim(),
         qrDataUrl: previewQr,
         logoDataUrl: previewLogo || undefined,
+        osNumber: item.order.order_number,
+        pedidoCliente: clientOrderNumber,
       };
     },
     [
@@ -200,6 +204,7 @@ export function GerarEtiquetaModal({
       perdaInicial,
       perdaFinal,
       previewLogo,
+      clientOrderNumber,
     ]
   );
 
@@ -389,6 +394,14 @@ export function GerarEtiquetaModal({
                   {medida}
                 </p>
               ) : null}
+              <p>
+                <span className="font-semibold text-slate-700">OS:</span>{" "}
+                {item.order.order_number}
+              </p>
+              <p>
+                <span className="font-semibold text-slate-700">Pedido:</span>{" "}
+                {clientOrderNumber || "—"}
+              </p>
               <p>
                 <span className="font-semibold text-slate-700">Lote:</span>{" "}
                 {lote}
