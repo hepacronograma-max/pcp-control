@@ -3,7 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { hasPermission } from "@/lib/utils/permissions";
-import type { UserRole } from "@/lib/types/database";
+import { fetchActorProfile } from "@/lib/supabase/fetch-actor-profile";
 import { importarPedidosDaFabricacao } from "@/lib/omie/sync-service";
 import { getOmieIntegrationMode } from "@/lib/omie/integration-mode";
 
@@ -16,18 +16,13 @@ async function requireManager() {
     return { error: NextResponse.json({ error: "Não autenticado" }, { status: 401 }) };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, company_id")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const role = profile?.role as UserRole | undefined;
-  if (!role || !hasPermission(role, "viewSettings")) {
+  const admin = createSupabaseAdminClient();
+  const profile = await fetchActorProfile(admin, user.id);
+  if (!profile || !hasPermission(profile, "viewSettings")) {
     return { error: NextResponse.json({ error: "Sem permissão" }, { status: 403 }) };
   }
 
-  return { profile, admin: createSupabaseAdminClient() };
+  return { profile, admin };
 }
 
 /** Mesma permissão do antigo "Importar PDFs" em /pedidos (gestor + PCP). */
@@ -44,14 +39,9 @@ async function requireOmieImport() {
     return { error: NextResponse.json({ error: "Não autenticado" }, { status: 401 }) };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, company_id")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const role = profile?.role as UserRole | undefined;
-  if (!role || !hasPermission(role, "importOrders")) {
+  const admin = createSupabaseAdminClient();
+  const profile = await fetchActorProfile(admin, user.id);
+  if (!profile || !hasPermission(profile, "importOrders")) {
     return {
       error: NextResponse.json(
         { error: "Sem permissão para importar pedidos do Omie" },
@@ -60,7 +50,7 @@ async function requireOmieImport() {
     };
   }
 
-  return { profile, admin: createSupabaseAdminClient() };
+  return { profile, admin };
 }
 
 function startOfDayIso(d: Date) {

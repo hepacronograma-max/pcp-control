@@ -120,8 +120,9 @@ export const PERMISSIONS = {
 /** Perfis no Supabase às vezes usam `admin`; no app equivale a manager. */
 export function normalizeUserRole(userRole: UserRole | string | null | undefined): UserRole {
   if (!userRole) return "operator";
-  if (userRole === "admin") return "manager";
-  return userRole as UserRole;
+  const s = String(userRole).trim().toLowerCase();
+  if (s === "admin") return "manager";
+  return s as UserRole;
 }
 
 export type StaffPosition =
@@ -146,7 +147,7 @@ const STAFF_POSITION_SET = new Set<string>(STAFF_POSITIONS.map((p) => p.value));
 export function parseStaffPosition(
   role: string | null | undefined
 ): StaffPosition {
-  const s = String(role ?? "").trim();
+  const s = String(role ?? "").trim().toLowerCase();
   if (STAFF_POSITION_SET.has(s)) return s as StaffPosition;
   return "operator";
 }
@@ -180,7 +181,7 @@ function isActorObject(
 }
 
 function pushNormalizedRole(out: UserRole[], raw: unknown) {
-  const s = String(raw ?? "").trim();
+  const s = String(raw ?? "").trim().toLowerCase();
   if (!s) return;
   const n = s === "admin" ? "manager" : (s as UserRole);
   if (!out.includes(n)) out.push(n);
@@ -208,7 +209,7 @@ export function parseExtraRoles(
   raw: unknown,
   primaryRole?: string | null
 ): StaffPosition[] {
-  const primary = String(primaryRole ?? "").trim();
+  const primary = String(primaryRole ?? "").trim().toLowerCase();
   const list = Array.isArray(raw)
     ? raw
     : typeof raw === "string"
@@ -216,7 +217,7 @@ export function parseExtraRoles(
       : [];
   const out: StaffPosition[] = [];
   for (const item of list) {
-    const s = String(item ?? "").trim();
+    const s = String(item ?? "").trim().toLowerCase();
     if (!STAFF_POSITION_SET.has(s) || s === primary) continue;
     if (!out.includes(s as StaffPosition)) out.push(s as StaffPosition);
   }

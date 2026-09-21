@@ -5,6 +5,8 @@ import { hasRequestLocalAuthCookie } from "@/lib/server-local-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import { toDateOnly } from "@/lib/utils/supabase-data";
+import { fetchActorProfile } from "@/lib/supabase/fetch-actor-profile";
+import { collectActorRoles, hasPermission } from "@/lib/utils/permissions";
 import { appendLineFallbackToNotes } from "@/lib/compras/pc-lines-fallback";
 import {
   parsePurchaseOrderPdf,
@@ -78,10 +80,6 @@ async function savePurchaseOrderLines(
     return { ok: false as const, error: inErr.message, schemaLinesMissing: false };
   }
   return { ok: true as const, schemaLinesMissing: false };
-}
-
-function canImportPurchase(role: string | null | undefined): boolean {
-  return role === "super_admin" || role === "manager" || role === "compras";
 }
 
 async function extractText(buffer: Buffer): Promise<string> {
@@ -177,24 +175,24 @@ export async function POST(request: NextRequest) {
 
     if (!hasLocal) {
       const sAuth = await createServerSupabaseClient();
-      const {
-        data: { user },
-      } = await sAuth.auth.getUser();
+      const { data: userWrap } = await sAuth.auth.getUser();
+      const user = userWrap.user;
       if (!user) {
         return NextResponse.json(
           { success: false, error: "É necessário estar autenticado." },
           { status: 401 }
         );
       }
-      const { data: prof } = await sAuth
-        .from("profiles")
-        .select("company_id, role")
-        .eq("id", user.id)
-        .single();
-      if (!canImportPurchase(prof?.role)) {
+      const prof = await fetchActorProfile(supabase, user.id);
+      if (!prof || !hasPermission(prof, "importComprasPdfs")) {
         return NextResponse.json({ success: false, error: "Sem permissão para importar compras." }, { status: 403 });
       }
-      if (prof?.company_id && prof.company_id !== companyId && prof?.role !== "super_admin") {
+      if (
+        prof.company_id &&
+        prof.company_id !== "local-company" &&
+        prof.company_id !== companyId &&
+        !collectActorRoles(prof).includes("super_admin")
+      ) {
         companyId = prof.company_id;
       }
     }

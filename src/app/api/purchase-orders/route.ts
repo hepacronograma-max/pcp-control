@@ -3,7 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { fetchActorProfile } from "@/lib/supabase/fetch-actor-profile";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
+import {
+  collectActorRoles,
+  hasPermission,
+} from "@/lib/utils/permissions";
 import { toDateOnly } from "@/lib/utils/supabase-data";
 import {
   parsePcLineFallbackFromNotes,
@@ -18,22 +23,6 @@ const PO_LIST_COLUMNS_NO_ARRIVED =
 function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     s.trim()
-  );
-}
-
-function canManagePurchases(role: string | null | undefined): boolean {
-  return (
-    role === "super_admin" ||
-    role === "manager" ||
-    role === "compras"
-  );
-}
-
-/** PCP e gestão podem listar; só gestão+Compras alteram. */
-function canViewPurchases(role: string | null | undefined): boolean {
-  return (
-    canManagePurchases(role) ||
-    role === "pcp"
   );
 }
 
@@ -74,18 +63,20 @@ async function resolveCompanyId(
     if (!user) {
       return { companyId: null, error: NextResponse.json({ error: "not authenticated" }, { status: 401 }) };
     }
-    const { data: profile } = await supabaseAuth
-      .from("profiles")
-      .select("company_id, role")
-      .eq("id", user.id)
-      .single();
+    const profile = await fetchActorProfile(supabase, user.id);
 
-    const canAccess =
-      purchaseAccess === "read"
-        ? canViewPurchases(profile?.role)
-        : canManagePurchases(profile?.role);
-    if (!canAccess) {
+    const canAccess = hasPermission(
+      profile,
+      purchaseAccess === "read" ? "viewCompras" : "editCompras"
+    );
+    if (!profile || !canAccess) {
       return { companyId: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
+    }
+
+    const isSuperAdmin = collectActorRoles(profile).includes("super_admin");
+    let ownCompanyId = profile.company_id;
+    if (!ownCompanyId || ownCompanyId === "local-company") {
+      ownCompanyId = await resolvePrimaryCompanyId(supabase);
     }
 
     let companyId: string | null = null;
@@ -96,15 +87,15 @@ async function resolveCompanyId(
         .eq("id", param)
         .maybeSingle();
       if (row?.id) {
-        if (profile?.role !== "super_admin" && param !== profile?.company_id) {
+        if (!isSuperAdmin && param !== ownCompanyId && param !== profile.company_id) {
           return { companyId: null, error: NextResponse.json({ error: "forbidden" }, { status: 403 }) };
         }
         companyId = row.id;
       }
     }
     if (!companyId) {
-      if (profile?.company_id) companyId = profile.company_id;
-      else if (profile?.role === "super_admin") {
+      if (ownCompanyId) companyId = ownCompanyId;
+      else if (isSuperAdmin) {
         companyId = await resolvePrimaryCompanyId(supabase);
       } else {
         return { companyId: null, error: NextResponse.json({ error: "no company" }, { status: 403 }) };

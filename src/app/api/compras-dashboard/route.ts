@@ -2,6 +2,9 @@ import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { NextRequest, NextResponse } from "next/server";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { fetchActorProfile } from "@/lib/supabase/fetch-actor-profile";
+import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
+import { collectActorRoles, hasPermission } from "@/lib/utils/permissions";
 
 type ChartRow = { name: string; value: number };
 type SupplierBarRow = { name: string; total: number };
@@ -32,16 +35,6 @@ function calendarDaysBetween(start: Date, end: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86_400_000);
 }
 
-/** Perfis que podem ver o dashboard de compras (mesmo conjunto que lista PCs em leitura ampla). */
-function canAccessComprasDashboard(role: string | null | undefined): boolean {
-  return (
-    role === "super_admin" ||
-    role === "manager" ||
-    role === "compras" ||
-    role === "pcp"
-  );
-}
-
 export async function GET(request: NextRequest) {
   const companyId = request.nextUrl.searchParams.get("companyId")?.trim();
   if (!companyId) {
@@ -58,21 +51,24 @@ export async function GET(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "not authenticated" }, { status: 401 });
     }
-    const { data: profile } = await supabaseAuth
-      .from("profiles")
-      .select("company_id, role")
-      .eq("id", user.id)
-      .single();
+    const admin = createSupabaseAdminClient();
+    const profile = await fetchActorProfile(admin, user.id);
 
-    if (!canAccessComprasDashboard(profile?.role)) {
+    if (!profile || !hasPermission(profile, "viewCompras")) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
-    if (!profile?.company_id) {
+    const isSuperAdmin = collectActorRoles(profile).includes("super_admin");
+    let ownCompanyId = profile.company_id;
+    if (!ownCompanyId || ownCompanyId === "local-company") {
+      ownCompanyId = await resolvePrimaryCompanyId(admin);
+    }
+    if (!ownCompanyId) {
       return NextResponse.json({ error: "no company" }, { status: 403 });
     }
     if (
+      companyId !== ownCompanyId &&
       companyId !== profile.company_id &&
-      profile.role !== "super_admin"
+      !isSuperAdmin
     ) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }

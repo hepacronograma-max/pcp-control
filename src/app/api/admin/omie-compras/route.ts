@@ -3,7 +3,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { hasPermission } from "@/lib/utils/permissions";
-import type { UserRole } from "@/lib/types/database";
+import { fetchActorProfile } from "@/lib/supabase/fetch-actor-profile";
 import { importarPedidosDeCompra } from "@/lib/omie/purchase-sync-service";
 
 export const runtime = "nodejs";
@@ -22,14 +22,9 @@ async function requireComprasImport() {
     return { error: NextResponse.json({ error: "Não autenticado" }, { status: 401 }) };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role, company_id")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const role = profile?.role as UserRole | undefined;
-  if (!role || !hasPermission(role, "editCompras")) {
+  const admin = createSupabaseAdminClient();
+  const profile = await fetchActorProfile(admin, user.id);
+  if (!profile || !hasPermission(profile, "editCompras")) {
     return {
       error: NextResponse.json(
         { error: "Sem permissão para importar pedidos de compra do Omie" },
@@ -38,7 +33,7 @@ async function requireComprasImport() {
     };
   }
 
-  return { profile, admin: createSupabaseAdminClient() };
+  return { profile, admin };
 }
 
 export async function POST() {

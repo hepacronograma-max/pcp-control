@@ -137,8 +137,7 @@ export default function PedidosPage() {
   }, [profile, effectiveCompanyId, effectiveLoaded, useApi, reloadOrders]);
 
   const userRole: UserRole | null = profile ? profile.role : null;
-  const canImport =
-    userRole && hasPermission(userRole, "importOrders");
+  const canImport = !!profile && hasPermission(profile, "importOrders");
 
   const openCount = useMemo(
     () => orders.filter((o) => o.status !== "finished").length,

@@ -6,6 +6,7 @@ import { syncAlmoxarifadoOnProgram } from "@/lib/supabase/sync-almoxarifado-on-p
 import { syncAlmoxOnProductionEndChange } from "@/lib/supabase/sync-almox-on-production-end";
 import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
 import { hasPermission } from "@/lib/utils/permissions";
+import { fetchActorProfile } from "@/lib/supabase/fetch-actor-profile";
 import {
   finalizeShippingListForOrder,
   reopenShippingListForOrder,
@@ -33,11 +34,10 @@ async function assertCanEditOrders(): Promise<
       ),
     };
   }
-  const { data: profile } = await authClient
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .single();
+  const profile = await fetchActorProfile(
+    createSupabaseAdminClient(),
+    user.id
+  );
   if (!profile || !hasPermission(profile, "editOrders")) {
     return {
       ok: false,
