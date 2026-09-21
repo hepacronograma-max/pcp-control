@@ -22,7 +22,10 @@ export function brDateToIso(d?: string | null): string | null {
 export function extractPedCompraCabecalho(
   pedido: OmiePedidoCompra
 ): OmiePedidoCompraCabecalho {
-  return pedido.cabecalho_consulta ?? {};
+  return {
+    ...(pedido.cabecalho ?? {}),
+    ...(pedido.cabecalho_consulta ?? {}),
+  };
 }
 
 export function extractPedCompraCodigo(pedido: OmiePedidoCompra): number | null {
@@ -49,7 +52,10 @@ export function extractPedCompraSupplierName(
   const cab = extractPedCompraCabecalho(pedido);
   for (const raw of [
     cab.nome_fantasia,
+    cab.cNomeFantasia,
+    cab.cNomeFor,
     cab.cRazaoFor,
+    cab.cRazaoSocial,
     cab.nome_fornecedor,
     cab.razao_social,
   ]) {

@@ -10,6 +10,8 @@ import {
   hasPermission,
 } from "@/lib/utils/permissions";
 import { toDateOnly } from "@/lib/utils/supabase-data";
+import { extractPedCompraSupplierName } from "@/lib/omie/purchase-mapper";
+import type { OmiePedidoCompra } from "@/lib/omie/types";
 import {
   parsePcLineFallbackFromNotes,
   stripLineFallbackForDisplay,
@@ -333,6 +335,20 @@ export async function GET(request: NextRequest) {
     .not("id", "is", null)
     .limit(200);
 
+  const supplierFromOmie = new Map<string, string>();
+  if (poIds.length > 0) {
+    const { data: omieLinkRows } = await supabase
+      .from("omie_purchase_order_links")
+      .select("purchase_order_id, omie_payload_original")
+      .in("purchase_order_id", poIds);
+    for (const row of omieLinkRows ?? []) {
+      const name = extractPedCompraSupplierName(
+        (row.omie_payload_original ?? {}) as OmiePedidoCompra
+      );
+      if (name) supplierFromOmie.set(row.purchase_order_id as string, name);
+    }
+  }
+
   return NextResponse.json({
     purchaseOrders: (pos ?? []).map((p) => {
       const fullNotes = p.notes;
@@ -373,6 +389,10 @@ export async function GET(request: NextRequest) {
       });
       return {
         ...p,
+        supplier_name:
+          (typeof p.supplier_name === "string" && p.supplier_name.trim()) ||
+          supplierFromOmie.get(p.id) ||
+          null,
         notes: stripLineFallbackForDisplay(fullNotes),
         lines: polLines,
         links,

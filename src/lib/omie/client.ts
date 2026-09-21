@@ -301,17 +301,29 @@ export class OmieClient {
     return res as OmiePedidoCompra;
   }
 
-  /** Cadastro do fornecedor (somente leitura) — nome para a lista de compras. */
-  async consultarFornecedor(codigo_fornecedor: number): Promise<{
-    codigo_fornecedor?: number;
+  /**
+   * Cadastro do fornecedor (somente leitura) — nome para a lista de compras.
+   * No Omie o código é o mesmo `codigo_cliente_omie` do cadastro unificado.
+   */
+  async consultarFornecedor(codigo_cliente_omie: number): Promise<{
+    codigo_cliente_omie?: number;
     razao_social?: string;
     nome_fantasia?: string;
   }> {
-    return this.call(
-      "ConsultarFornecedor",
-      { codigo_fornecedor },
-      0,
-      FORNECEDORES_URL
-    );
+    try {
+      return await this.call(
+        "ConsultarFornecedor",
+        { codigo_cliente_omie },
+        0,
+        FORNECEDORES_URL
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[omie] ConsultarFornecedor(${codigo_cliente_omie}) falhou, tentando ConsultarCliente:`,
+        msg
+      );
+      return this.consultarCliente(codigo_cliente_omie);
+    }
   }
 }

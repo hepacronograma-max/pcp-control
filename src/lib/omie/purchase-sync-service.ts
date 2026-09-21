@@ -74,9 +74,17 @@ async function resolveSupplierName(
   if (cached) return cached;
   try {
     const cadastro = await client.consultarFornecedor(Number(codigo));
+    const extra = cadastro as {
+      razao_social?: string;
+      nome_fantasia?: string;
+      cRazaoSocial?: string;
+      cNomeFantasia?: string;
+      cRazaoFor?: string;
+      cNomeFor?: string;
+    };
     const resolved = pickOmieClientDisplayName(
-      cadastro.razao_social,
-      cadastro.nome_fantasia
+      extra.razao_social || extra.cRazaoSocial || extra.cRazaoFor,
+      extra.nome_fantasia || extra.cNomeFantasia || extra.cNomeFor
     );
     if (resolved) {
       cache.set(Number(codigo), resolved);
@@ -240,14 +248,15 @@ async function processOne(
   if (poId) {
     const { data: current } = await supabase
       .from("purchase_orders")
-      .select("notes")
+      .select("notes, supplier_name")
       .eq("id", poId)
       .maybeSingle();
     const keepNotes = String(current?.notes ?? "").trim();
+    const keepSupplier = String(current?.supplier_name ?? "").trim();
     const { error } = await supabase
       .from("purchase_orders")
       .update({
-        supplier_name: header.supplier_name,
+        supplier_name: header.supplier_name || keepSupplier || null,
         expected_delivery: header.expected_delivery,
         status: header.status,
         notes: keepNotes || header.notes,

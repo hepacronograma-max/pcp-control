@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   brDateToIso,
   extractPedCompraNumber,
+  extractPedCompraSupplierName,
   mapOmiePedCompraToPcp,
 } from "../src/lib/omie/purchase-mapper";
 import type { OmiePedidoCompra } from "../src/lib/omie/types";
@@ -58,6 +59,34 @@ describe("mapOmiePedCompraToPcp", () => {
       COMPANY
     );
     assert.equal(draft.status, "received");
+  });
+});
+
+describe("extractPedCompraSupplierName", () => {
+  it("usa cRazaoFor do cabeçalho", () => {
+    assert.equal(extractPedCompraSupplierName(sample), "Fornecedor Alpha");
+  });
+
+  it("aceita cNomeFor e cabecalho sem _consulta", () => {
+    assert.equal(
+      extractPedCompraSupplierName({
+        cabecalho: {
+          nCodPed: 1,
+          nCodFor: 99,
+          cNomeFor: "Beta Insumos Ltda",
+        },
+      }),
+      "Beta Insumos Ltda"
+    );
+  });
+
+  it("fica vazio quando a lista só traz o código do fornecedor", () => {
+    assert.equal(
+      extractPedCompraSupplierName({
+        cabecalho_consulta: { nCodPed: 1, nCodFor: 14170458, cNumero: "26038" },
+      }),
+      null
+    );
   });
 });
 

@@ -176,6 +176,9 @@ export interface OmiePedidoCompraCabecalho {
   cObsInt?: string;
   /** Campos extras que às vezes vêm no JSON. */
   cRazaoFor?: string;
+  cNomeFor?: string;
+  cRazaoSocial?: string;
+  cNomeFantasia?: string;
   nome_fornecedor?: string;
   razao_social?: string;
   nome_fantasia?: string;
@@ -195,6 +198,8 @@ export interface OmiePedidoCompraProduto {
 
 export interface OmiePedidoCompra {
   cabecalho_consulta?: OmiePedidoCompraCabecalho;
+  /** Algumas respostas usam `cabecalho` em vez de `cabecalho_consulta`. */
+  cabecalho?: OmiePedidoCompraCabecalho;
   produtos_consulta?: OmiePedidoCompraProduto[];
 }
 
