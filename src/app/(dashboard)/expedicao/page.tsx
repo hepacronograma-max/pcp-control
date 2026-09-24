@@ -145,14 +145,7 @@ export default function ExpedicaoPage() {
 
   const releasedRows = useMemo(
     () =>
-      rows.filter((row) => {
-        const list = row.shippingList;
-        return (
-          row.order.status === "finished" ||
-          list?.status === "finalized" ||
-          Boolean(list?.finalized_at)
-        );
-      }),
+      rows.filter((row) => row.order.status === "finished"),
     [rows]
   );
 
@@ -214,7 +207,7 @@ export default function ExpedicaoPage() {
     const pending = rows.find((r) => r.shippingList?.id === lista);
     if (pending) {
       openedFromUrl.current = true;
-      toast.error("Este pedido ainda não foi liberado pelo PCP.");
+      toast.error("Este pedido ainda não foi finalizado pelo PCP.");
     }
   }, [releasedRows, rows, openConference]);
 
@@ -288,7 +281,7 @@ export default function ExpedicaoPage() {
           const pending = rows.find((r) => r.shippingList?.id === scan.listId);
           toast.error(
             pending
-              ? "Este pedido ainda não foi liberado pelo PCP."
+              ? "Este pedido ainda não foi finalizado pelo PCP."
               : "Packing list não encontrada."
           );
           return;

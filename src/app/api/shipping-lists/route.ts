@@ -284,14 +284,10 @@ export async function POST(request: NextRequest) {
         .eq("company_id", companyId)
         .maybeSingle();
       if (!order) return jsonError("Pedido não encontrado.", 404);
-      const list = await loadShippingList(gate.admin, orderId);
-      const pcpReleased =
-        order.status === "finished" ||
-        list?.status === "finalized" ||
-        Boolean(list?.finalized_at);
+      const pcpReleased = order.status === "finished";
       if (!pcpReleased) {
         return jsonError(
-          "O PCP ainda não liberou este pedido para faturar.",
+          "O PCP ainda não finalizou este pedido. Só pedidos totalmente finalizados podem ser faturados.",
           400
         );
       }
@@ -415,13 +411,10 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
       if (!order) return jsonError("Pedido não encontrado.", 404);
       const list = await loadShippingList(gate.admin, orderId);
-      const pcpReleased =
-        order.status === "finished" ||
-        list?.status === "finalized" ||
-        Boolean(list?.finalized_at);
+      const pcpReleased = order.status === "finished";
       if (!pcpReleased) {
         return jsonError(
-          "O PCP ainda não liberou este pedido para faturar.",
+          "O PCP ainda não finalizou este pedido. Só pedidos totalmente finalizados podem ser faturados.",
           400
         );
       }

@@ -26,7 +26,7 @@ import {
   liveGetInit,
   usePollWhenVisible,
 } from "@/lib/hooks/use-poll-when-visible";
-import { totalOmieSyncAlertCount } from "@/lib/utils/omie-sync-alerts";
+import { listOmieSyncAlerts } from "@/lib/utils/omie-sync-alerts";
 import type { OmieImportReport } from "@/lib/omie/types";
 import { summarizeOmieImportReport } from "@/components/omie/import-report-summary";
 
@@ -108,6 +108,8 @@ export default function PedidosPage() {
   const [tab, setTab] = useState<TabKey>("open");
   const [openCount, setOpenCount] = useState(0);
   const [finishedCount, setFinishedCount] = useState(0);
+  const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
+  const [highlightItemId, setHighlightItemId] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(false);
   const [importingOmie, setImportingOmie] = useState(false);
 
@@ -164,10 +166,7 @@ export default function PedidosPage() {
   const userRole: UserRole | null = profile ? profile.role : null;
   const canImport = !!profile && hasPermission(profile, "importOrders");
 
-  const omieSyncAlertTotal = useMemo(
-    () => totalOmieSyncAlertCount(orders),
-    [orders]
-  );
+  const omieSyncAlerts = useMemo(() => listOmieSyncAlerts(orders), [orders]);
 
   function updateOrdersState(
     updater: (prev: OrderWithItems[]) => OrderWithItems[]
@@ -874,18 +873,56 @@ export default function PedidosPage() {
 
   return (
     <div className="space-y-4 w-full max-w-[100vw] min-w-0">
-      {omieSyncAlertTotal > 0 && (
+      {omieSyncAlerts.length > 0 && (
         <div className="rounded-lg border-2 border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
           <p className="font-semibold">
-            {omieSyncAlertTotal === 1
+            {omieSyncAlerts.length === 1
               ? "1 item com alerta Omie"
-              : `${omieSyncAlertTotal} itens com alerta Omie`}
+              : `${omieSyncAlerts.length} itens com alerta Omie`}
           </p>
           <p className="mt-1 text-xs text-red-800">
             O Omie divergiu de itens em produção ou concluídos (ou sumiu no Omie).
             O PCP não foi alterado automaticamente — medie com vendas/produção e
-            corrija no Omie quando aplicável.
+            corrija no Omie quando aplicável. Clique no item para ir até o pedido.
           </p>
+          <ul className="mt-2 max-h-48 space-y-1.5 overflow-y-auto">
+            {omieSyncAlerts.map((alert) => {
+              const itemLabel = [
+                alert.itemNumber > 0 ? `Item ${alert.itemNumber}` : null,
+                alert.productCode || null,
+                alert.description || null,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <li key={alert.itemId}>
+                  <button
+                    type="button"
+                    className="w-full rounded-md border border-red-200 bg-white px-3 py-2 text-left text-xs text-red-950 hover:border-red-400 hover:bg-red-50"
+                    onClick={() => {
+                      setHighlightOrderId(alert.orderId);
+                      setHighlightItemId(alert.itemId);
+                      setTab(alert.orderFinished ? "finished" : "open");
+                    }}
+                  >
+                    <span className="font-semibold">
+                      Pedido {alert.orderNumber}
+                    </span>
+                    {alert.clientName ? (
+                      <span className="text-red-800"> — {alert.clientName}</span>
+                    ) : null}
+                    <span className="mt-0.5 block text-[11px] text-red-900">
+                      {itemLabel || "Item sem descrição"}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] font-medium text-red-800">
+                      {alert.flagLabel}
+                      {alert.detail ? ` — ${alert.detail}` : ""}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1005,6 +1042,8 @@ export default function PedidosPage() {
           onFinishOrdersBulk={handleFinishOrdersBulk}
           onReopenOrder={handleReopenOrder}
           onReopenCompletedItem={handleReopenItem}
+          highlightOrderId={highlightOrderId}
+          highlightItemId={highlightItemId}
           onComercialObservationThreadUpdated={(orderId, patch: OrderComercialThreadPatch) => {
             updateOrdersState((prev) =>
               prev.map((o) => (o.id === orderId ? { ...o, ...patch } : o))

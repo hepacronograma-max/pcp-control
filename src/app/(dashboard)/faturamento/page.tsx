@@ -483,10 +483,10 @@ export default function FaturamentoPage() {
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Faturamento</h1>
         <p className="text-sm text-slate-500 mt-1">
-          Uma lista de embarque por pedido, em três estações: o PCP libera
-          para faturar; quando o pedido é faturado no Omie, ele passa sozinho
-          para Faturado; a expedição finaliza o carregamento e o pedido vai
-          para Coletado.
+          Uma lista de embarque por pedido, em três estações: só entram pedidos
+          totalmente finalizados pelo PCP; quando o pedido é faturado no Omie, ele
+          passa sozinho para Faturado; a expedição finaliza o carregamento e o
+          pedido vai para Coletado.
         </p>
       </div>
 
@@ -551,7 +551,7 @@ export default function FaturamentoPage() {
           </div>
           {counts.packing > 0 ? (
             <p className="text-[11px] text-slate-500">
-              {counts.packing} lista(s) ainda em embalagem (PCP não liberou).
+              {counts.packing} lista(s) ainda em embalagem (PCP não finalizou o pedido).
             </p>
           ) : null}
         <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">

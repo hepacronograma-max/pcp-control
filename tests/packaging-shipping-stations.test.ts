@@ -7,12 +7,22 @@ import {
 } from "../src/lib/packaging/shipping-stations";
 
 describe("estações de faturamento", () => {
-  it("PCP finalizar → Liberado para faturar", () => {
+  it("PCP finalizar pedido → Liberado para faturar", () => {
     assert.equal(
       shippingStationOf({ status: "finalized", finalized_at: "2026-09-10", invoiced_at: null, collected_at: null }, true),
       "ready_to_invoice"
     );
     assert.equal(shippingStationLabel("ready_to_invoice"), "Liberado para faturar");
+  });
+
+  it("lista de embarque pronta sem pedido finalizado pelo PCP continua em embalagem", () => {
+    assert.equal(
+      shippingStationOf(
+        { status: "finalized", finalized_at: "2026-09-10", invoiced_at: null, collected_at: null },
+        false
+      ),
+      "packing"
+    );
   });
 
   it("com invoiced_at → Faturado", () => {

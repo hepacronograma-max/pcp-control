@@ -58,6 +58,8 @@ export interface OrderRowProps {
     orderId: string,
     patch: OrderComercialThreadPatch
   ) => void;
+  forceExpanded?: boolean;
+  highlightItemId?: string | null;
 }
 
 /** Mesmas regras que PATCH `/api/comercial-orders` para `pcp_reply_comercial_observation`. */
@@ -93,8 +95,13 @@ export function OrderRow({
   onComercialObservationThreadUpdated,
   cqUserId,
   cqCompanyId,
+  forceExpanded = false,
+  highlightItemId = null,
 }: OrderRowProps) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(forceExpanded);
+  useEffect(() => {
+    if (forceExpanded) setExpanded(true);
+  }, [forceExpanded]);
   const [showEditModal, setShowEditModal] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [editNumber, setEditNumber] = useState(order.order_number);
@@ -318,7 +325,14 @@ export function OrderRow({
   }
 
   return (
-    <>
+    <div
+      id={`pedido-${order.id}`}
+      className={
+        forceExpanded
+          ? "scroll-mt-20 ring-2 ring-red-400 ring-offset-1 rounded-md"
+          : undefined
+      }
+    >
       <div
         className={`grid gap-2 px-3 sm:px-4 py-1.5 border-b border-slate-200 text-xs items-center transition-colors ${
           showSelect
@@ -400,7 +414,11 @@ export function OrderRow({
           {omieAlertCount > 0 && (
             <span
               className="inline-flex shrink-0 max-w-[12rem] truncate rounded-full bg-red-100 text-red-900 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap border border-red-300"
-              title={`${omieAlertCount} item(ns) com alerta Omie — expanda o pedido para ver detalhes`}
+              title={
+                omieAlertCount === 1
+                  ? "1 item com alerta Omie — expanda o pedido para ver o item"
+                  : `${omieAlertCount} itens com alerta Omie — expanda o pedido para ver detalhes`
+              }
             >
               Alerta Omie ({omieAlertCount})
             </span>
@@ -794,9 +812,10 @@ export function OrderRow({
           onUpdateItemPc={onUpdateItemPc}
           canReopenCompletedItem={canReopenCompletedItem}
           onReopenCompletedItem={onReopenCompletedItem}
+          highlightItemId={highlightItemId}
         />
       )}
-    </>
+    </div>
   );
 }
 

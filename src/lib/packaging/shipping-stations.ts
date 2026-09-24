@@ -21,14 +21,8 @@ export function shippingStationOf(
 ): ShippingStation {
   if (list?.collected_at) return "collected";
   if (list?.invoiced_at) return "invoiced";
-  if (
-    list?.status === "finalized" ||
-    list?.status === "ready_to_invoice" ||
-    list?.finalized_at ||
-    orderFinished
-  ) {
-    return "ready_to_invoice";
-  }
+  /** Só o pedido finalizado pelo PCP (não basta a lista de embarque). */
+  if (orderFinished) return "ready_to_invoice";
   return "packing";
 }
 

@@ -26,6 +26,7 @@ interface OrderItemsProps {
   /** Reabrir item marcado como concluído (PCP/gestão). */
   canReopenCompletedItem?: boolean;
   onReopenCompletedItem?: (itemId: string) => void;
+  highlightItemId?: string | null;
 }
 
 export function OrderItems({
@@ -40,6 +41,7 @@ export function OrderItems({
   onUpdateItemPc,
   canReopenCompletedItem,
   onReopenCompletedItem,
+  highlightItemId = null,
 }: OrderItemsProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [pcModalItemId, setPcModalItemId] = useState<string | null>(null);
@@ -59,6 +61,16 @@ export function OrderItems({
       return next;
     });
   }, [items]);
+
+  useEffect(() => {
+    if (!highlightItemId) return;
+    setExpandedItems((prev) => {
+      if (prev.has(highlightItemId)) return prev;
+      const next = new Set(prev);
+      next.add(highlightItemId);
+      return next;
+    });
+  }, [highlightItemId]);
 
   const toggleExpand = (id: string) => {
     setExpandedItems((prev) => {
@@ -141,7 +153,12 @@ export function OrderItems({
         return (
           <div
             key={item.id}
-            className={`grid ${gridCols} gap-1.5 px-3 py-2 text-[10px] sm:text-xs items-center`}
+            id={`pedido-item-${item.id}`}
+            className={`grid ${gridCols} gap-1.5 px-3 py-2 text-[10px] sm:text-xs items-center ${
+              highlightItemId === item.id
+                ? "bg-red-50 ring-1 ring-inset ring-red-300 rounded-md"
+                : ""
+            }`}
           >
             <div className="text-slate-400 text-center">{item.item_number}</div>
             <div className="min-w-0">

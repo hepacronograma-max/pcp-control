@@ -49,6 +49,8 @@ interface OrdersTableProps {
     orderId: string,
     patch: OrderComercialThreadPatch
   ) => void;
+  highlightOrderId?: string | null;
+  highlightItemId?: string | null;
 }
 
 export function OrdersTable({
@@ -72,6 +74,8 @@ export function OrdersTable({
   onReopenOrder,
   onReopenCompletedItem,
   onComercialObservationThreadUpdated,
+  highlightOrderId,
+  highlightItemId,
 }: OrdersTableProps) {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -157,6 +161,18 @@ export function OrdersTable({
     if (!el) return;
     el.indeterminate = someSelected && !allVisibleSelected;
   }, [someSelected, allVisibleSelected]);
+
+  useEffect(() => {
+    if (!highlightOrderId) return;
+    const t = window.setTimeout(() => {
+      const itemEl = highlightItemId
+        ? document.getElementById(`pedido-item-${highlightItemId}`)
+        : null;
+      const orderEl = document.getElementById(`pedido-${highlightOrderId}`);
+      (itemEl ?? orderEl)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, [highlightOrderId, highlightItemId, filteredAndSorted]);
 
   function toggleOrder(id: string) {
     setSelectedIds((prev) => {
@@ -313,6 +329,10 @@ export function OrdersTable({
                 showSelect={showBulk}
                 selected={selectedIds.has(order.id)}
                 onToggleSelect={() => toggleOrder(order.id)}
+                forceExpanded={highlightOrderId === order.id}
+                highlightItemId={
+                  highlightOrderId === order.id ? highlightItemId : null
+                }
               />
             ))}
           </div>
