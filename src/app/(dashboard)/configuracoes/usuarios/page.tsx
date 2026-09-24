@@ -27,6 +27,7 @@ import {
   parseStaffPosition,
   type StaffPosition,
 } from "@/lib/utils/permissions";
+import { assignableProductionLines } from "@/lib/utils/nav-line-groups";
 
 const LOCAL_LINES_KEY = "pcp-local-lines";
 
@@ -101,7 +102,7 @@ export default function UsersSettingsPage() {
     if (!profile?.company_id) return;
     if (isLocal) {
       const allLines = loadLocalLines(profile.company_id);
-      setLines(allLines);
+      setLines(assignableProductionLines(allLines));
       setUsers(getLocalUserWithLines(profile.company_id, allLines));
     }
   }
@@ -117,7 +118,7 @@ export default function UsersSettingsPage() {
     if (isLocal) {
       const allLines = loadLocalLines(companyId);
       const localUsers = getLocalUserWithLines(companyId, allLines);
-      setLines(allLines);
+      setLines(assignableProductionLines(allLines));
       setUsers(localUsers);
       return;
     }
@@ -179,7 +180,7 @@ export default function UsersSettingsPage() {
         linesByUser[ol.user_id].push(line);
       });
 
-      setLines(allLines ?? []);
+      setLines(assignableProductionLines(allLines ?? []));
       setUsers(
         (profiles ?? []).map((p: Profile) => ({
           ...p,
@@ -749,7 +750,7 @@ export default function UsersSettingsPage() {
               extra_roles: formExtraRoles,
             }) && (
               <div className="space-y-1">
-                <Label>Linhas (produção / logística / almox.)</Label>
+                <Label>Linhas (produção / almoxarifado)</Label>
                 {lines.length === 0 ? (
                   <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
                     Nenhuma linha carregada. Confira em{" "}

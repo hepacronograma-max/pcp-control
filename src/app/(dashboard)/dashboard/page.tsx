@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { OperatorDashboard } from "@/components/dashboard/operator-dashboard";
 import { ComprasDashboard } from "@/components/dashboard/compras-dashboard";
 import { DashboardMainTabs } from "@/components/dashboard/dashboard-main-tabs";
-import { hasPermission } from "@/lib/utils/permissions";
+import { hasPermission, parseExtraRoles } from "@/lib/utils/permissions";
 
 export default function DashboardPage() {
   const [role, setRole] = useState<string | null>(null);
@@ -29,9 +29,7 @@ export default function DashboardPage() {
           };
           cid = parsed.company_id || null;
           localRole = parsed.role ?? null;
-          if (Array.isArray(parsed.extra_roles)) {
-            setExtraRoles(parsed.extra_roles.filter(Boolean));
-          }
+          setExtraRoles(parseExtraRoles(parsed.extra_roles, localRole));
         } catch {
           /* ignore */
         }
@@ -73,9 +71,7 @@ export default function DashboardPage() {
           setRole(data.profile.role ?? null);
           setCompanyId(data.profile.company_id ?? null);
           setExtraRoles(
-            Array.isArray(data.profile.extra_roles)
-              ? data.profile.extra_roles.filter(Boolean)
-              : []
+            parseExtraRoles(data.profile.extra_roles, data.profile.role)
           );
         }
         setLoading(false);
@@ -102,8 +98,15 @@ export default function DashboardPage() {
     return <OperatorDashboard />;
   }
 
-  /** Compras: KPIs só de pedidos de compra (PC). */
-  if (role === "compras" && companyId) {
+  /**
+   * Só Compras (sem PCP/gestão extra): dashboard exclusivo de PC.
+   * Com viewAllLines, as abas Produção + Compras iguais à tela da gestão.
+   */
+  if (
+    role === "compras" &&
+    companyId &&
+    !hasPermission(actor, "viewAllLines")
+  ) {
     return <ComprasDashboard companyId={companyId} />;
   }
 

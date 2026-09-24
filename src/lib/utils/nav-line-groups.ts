@@ -14,6 +14,13 @@ function normLineName(name: string | undefined): string {
     .toLowerCase();
 }
 
+/** Nome exatamente "LOGISTICA" / "Logística" — não é Almoxarifado. */
+export function productionLineNameIsStandaloneLogistica(
+  name: string | null | undefined
+): boolean {
+  return /^logistica$/.test(normLineName(name ?? ""));
+}
+
 /**
  * Linha de produção cujo nome é só "LOGISTICA" — duplica o grupo do menu.
  * Expedição (rota) e Almoxarifado continuam visíveis.
@@ -21,7 +28,16 @@ function normLineName(name: string | undefined): string {
 export function navLineIsRedundantLogisticaMenuItem(
   line: ProductionLine
 ): boolean {
-  return /^logistica$/.test(normLineName(line.name));
+  return productionLineNameIsStandaloneLogistica(line.name);
+}
+
+/** Linhas que podem ser escolhidas em Pedidos (sem a linha avulsa LOGISTICA). */
+export function assignableProductionLines(
+  lines: ProductionLine[]
+): ProductionLine[] {
+  return lines.filter(
+    (l) => l.is_active !== false && !navLineIsRedundantLogisticaMenuItem(l)
+  );
 }
 
 /** Fallback: texto sugere Almox/expedição (não depende apenas de `is_almoxarifado`). */

@@ -12,6 +12,7 @@ import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
 import { toSortOrder } from "@/lib/utils/supabase-data";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import { assignableProductionLines } from "@/lib/utils/nav-line-groups";
 
 async function postProductionLines(
   body: Record<string, unknown>
@@ -73,7 +74,7 @@ export default function LinesSettingsPage() {
             { credentials: "include" }
           );
           const json = await res.json();
-          setLines((json.lines ?? []) as ProductionLine[]);
+          setLines(assignableProductionLines((json.lines ?? []) as ProductionLine[]));
         } catch {
           setLines([]);
         }
@@ -85,7 +86,7 @@ export default function LinesSettingsPage() {
         .select("*")
         .eq("company_id", companyId)
         .order("sort_order", { ascending: true });
-      setLines(data ?? []);
+      setLines(assignableProductionLines(data ?? []));
     }
     loadLines();
   }, [
@@ -107,7 +108,7 @@ export default function LinesSettingsPage() {
         { credentials: "include" }
       )
         .then((r) => r.json())
-        .then((json) => setLines((json.lines ?? []) as ProductionLine[]))
+        .then((json) => setLines(assignableProductionLines((json.lines ?? []) as ProductionLine[])))
         .catch(() => setLines([]));
       return;
     }
@@ -117,7 +118,9 @@ export default function LinesSettingsPage() {
       .select("*")
       .eq("company_id", companyId)
       .order("sort_order", { ascending: true })
-      .then(({ data }: { data: ProductionLine[] | null }) => setLines(data ?? []));
+      .then(({ data }: { data: ProductionLine[] | null }) =>
+        setLines(assignableProductionLines(data ?? []))
+      );
   }
 
   async function handleCreateLine() {

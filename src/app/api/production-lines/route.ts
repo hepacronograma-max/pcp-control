@@ -3,6 +3,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { toSortOrder } from "@/lib/utils/supabase-data";
+import { foldStandaloneLogisticaIntoAlmox } from "@/lib/supabase/fold-logistica-into-almox";
+import { productionLineNameIsStandaloneLogistica } from "@/lib/utils/nav-line-groups";
 
 /**
  * CRUD de linhas de produção com service role (login local na rede / cookie pcp-local-auth).
@@ -43,6 +45,16 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+      if (productionLineNameIsStandaloneLogistica(name)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Não crie uma linha chamada Logística. Use Almoxarifado.",
+          },
+          { status: 400 }
+        );
+      }
       const { data: maxOrder } = await supabase
         .from("production_lines")
         .select("sort_order")
@@ -65,6 +77,16 @@ export async function POST(request: NextRequest) {
     if (action === "update_name") {
       if (!lineId || typeof name !== "string") {
         return NextResponse.json({ success: false, error: "lineId e name" }, { status: 400 });
+      }
+      if (productionLineNameIsStandaloneLogistica(name)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Não renomeie para Logística. Use Almoxarifado.",
+          },
+          { status: 400 }
+        );
       }
       const { error } = await supabase
         .from("production_lines")
@@ -121,6 +143,7 @@ export async function POST(request: NextRequest) {
         .eq("is_almoxarifado", true)
         .limit(1);
       if (almoxRows?.length) {
+        await foldStandaloneLogisticaIntoAlmox(supabase, companyId);
         return NextResponse.json({ success: true, created: false });
       }
       const { data: minRow } = await supabase
@@ -153,6 +176,7 @@ export async function POST(request: NextRequest) {
       if (error) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
       }
+      await foldStandaloneLogisticaIntoAlmox(supabase, companyId);
       return NextResponse.json({ success: true, created: true });
     }
 

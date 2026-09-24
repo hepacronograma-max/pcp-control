@@ -14,6 +14,7 @@ import type {
 } from "@/lib/types/database";
 import { OrdersTable } from "@/components/pedidos/orders-table";
 import { defaultAppPathForRole, hasPermission } from "@/lib/utils/permissions";
+import { assignableProductionLines } from "@/lib/utils/nav-line-groups";
 import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 import { Button } from "@/components/ui/button";
@@ -129,7 +130,7 @@ export default function PedidosPage() {
       const json = await res.json();
       setOrders((json.orders ?? []) as OrderWithItems[]);
       const raw = (json.lines ?? []) as ProductionLine[];
-      setLines(raw.filter((l) => l.is_active !== false));
+      setLines(assignableProductionLines(raw));
     } catch {
       if (!silent) {
         setOrders([]);

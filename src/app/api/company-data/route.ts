@@ -5,6 +5,8 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
 import { itemNeedsProductionProgram } from "@/lib/utils/line-program-indicator";
+import { foldStandaloneLogisticaIntoAlmox } from "@/lib/supabase/fold-logistica-into-almox";
+import { productionLineNameIsStandaloneLogistica } from "@/lib/utils/nav-line-groups";
 
 function isUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
@@ -90,7 +92,9 @@ async function loadNormalizedProductionLines(
     if (sa !== sb) return sa - sb;
     return String(a.name ?? "").localeCompare(String(b.name ?? ""));
   });
-  return lines;
+  return lines.filter(
+    (l) => !productionLineNameIsStandaloneLogistica(String(l.name ?? ""))
+  );
 }
 
 /** Contagem leve para o menu lateral (sem carregar todos os pedidos).
@@ -217,6 +221,11 @@ export async function GET(request: NextRequest) {
         lines: [],
         unprogrammedByLine: {},
       });
+    }
+
+    const folded = await foldStandaloneLogisticaIntoAlmox(supabase, companyId);
+    if (folded.folded) {
+      invalidateCompanyLiteCache(companyId);
     }
 
     const { data: company } = await supabase

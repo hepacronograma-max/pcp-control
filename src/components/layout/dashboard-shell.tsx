@@ -22,6 +22,7 @@ import { usePollWhenVisible } from "@/lib/hooks/use-poll-when-visible";
 import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 import {
   bucketLinesForSidebar,
+  assignableProductionLines,
   rollupSidebarGroupAttention,
 } from "@/lib/utils/nav-line-groups";
 import { ChevronDown } from "lucide-react";
@@ -125,7 +126,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
           if (cancelled) return;
           setCompany(json.company ?? null);
           const rawLines = (json.lines ?? []) as ProductionLine[];
-          setLines(rawLines.filter((l) => l.is_active !== false));
+          setLines(assignableProductionLines(rawLines.filter((l) => l.is_active !== false)));
           setUnprogrammedByLine(json.unprogrammedByLine ?? {});
           if (profile && actorUsesOperatorLines(profile)) {
             const lineIds = getOperatorLineIdsForLocalUser(profile.id);
@@ -177,7 +178,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         .eq("company_id", companyId)
         .or(PRODUCTION_LINES_ACTIVE_OR)
         .order("sort_order", { ascending: true });
-      setLines(linesData ?? []);
+      setLines(assignableProductionLines((linesData ?? []) as ProductionLine[]));
 
       if (actorUsesOperatorLines(profile)) {
         /** `/api/me` usa service role — não depende de RLS em `operator_lines` no browser. */

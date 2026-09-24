@@ -12,6 +12,8 @@ import {
   finalizeShippingListForOrder,
   reopenShippingListForOrder,
 } from "@/lib/packaging/shipping-list";
+import { foldStandaloneLogisticaIntoAlmox } from "@/lib/supabase/fold-logistica-into-almox";
+import { productionLineNameIsStandaloneLogistica } from "@/lib/utils/nav-line-groups";
 import { toDateOnly, toQuantity } from "@/lib/utils/supabase-data";
 import {
   itemPcArrivalForProduction,
@@ -112,9 +114,32 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "line" && itemId !== undefined) {
+      let nextLineId: string | null =
+        typeof lineId === "string" && lineId.trim() ? lineId.trim() : null;
+      if (nextLineId) {
+        const { data: ln } = await supabase
+          .from("production_lines")
+          .select("id, name, company_id")
+          .eq("id", nextLineId)
+          .maybeSingle();
+        if (ln && productionLineNameIsStandaloneLogistica(ln.name as string)) {
+          const cid = String(ln.company_id ?? "");
+          if (cid) {
+            await foldStandaloneLogisticaIntoAlmox(supabase, cid);
+            const { data: almox } = await supabase
+              .from("production_lines")
+              .select("id")
+              .eq("company_id", cid)
+              .eq("is_almoxarifado", true)
+              .limit(1)
+              .maybeSingle();
+            nextLineId = (almox as { id?: string } | null)?.id ?? nextLineId;
+          }
+        }
+      }
       const { error } = await supabase
         .from("order_items")
-        .update({ line_id: lineId || null })
+        .update({ line_id: nextLineId })
         .eq("id", itemId);
       if (error) {
         const msg = error.message || "";
