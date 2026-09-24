@@ -7,19 +7,13 @@ export async function fetchLineDataRequest(
   params: {
     lineId: string;
     tab: string;
-    almoxPeriod: string;
-    almoxLimit?: string;
-    almoxOffset?: string;
   },
   opts?: { signal?: AbortSignal; timeoutMs?: number }
 ): Promise<unknown> {
   const qs = new URLSearchParams({
     lineId: params.lineId,
     tab: params.tab,
-    almoxPeriod: params.almoxPeriod,
   });
-  if (params.almoxLimit != null) qs.set("almoxLimit", params.almoxLimit);
-  if (params.almoxOffset != null) qs.set("almoxOffset", params.almoxOffset);
 
   const url = `/api/line-data?${qs.toString()}`;
 

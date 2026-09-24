@@ -34,16 +34,8 @@ import {
   LIVE_PAGE_POLL_MS,
   usePollWhenVisible,
 } from "@/lib/hooks/use-poll-when-visible";
-import {
-  fetchAlmoxScheduledOrderItems,
-  countAlmoxSupplyPending,
-  fetchProductionLinesWithAlmoxFlag,
-  type AlmoxPeriod,
-} from "@/lib/supabase/fetch-almox-scheduled-items";
-import { productionLineIsAlmoxarifado } from "@/lib/supabase/sync-almoxarifado-on-program";
-import { syncAlmoxOnProductionEndChange } from "@/lib/supabase/sync-almox-on-production-end";
+import { fetchProductionLinesWithAlmoxFlag } from "@/lib/supabase/fetch-almox-scheduled-items";
 import { finishOrderIfAllItemsCompleted } from "@/lib/supabase/finish-order-if-all-items-completed";
-import { isUuid } from "@/lib/utils/is-uuid";
 import { toast } from "sonner";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import {
@@ -51,9 +43,6 @@ import {
   defaultAppPathForRole,
   hasPermission,
 } from "@/lib/utils/permissions";
-
-/** Paginação server-side da lista agregada Almox (performance). */
-const ALMOX_LIST_PAGE_SIZE = "50";
 
 type TabKey = "all" | "in_progress" | "finished";
 
@@ -88,10 +77,6 @@ export default function LinePage() {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loadingData, setLoadingData] = useState(false);
-  const [almoxPeriod, setAlmoxPeriod] = useState<AlmoxPeriod>("all");
-  const [almoxGroupByDay, setAlmoxGroupByDay] = useState(false);
-  /** Itens Almox sem abastecer (filtro período igual à lista «Em aberto»). Null = não é tela Almox. */
-  const [almoxPendingCount, setAlmoxPendingCount] = useState<number | null>(null);
 
   const defaultLinePrefs: LinePreferences = {
     sortKeys: ["production_start", "production_end", "order_number"],
@@ -105,12 +90,6 @@ export default function LinePage() {
   const setSortKeys = (next: LineSortKey[]) => {
     setLinePrefs((prev) => ({ ...prev, sortKeys: next }));
   };
-
-  /** Linha do menu Almoxarifado (UUID) — enviada na API para gravar o espelho no lugar certo. */
-  const preferredAlmoxLineId = useMemo(() => {
-    const almox = allLines.find((l) => productionLineIsAlmoxarifado(l));
-    return almox?.id ?? null;
-  }, [allLines]);
 
   const [refreshKey, setRefreshKey] = useState(0);
   const silentRefreshRef = useRef(false);
@@ -136,7 +115,6 @@ export default function LinePage() {
     setTab("in_progress");
     setSearch("");
     setSelectedIds(new Set());
-    setAlmoxPendingCount(null);
   }, [lineId]);
 
   useEffect(() => {
@@ -228,9 +206,6 @@ export default function LinePage() {
               {
                 lineId,
                 tab,
-                almoxPeriod,
-                almoxLimit: ALMOX_LIST_PAGE_SIZE,
-                almoxOffset: "0",
               },
               { timeoutMs: 55_000 }
             );
@@ -240,14 +215,6 @@ export default function LinePage() {
             setLine(loadedLine);
             setItems((json.items as LineItemWithOrder[]) ?? []);
             setAllLines((json.allLines as ProductionLine[]) ?? []);
-            setAlmoxPendingCount(
-              loadedLine && productionLineIsAlmoxarifado(loadedLine)
-                ? Number(
-                    (json as { almoxPendingCount?: number }).almoxPendingCount ??
-                      0
-                  )
-                : null
-            );
           } catch (err) {
             if (!cancelled && !silent) {
               const m =
@@ -259,7 +226,6 @@ export default function LinePage() {
               setLine(null);
               setItems([]);
               setAllLines([]);
-              setAlmoxPendingCount(null);
             }
           }
           return;
@@ -269,7 +235,6 @@ export default function LinePage() {
           setLine(null);
           setItems([]);
           setAllLines([]);
-          setAlmoxPendingCount(null);
           return;
         }
 
@@ -278,7 +243,6 @@ export default function LinePage() {
           setLine(null);
           setItems([]);
           setAllLines([]);
-          setAlmoxPendingCount(null);
           return;
         }
 
@@ -299,56 +263,29 @@ export default function LinePage() {
 
         setAllLines(allLinesData);
 
-        let nextItems: LineItemWithOrder[] = [];
-
-        if (lineCurrent && productionLineIsAlmoxarifado(lineCurrent)) {
-          const lm = Number(ALMOX_LIST_PAGE_SIZE);
-          const [agg, pend] = await Promise.all([
-            fetchAlmoxScheduledOrderItems(supabase, allLinesData, {
-              tab,
-              period: almoxPeriod,
-              limit: Number.isFinite(lm) ? lm : 50,
-              offset: 0,
-            }),
-            countAlmoxSupplyPending(supabase, allLinesData, {
-              period: almoxPeriod,
-            }),
-          ]);
-          if (cancelled) return;
-          if (agg.error) {
-            console.warn("[linha/almos] agregação:", agg.error.message);
-          }
-          if (pend.error) {
-            console.warn("[linha/almos] contagem pendente:", pend.error.message);
-          }
-          setAlmoxPendingCount(pend.error ? 0 : pend.count);
-          nextItems = (agg.data ?? []) as LineItemWithOrder[];
-        } else {
-          setAlmoxPendingCount(null);
-          const baseItemsQuery = supabase
-            .from("order_items")
-            .select(
-              `
+        const baseItemsQuery = supabase
+          .from("order_items")
+          .select(
+            `
           *,
           order:orders(id, order_number, client_name, delivery_deadline, pcp_deadline, status)
         `
-            )
-            .eq("line_id", lineId)
-            .order("production_start", { ascending: true, nullsFirst: false })
-            .order("production_end", { ascending: true });
+          )
+          .eq("line_id", lineId)
+          .order("production_start", { ascending: true, nullsFirst: false })
+          .order("production_end", { ascending: true });
 
-          let itemsQuery = baseItemsQuery;
-          if (tab === "in_progress") {
-            itemsQuery = baseItemsQuery.neq("status", "completed");
-          } else if (tab === "finished") {
-            itemsQuery = baseItemsQuery.eq("status", "completed");
-          }
-
-          const itemsRes = await itemsQuery;
-          if (cancelled) return;
-          nextItems =
-            (itemsRes.data as unknown as LineItemWithOrder[]) ?? [];
+        let itemsQuery = baseItemsQuery;
+        if (tab === "in_progress") {
+          itemsQuery = baseItemsQuery.neq("status", "completed");
+        } else if (tab === "finished") {
+          itemsQuery = baseItemsQuery.eq("status", "completed");
         }
+
+        const itemsRes = await itemsQuery;
+        if (cancelled) return;
+        let nextItems =
+          (itemsRes.data as unknown as LineItemWithOrder[]) ?? [];
 
         if (cid && nextItems.length > 0) {
           try {
@@ -391,7 +328,6 @@ export default function LinePage() {
     effectiveCompanyId,
     lineId,
     tab,
-    almoxPeriod,
     supabase,
     router,
     refreshKey,
@@ -403,7 +339,6 @@ export default function LinePage() {
     field: "production_start" | "production_end",
     value: string | null
   ) {
-    if (line && productionLineIsAlmoxarifado(line)) return;
     const targetItem = items.find((i) => i.id === itemId);
     if (!targetItem) return;
 
@@ -439,9 +374,6 @@ export default function LinePage() {
       itemId,
       [field]: value,
     };
-    if (preferredAlmoxLineId) {
-      payload.target_almox_line_id = preferredAlmoxLineId;
-    }
     if (profile?.id && field === "production_end" && value) {
       payload.completed_by = profile.id;
     }
@@ -478,20 +410,6 @@ export default function LinePage() {
         return;
       }
 
-      const prevEndNorm = targetItem.production_end
-        ? toDateOnly(targetItem.production_end)
-        : null;
-      const nextEndNorm =
-        field === "production_end"
-          ? dateVal
-          : targetItem.production_end
-            ? toDateOnly(targetItem.production_end)
-            : null;
-      await syncAlmoxOnProductionEndChange(supabase, itemId, {
-        nextProductionEnd: nextEndNorm,
-        previousProductionEnd: prevEndNorm,
-        actorUserId: profile?.id && isUuid(profile.id) ? profile.id : null,
-      });
     } else return;
 
     const finalVal = dateVal ?? value;
@@ -503,7 +421,6 @@ export default function LinePage() {
   }
 
   function handleChangeNotes(itemId: string, value: string) {
-    if (line && productionLineIsAlmoxarifado(line)) return;
     const notesVal = value.slice(0, 2000);
     pendingNotesRef.current[itemId] = notesVal;
     setItems((prev) =>
@@ -519,7 +436,6 @@ export default function LinePage() {
   }
 
   async function persistNotes(itemId: string) {
-    if (line && productionLineIsAlmoxarifado(line)) return;
     const rawAtSave = pendingNotesRef.current[itemId];
     if (rawAtSave === undefined) return;
     const notesVal = rawAtSave.trim().slice(0, 2000);
@@ -555,8 +471,6 @@ export default function LinePage() {
 
   async function runCompleteItems(itemIds: string[]) {
     if (!profile || itemIds.length === 0) return;
-    if (line && productionLineIsAlmoxarifado(line)) return;
-
     const nowIso = new Date().toISOString();
     const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -600,21 +514,11 @@ export default function LinePage() {
         };
         if (fillStart) updateData.production_start = toDateOnly(todayStr) ?? todayStr;
         if (fillEnd) updateData.production_end = toDateOnly(todayStr) ?? todayStr;
-        const prevPeNorm = targetItem.production_end
-          ? toDateOnly(targetItem.production_end)
-          : null;
-        const nextEndRaw = fillEnd ? todayStr : targetItem.production_end ?? todayStr;
-        const nextPeNorm = toDateOnly(nextEndRaw) ?? todayStr;
         const { error } = await supabase.from("order_items").update(updateData).eq("id", itemId);
         if (error) {
           toast.error(error.message || "Erro ao finalizar.");
           return;
         }
-        await syncAlmoxOnProductionEndChange(supabase, itemId, {
-          nextProductionEnd: nextPeNorm,
-          previousProductionEnd: prevPeNorm,
-          actorUserId: profile?.id && isUuid(profile.id) ? profile.id : null,
-        });
         await finishOrderIfAllItemsCompleted(supabase, targetItem.order?.id);
       } else return;
     }
@@ -627,7 +531,6 @@ export default function LinePage() {
   }
 
   async function handleComplete(itemId: string) {
-    if (line && productionLineIsAlmoxarifado(line)) return;
     const it = items.find((i) => i.id === itemId);
     const pcp =
       it?.pcp_deadline ?? it?.order.pcp_deadline ?? it?.order.delivery_deadline;
@@ -678,7 +581,6 @@ export default function LinePage() {
   }
 
   async function handleReopenCompleted(itemId: string) {
-    if (line && productionLineIsAlmoxarifado(line)) return;
     if (
       !window.confirm(
         "Reabrir este item? Ele volta para programação ou aguardando."
@@ -758,94 +660,6 @@ export default function LinePage() {
     setRefreshKey((k) => k + 1);
   }
 
-  async function handleAlmoxSupply(itemId: string) {
-    if (!line || !productionLineIsAlmoxarifado(line)) return;
-    if (!profile) return;
-
-    const aggItem = items.find((i) => i.id === itemId);
-    if (aggItem?.production_end) {
-      toast.error(
-        "Produção já finalizada: o Almox foi encerrado automaticamente."
-      );
-      return;
-    }
-
-    const cid = effectiveCompanyId ?? profile.company_id;
-    if (!cid) {
-      toast.error("Defina uma empresa antes de registrar o abastecimento.");
-      return;
-    }
-
-    if (!window.confirm("Marcar este item como abastecido/separado?")) return;
-
-    const reload = () => {
-      setRefreshKey((k) => k + 1);
-    };
-
-    try {
-      if (useApi) {
-        const res = await fetch("/api/order-items/supply", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({
-            item_id: itemId,
-            company_id: cid,
-            supplied_by: profile.id,
-          }),
-        });
-        let msg = "";
-        try {
-          const j = (await res.json()) as { success?: boolean; error?: string };
-          if (!res.ok || j.success === false) {
-            msg = j.error ?? `Erro (${res.status})`;
-          }
-        } catch {
-          if (!res.ok) msg = `Erro (${res.status})`;
-        }
-        if (msg) {
-          toast.error(msg);
-          return;
-        }
-        reload();
-        toast.success("Abastecimento registrado.");
-        return;
-      }
-
-      if (supabase) {
-        const nowIso = new Date().toISOString();
-        const patch: Record<string, unknown> = {
-          almox_supplied_at: nowIso,
-          almox_supplied_by: profile.id,
-          almox_supplied_auto: false,
-        };
-        let { error } = await supabase.from("order_items").update(patch).eq("id", itemId);
-        if (
-          error?.message &&
-          /almox_supplied_auto|column|does not exist|schema cache/i.test(error.message)
-        ) {
-          const { almox_supplied_auto: _skip, ...rest } = patch;
-          ({ error } = await supabase.from("order_items").update(rest).eq("id", itemId));
-        }
-
-        if (error) {
-          if (/almox_supplied|column|does not exist|schema cache/i.test(error.message)) {
-            toast.error(
-              "Execute no Supabase as colunas almox_supplied_at / almox_supplied_by (veja supabase-add-columns.sql)."
-            );
-          } else {
-            toast.error(error.message || "Não foi possível salvar.");
-          }
-          return;
-        }
-        reload();
-        toast.success("Abastecimento registrado.");
-      }
-    } catch {
-      toast.error("Falha ao registrar abastecimento.");
-    }
-  }
-
   const title = useMemo(
     () => (line ? `Linha de Produção - ${line.name}` : "Linha de Produção"),
     [line]
@@ -886,8 +700,6 @@ export default function LinePage() {
     }).length;
   }, [filteredItems]);
 
-  const isAlmoxarifado = line ? productionLineIsAlmoxarifado(line) : false;
-
   const needsEffectiveCompany =
     supabase && profile?.company_id === "local-company";
   const effectiveReady = !needsEffectiveCompany || effectiveLoaded;
@@ -922,104 +734,21 @@ export default function LinePage() {
         <div className="min-w-[200px] flex-1">
           <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
           <p className="text-[11px] text-slate-500">
-            {isAlmoxarifado
-              ? "Itens com data de início em todas as linhas (somente visualização)."
-              : "Itens alocados nesta linha de produção."}
+            Itens alocados nesta linha de produção.
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <input
             type="text"
             className="w-56 max-w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-xs"
-            placeholder={
-              isAlmoxarifado
-                ? "Buscar pedido, código ou descrição..."
-                : "Buscar pedido, cliente ou descrição..."
-            }
+            placeholder="Buscar pedido, cliente ou descrição..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          {isAlmoxarifado && (
-            <>
-              <select
-                className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-800"
-                value={almoxPeriod}
-                onChange={(e) =>
-                  setAlmoxPeriod(e.target.value as AlmoxPeriod)
-                }
-                aria-label="Período (data de início)"
-              >
-                <option value="7">Próximos 7 dias</option>
-                <option value="15">Próximos 15 dias</option>
-                <option value="30">Próximos 30 dias</option>
-                <option value="all">Todos os períodos</option>
-              </select>
-              <label className="flex items-center gap-1.5 text-[11px] text-slate-600 whitespace-nowrap cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 accent-slate-700"
-                  checked={almoxGroupByDay}
-                  onChange={(e) => setAlmoxGroupByDay(e.target.checked)}
-                />
-                Agrupar por dia
-              </label>
-            </>
-          )}
           <PageExportMenu
             fileNameBase={`linha-${line?.id?.slice(0, 8) ?? "export"}-${tab}`}
             sheetTitle={title}
             getData={() => {
-              const lineNameOf = (it: LineItemWithOrder) =>
-                allLines.find((l) => l.id === it.line_id)?.name ?? "";
-
-              const statusPt = (s: string) => {
-                switch (s) {
-                  case "waiting":
-                    return "Aguardando";
-                  case "scheduled":
-                    return "Programado";
-                  case "completed":
-                    return "Concluído";
-                  case "delayed":
-                    return "Atrasado";
-                  default:
-                    return s || "—";
-                }
-              };
-
-              if (isAlmoxarifado) {
-                return {
-                  headers: [
-                    "Linha",
-                    "Nº pedido",
-                    "Código",
-                    "Descrição",
-                    "Qtd",
-                    "Início prod.",
-                    "Fim prod.",
-                    "Status",
-                    tab === "finished" ? "Data abastecimento" : "Abastecido",
-                  ],
-                  rows: filteredItems.map((it) => {
-                    const supplyCol =
-                      tab === "finished"
-                        ? (it.almox_supplied_at ?? "").slice(0, 16)
-                        : "";
-                    return [
-                    lineNameOf(it),
-                    it.order.order_number,
-                    (it.product_code ?? "").trim(),
-                    it.description,
-                    String(it.quantity),
-                    it.production_start ?? "",
-                    it.production_end ?? "",
-                    statusPt(String(it.status)),
-                      tab === "finished" ? supplyCol : "",
-                  ];
-                  }),
-                };
-              }
-
               return {
                 headers: [
                   "Pedido",
@@ -1063,7 +792,6 @@ export default function LinePage() {
               };
             }}
           />
-          {!isAlmoxarifado && (
           <button
             className={`px-3 py-1.5 rounded-md text-xs font-medium border ${
               tab === "all"
@@ -1074,7 +802,6 @@ export default function LinePage() {
           >
             Todos
           </button>
-          )}
           <button
             className={`inline-flex items-center px-3 py-1.5 rounded-md text-xs font-medium border ${
               tab === "in_progress"
@@ -1083,23 +810,7 @@ export default function LinePage() {
             }`}
             onClick={() => setTab("in_progress")}
           >
-            {isAlmoxarifado ? (
-              <>
-                Em aberto
-                {almoxPendingCount !== null ? (
-                  <span
-                    className="ml-1 font-semibold tabular-nums"
-                    aria-label={`${almoxPendingCount} pendentes de abastecimento`}
-                  >
-                    ({almoxPendingCount})
-                  </span>
-                ) : loadingData ? (
-                  <span className="ml-1 text-slate-400 font-normal tabular-nums">(…)</span>
-                ) : null}
-              </>
-            ) : (
-              "Em Produção"
-            )}
+            Em Produção
           </button>
           <button
             className={`px-3 py-1.5 rounded-md text-xs font-medium border ${
@@ -1114,7 +825,7 @@ export default function LinePage() {
         </div>
       </div>
 
-      {!isAlmoxarifado && selectedIds.size > 0 && (
+      {selectedIds.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-md border border-amber-200 bg-amber-50 text-xs text-slate-800">
           <span className="font-medium">{selectedIds.size} selecionado(s)</span>
           <button
@@ -1138,9 +849,7 @@ export default function LinePage() {
         <div className="text-sm text-slate-500">Carregando itens...</div>
       ) : items.length === 0 ? (
         <div className="text-sm text-slate-500">
-          {isAlmoxarifado
-            ? "Nenhum item com data de início para esta aba e período selecionados."
-            : "Nenhum item encontrado para esta linha."}
+          Nenhum item encontrado para esta linha.
         </div>
       ) : filteredItems.length === 0 ? (
         <div className="text-sm text-slate-500">
@@ -1150,12 +859,10 @@ export default function LinePage() {
         <div className="flex flex-col min-w-0">
           {tab === "finished" && (
             <p className="text-[11px] text-slate-600 px-2 py-1 shrink-0 bg-white">
-              {isAlmoxarifado
-                ? "Itens já abastecidos/separados (todas as linhas)."
-                : "Itens finalizados nesta linha."}
+              Itens finalizados nesta linha.
             </p>
           )}
-          {!isAlmoxarifado && overdueOpenCount > 0 && tab !== "finished" ? (
+          {overdueOpenCount > 0 && tab !== "finished" ? (
             <div
               role="alert"
               className="mx-0 mb-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-[12px] text-red-900"
@@ -1184,25 +891,9 @@ export default function LinePage() {
                     ? handleReopenCompleted
                     : undefined
                 }
-                isAlmoxarifado={isAlmoxarifado}
-                almoxGroupByDay={almoxGroupByDay}
-                almoxTab={tab}
-                onAlmoxSupply={isAlmoxarifado ? handleAlmoxSupply : undefined}
-                onGerarEtiqueta={
-                  isAlmoxarifado
-                    ? undefined
-                    : (item) => setEtiquetaItem(item)
-                }
-                onGerarCertificado={
-                  isAlmoxarifado
-                    ? undefined
-                    : (item) => setCertificadoItem(item)
-                }
-                onGerarEmbalagem={
-                  isAlmoxarifado
-                    ? undefined
-                    : (item) => setEmbalagemItem(item)
-                }
+                onGerarEtiqueta={(item) => setEtiquetaItem(item)}
+                onGerarCertificado={(item) => setCertificadoItem(item)}
+                onGerarEmbalagem={(item) => setEmbalagemItem(item)}
                 allLines={allLines}
                 columnWidths={
                   linePrefs.columnWidths.length > 0
@@ -1213,32 +904,23 @@ export default function LinePage() {
                   setLinePrefs((prev) => ({ ...prev, columnWidths: widths }));
                 }}
                 selectedItemIds={selectedIds}
-                onToggleItemSelected={
-                  isAlmoxarifado
-                    ? undefined
-                    : (id) => {
-                        setSelectedIds((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(id)) next.delete(id);
-                          else next.add(id);
-                          return next;
-                        });
-                      }
-                }
-                onToggleSelectAllVisible={
-                  isAlmoxarifado
-                    ? undefined
-                    : () => {
-                        const ids = filteredItems.map((i) => i.id);
-                        setSelectedIds((prev) => {
-                          const allSel =
-                            ids.length > 0 &&
-                            ids.every((id) => prev.has(id));
-                          if (allSel) return new Set();
-                          return new Set(ids);
-                        });
-                      }
-                }
+                onToggleItemSelected={(id) => {
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(id)) next.delete(id);
+                    else next.add(id);
+                    return next;
+                  });
+                }}
+                onToggleSelectAllVisible={() => {
+                  const ids = filteredItems.map((i) => i.id);
+                  setSelectedIds((prev) => {
+                    const allSel =
+                      ids.length > 0 && ids.every((id) => prev.has(id));
+                    if (allSel) return new Set();
+                    return new Set(ids);
+                  });
+                }}
                 cqContext={
                   effectiveCompanyId ?? profile.company_id
                     ? {

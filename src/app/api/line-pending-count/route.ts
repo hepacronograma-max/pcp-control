@@ -5,8 +5,6 @@ import type { ProductionLine } from "@/lib/types/database";
 import type { Subtask } from "@/lib/types/subtasks";
 import type { Task } from "@/lib/types/tasks";
 import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
-import { productionLineIsAlmoxarifado } from "@/lib/supabase/sync-almoxarifado-on-program";
-import { countAlmoxSupplyPending } from "@/lib/supabase/fetch-almox-scheduled-items";
 import {
   buildDepartmentIdToLineIdMap,
   countAttentionOrderItemsByLineId,
@@ -143,24 +141,7 @@ export async function GET(request: NextRequest) {
     ) as ProductionLine[];
   }
 
-  let almoxN = 0;
-
   if (linesTyped.length > 0) {
-    try {
-      const pendingRes = await countAlmoxSupplyPending(admin, linesTyped, {
-        period: "all",
-      });
-      if (!pendingRes.error) {
-        almoxN = pendingRes.count ?? 0;
-        const almoxLineIds = linesTyped.filter((l) => productionLineIsAlmoxarifado(l)).map((l) => l.id);
-        for (const id of almoxLineIds) {
-          counts[id] = Math.max(counts[id] ?? 0, almoxN);
-        }
-      }
-    } catch {
-      /* ignore */
-    }
-
     let taskContribution: Record<string, number> = {};
     if (includeTasks) {
       try {
@@ -202,31 +183,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const attentionFromItemsOnly = countAttentionOrderItemsByLineId(
-      orderShapes,
-      todayYmd
-    );
-
-    const afterItemsPlusAlmox: Record<string, number> = {
-      ...attentionFromItemsOnly,
-    };
-    if (almoxN > 0) {
-      const almoxIds = linesTyped
-        .filter((l) => productionLineIsAlmoxarifado(l))
-        .map((l) => l.id);
-      for (const id of almoxIds) {
-        afterItemsPlusAlmox[id] = Math.max(afterItemsPlusAlmox[id] ?? 0, almoxN);
-      }
-    }
-
     if (diag) {
       console.log("[line-pending-count/diag]", {
         companyId,
         todayUsed: todayYmd,
         includeTasks,
         orderRows: orderShapes.length,
-        attentionFromItemsOnly,
-        attentionAfterItemsPlusAlmox: afterItemsPlusAlmox,
+        attentionFromItemsOnly: countAttentionOrderItemsByLineId(
+          orderShapes,
+          todayYmd
+        ),
         attentionFromTasks: includeTasks
           ? taskContribution
           : "(omitido — use includeTasks=1)",
