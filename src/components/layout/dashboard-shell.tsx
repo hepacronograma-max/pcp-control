@@ -241,8 +241,12 @@ export function DashboardShell({ children }: { children: ReactNode }) {
         try {
           const { data } = await supabase
             .from("order_items")
-            .select("line_id, status, production_start, production_end")
-            .not("line_id", "is", null);
+            .select(
+              "line_id, status, production_start, production_end, orders!inner(company_id)"
+            )
+            .eq("orders.company_id", effectiveCompanyId)
+            .not("line_id", "is", null)
+            .neq("status", "completed");
           const counts: Record<string, number> = {};
           for (const it of data ?? []) {
             if (itemNeedsProductionProgram(it)) {

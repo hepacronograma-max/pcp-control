@@ -3,14 +3,22 @@ import type { ProductionLine } from "@/lib/types/database";
 import { productionLineIsAlmoxarifado } from "@/lib/supabase/sync-almoxarifado-on-program";
 import { navLineIsRedundantLogisticaMenuItem } from "@/lib/utils/nav-line-groups";
 
+/** Já conferido nesta instância — evita write em todo GET do menu. */
+const foldCheckedCompanyIds = new Set<string>();
+
 /**
  * Itens na linha avulsa "LOGISTICA" passam para Almoxarifado e a linha
  * LOGISTICA é desativada (some da seleção em Pedidos).
+ * Só age em linhas ainda ativas; depois disso é no-op barato.
  */
 export async function foldStandaloneLogisticaIntoAlmox(
   supabase: SupabaseClient,
   companyId: string
 ): Promise<{ folded: boolean }> {
+  if (!companyId || foldCheckedCompanyIds.has(companyId)) {
+    return { folded: false };
+  }
+
   const { data: lines, error } = await supabase
     .from("production_lines")
     .select("id, name, company_id, is_almoxarifado, is_active")
@@ -22,9 +30,16 @@ export async function foldStandaloneLogisticaIntoAlmox(
     "id" | "name" | "company_id" | "is_almoxarifado" | "is_active"
   >[];
   const logisticaIds = typed
-    .filter((l) => navLineIsRedundantLogisticaMenuItem(l as ProductionLine))
+    .filter(
+      (l) =>
+        l.is_active !== false &&
+        navLineIsRedundantLogisticaMenuItem(l as ProductionLine)
+    )
     .map((l) => l.id);
-  if (logisticaIds.length === 0) return { folded: false };
+  if (logisticaIds.length === 0) {
+    foldCheckedCompanyIds.add(companyId);
+    return { folded: false };
+  }
 
   let almoxId =
     typed.find((l) => l.is_almoxarifado === true && !logisticaIds.includes(l.id))
@@ -105,5 +120,6 @@ export async function foldStandaloneLogisticaIntoAlmox(
       .eq("id", id);
   }
 
+  foldCheckedCompanyIds.add(companyId);
   return { folded: true };
 }

@@ -26,8 +26,9 @@ export async function getDashboardData(companyId: string) {
       supabase
         .from("order_items")
         .select(
-          `production_start, production_end, line_id, production_line:production_lines(name)`
+          `production_start, production_end, line_id, production_line:production_lines(name), orders!inner(company_id)`
         )
+        .eq("orders.company_id", companyId)
         .not("production_start", "is", null)
         .not("production_end", "is", null),
       (() => {
@@ -35,7 +36,8 @@ export async function getDashboardData(companyId: string) {
         next30.setDate(next30.getDate() + 30);
         return supabase
           .from("order_items")
-          .select("line_id, production_start, production_end")
+          .select("line_id, production_start, production_end, orders!inner(company_id)")
+          .eq("orders.company_id", companyId)
           .neq("status", "completed")
           .not("production_start", "is", null)
           .lte("production_start", next30.toISOString().split("T")[0]);
@@ -43,8 +45,9 @@ export async function getDashboardData(companyId: string) {
       supabase
         .from("order_items")
         .select(
-          `id, line_id, production_start, production_end, production_line:production_lines(name)`
+          `id, line_id, production_start, production_end, production_line:production_lines(name), orders!inner(company_id)`
         )
+        .eq("orders.company_id", companyId)
         .neq("status", "completed")
         .not("production_start", "is", null)
         .not("production_end", "is", null),

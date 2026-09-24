@@ -28,7 +28,7 @@ type LiteCacheEntry = {
     unprogrammedByLine: Record<string, number>;
   };
 };
-const LITE_CACHE_TTL_MS = 5_000;
+const LITE_CACHE_TTL_MS = 25_000;
 const liteCache = new Map<string, LiteCacheEntry>();
 const NO_STORE = { headers: { "Cache-Control": "no-store" } };
 
@@ -111,7 +111,8 @@ async function unprogrammedByLineFromDb(
       "line_id, status, production_start, production_end, orders!inner(company_id)"
     )
     .eq("orders.company_id", companyId)
-    .not("line_id", "is", null);
+    .not("line_id", "is", null)
+    .neq("status", "completed");
 
   const unprogrammedByLine: Record<string, number> = {};
   for (const it of items ?? []) {
@@ -223,6 +224,14 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const lite = request.nextUrl.searchParams.get("lite") === "1";
+    if (lite) {
+      const cached = liteCache.get(companyId);
+      if (cached && cached.expiresAt > Date.now()) {
+        return NextResponse.json(cached.payload, NO_STORE);
+      }
+    }
+
     const folded = await foldStandaloneLogisticaIntoAlmox(supabase, companyId);
     if (folded.folded) {
       invalidateCompanyLiteCache(companyId);
@@ -242,7 +251,6 @@ export async function GET(request: NextRequest) {
         }
       : { id: companyId, name: "Empresa", logo_url: null };
 
-    const lite = request.nextUrl.searchParams.get("lite") === "1";
     if (lite) {
       const cached = liteCache.get(companyId);
       const now = Date.now();
@@ -269,66 +277,49 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(payload, NO_STORE);
     }
 
-    // Modo completo: roda em paralelo a query de pedidos (com itens) e a de linhas.
-    const ordersPromise = (async () => {
-      let res = await supabase
-        .from("orders")
-        .select(
-          `
+    // Modo completo: pedidos (opcionalmente só abertos/finalizados) + linhas.
+    const scopeParam = request.nextUrl.searchParams.get("ordersScope")?.toLowerCase();
+    const ordersScope =
+      scopeParam === "open" || scopeParam === "finished" ? scopeParam : "all";
+
+    const selectWithLine = `
           *,
           items:order_items(
             *,
             production_line:production_lines(id, name)
           )
-        `
-        )
-        .eq("company_id", companyId)
-        .order("delivery_deadline", { ascending: true });
+        `;
+    const selectPlain = `
+            *,
+            items:order_items(*)
+          `;
+
+    const ordersQuery = (select: string, orderCol: "delivery_deadline" | "id") => {
+      let q = supabase
+        .from("orders")
+        .select(select)
+        .eq("company_id", companyId);
+      if (ordersScope === "open") q = q.neq("status", "finished");
+      if (ordersScope === "finished") q = q.eq("status", "finished");
+      return q.order(orderCol, { ascending: true });
+    };
+
+    const ordersPromise = (async () => {
+      let res = await ordersQuery(selectWithLine, "delivery_deadline");
 
       if (res.error?.message?.includes("delivery_deadline")) {
-        res = await supabase
-          .from("orders")
-          .select(
-            `
-            *,
-            items:order_items(
-              *,
-              production_line:production_lines(id, name)
-            )
-          `
-          )
-          .eq("company_id", companyId)
-          .order("id", { ascending: true });
+        res = await ordersQuery(selectWithLine, "id");
       }
 
-      // Se a query com embed production_line falhar (schema cache, FK, coluna nova), tenta sem o embed.
       if (res.error) {
         console.warn(
           "[company-data] select com production_line falhou:",
           res.error.message
         );
-        res = await supabase
-          .from("orders")
-          .select(
-            `
-            *,
-            items:order_items(*)
-          `
-          )
-          .eq("company_id", companyId)
-          .order("delivery_deadline", { ascending: true });
+        res = await ordersQuery(selectPlain, "delivery_deadline");
       }
       if (res.error?.message?.includes("delivery_deadline")) {
-        res = await supabase
-          .from("orders")
-          .select(
-            `
-            *,
-            items:order_items(*)
-          `
-          )
-          .eq("company_id", companyId)
-          .order("id", { ascending: true });
+        res = await ordersQuery(selectPlain, "id");
       }
       if (res.error) {
         console.error(
@@ -339,9 +330,22 @@ export async function GET(request: NextRequest) {
       return res.data ?? [];
     })();
 
-    const [orders, lines] = await Promise.all([
+    const openCountPromise = supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId)
+      .neq("status", "finished");
+    const finishedCountPromise = supabase
+      .from("orders")
+      .select("id", { count: "exact", head: true })
+      .eq("company_id", companyId)
+      .eq("status", "finished");
+
+    const [orders, lines, openCountRes, finishedCountRes] = await Promise.all([
       ordersPromise,
       loadNormalizedProductionLines(supabase, companyId),
+      openCountPromise,
+      finishedCountPromise,
     ]);
 
     const unprogrammedByLine: Record<string, number> = {};
@@ -367,6 +371,8 @@ export async function GET(request: NextRequest) {
       orders,
       lines,
       unprogrammedByLine,
+      openCount: openCountRes.count ?? orders.filter((o) => (o as { status?: string }).status !== "finished").length,
+      finishedCount: finishedCountRes.count ?? orders.filter((o) => (o as { status?: string }).status === "finished").length,
     }, NO_STORE);
   } catch {
     return NextResponse.json(

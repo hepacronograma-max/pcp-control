@@ -81,7 +81,8 @@ export async function GET(request: NextRequest) {
     `
     )
     .eq("orders.company_id", companyId!)
-    .not("line_id", "is", null);
+    .not("line_id", "is", null)
+    .neq("status", "completed");
 
   if (oiErr) {
     if (/relation|does not exist/i.test(oiErr.message ?? "")) {

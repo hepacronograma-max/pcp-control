@@ -32,10 +32,23 @@ export async function GET(request: NextRequest) {
   }
 
   const { admin } = gate;
-  const { data: taskRows, error: tErr } = await admin
+  let taskRows: { id: string; status?: string; assigned_to?: string | null; viewed_at?: string | null; status_auto?: boolean }[] | null = null;
+  let { data, error: tErr } = await admin
     .from("tasks")
-    .select("*")
+    .select("id, status, assigned_to, viewed_at, status_auto")
     .eq("company_id", companyId!);
+  taskRows = data;
+  if (
+    tErr &&
+    /status_auto|column|does not exist|schema cache/i.test(tErr.message)
+  ) {
+    const retry = await admin
+      .from("tasks")
+      .select("id, status, assigned_to, viewed_at")
+      .eq("company_id", companyId!);
+    taskRows = retry.data;
+    tErr = retry.error;
+  }
   if (tErr) {
     if (/relation|does not exist/i.test(tErr.message)) {
       return NextResponse.json({ count: 0, schemaMissing: true });
@@ -49,7 +62,7 @@ export async function GET(request: NextRequest) {
   if (ids.length > 0) {
     const { data: sRows, error: sErr } = await admin
       .from("subtasks")
-      .select("*")
+      .select("id, task_id, status")
       .in("task_id", ids);
     if (sErr && !/relation|does not exist/i.test(sErr.message)) {
       return NextResponse.json({ error: sErr.message, count: 0 }, { status: 500 });

@@ -70,7 +70,7 @@ export default function LinesSettingsPage() {
       if (useLinesApi) {
         try {
           const res = await fetch(
-            `/api/company-data?companyId=${encodeURIComponent(companyId)}`,
+            `/api/company-data?companyId=${encodeURIComponent(companyId)}&lite=1`,
             { credentials: "include" }
           );
           const json = await res.json();
@@ -104,7 +104,7 @@ export default function LinesSettingsPage() {
     if (isLocal) return;
     if (useLinesApi) {
       fetch(
-        `/api/company-data?companyId=${encodeURIComponent(companyId)}`,
+        `/api/company-data?companyId=${encodeURIComponent(companyId)}&lite=1`,
         { credentials: "include" }
       )
         .then((r) => r.json())

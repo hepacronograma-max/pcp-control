@@ -106,6 +106,8 @@ export default function PedidosPage() {
   const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [lines, setLines] = useState<ProductionLine[]>([]);
   const [tab, setTab] = useState<TabKey>("open");
+  const [openCount, setOpenCount] = useState(0);
+  const [finishedCount, setFinishedCount] = useState(0);
   const [loadingData, setLoadingData] = useState(false);
   const [importingOmie, setImportingOmie] = useState(false);
 
@@ -117,7 +119,7 @@ export default function PedidosPage() {
     if (!silent) setLoadingData(true);
     try {
       const res = await fetch(
-        `/api/company-data?companyId=${encodeURIComponent(effectiveCompanyId)}`,
+        `/api/company-data?companyId=${encodeURIComponent(effectiveCompanyId)}&ordersScope=${tab}`,
         liveGetInit
       );
       if (!res.ok) {
@@ -131,6 +133,8 @@ export default function PedidosPage() {
       setOrders((json.orders ?? []) as OrderWithItems[]);
       const raw = (json.lines ?? []) as ProductionLine[];
       setLines(assignableProductionLines(raw));
+      if (typeof json.openCount === "number") setOpenCount(json.openCount);
+      if (typeof json.finishedCount === "number") setFinishedCount(json.finishedCount);
     } catch {
       if (!silent) {
         setOrders([]);
@@ -139,7 +143,7 @@ export default function PedidosPage() {
     } finally {
       if (!silent) setLoadingData(false);
     }
-  }, [profile, effectiveCompanyId]);
+  }, [profile, effectiveCompanyId, tab]);
 
   useEffect(() => {
     if (!profile) return;
@@ -160,14 +164,6 @@ export default function PedidosPage() {
   const userRole: UserRole | null = profile ? profile.role : null;
   const canImport = !!profile && hasPermission(profile, "importOrders");
 
-  const openCount = useMemo(
-    () => orders.filter((o) => o.status !== "finished").length,
-    [orders]
-  );
-  const finishedCount = useMemo(
-    () => orders.filter((o) => o.status === "finished").length,
-    [orders]
-  );
   const omieSyncAlertTotal = useMemo(
     () => totalOmieSyncAlertCount(orders),
     [orders]
