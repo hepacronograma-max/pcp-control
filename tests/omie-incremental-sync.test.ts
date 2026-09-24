@@ -174,6 +174,18 @@ describe("planItemSync — item removido em producao", () => {
     const plan = planItemSync([existing], [], "active");
     assert.equal(plan.actions[0].type, "mark_removed");
   });
+
+  it("nao reabre alerta se o PCP ja marcou resolvido", () => {
+    const existing = basePcpItem({
+      omie_codigo_item: 888,
+      line_id: "linha-1",
+      status: "in_progress",
+      omie_sync_flag: "resolvido",
+    });
+    const plan = planItemSync([existing], [], "shadow");
+    assert.equal(plan.actions.some((a) => a.type === "mark_removed"), false);
+    assert.equal(plan.actions.some((a) => a.type === "alert"), false);
+  });
 });
 
 describe("isItemTouchedByOperator", () => {

@@ -51,6 +51,7 @@ interface OrdersTableProps {
   ) => void;
   highlightOrderId?: string | null;
   highlightItemId?: string | null;
+  onResolveOmieAlert?: (itemId: string) => void;
 }
 
 export function OrdersTable({
@@ -76,6 +77,7 @@ export function OrdersTable({
   onComercialObservationThreadUpdated,
   highlightOrderId,
   highlightItemId,
+  onResolveOmieAlert,
 }: OrdersTableProps) {
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -333,6 +335,7 @@ export function OrdersTable({
                 highlightItemId={
                   highlightOrderId === order.id ? highlightItemId : null
                 }
+                onResolveOmieAlert={onResolveOmieAlert}
               />
             ))}
           </div>

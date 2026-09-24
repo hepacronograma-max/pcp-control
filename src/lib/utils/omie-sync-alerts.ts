@@ -5,10 +5,20 @@ export const OMIE_SYNC_FLAG_LABELS: Record<string, string> = {
   divergente_no_omie: "Divergente no Omie",
 };
 
+/** PCP conferiu o alerta; some da tela e o próximo import Omie não reabre o mesmo aviso. */
+export const OMIE_SYNC_RESOLVED_FLAG = "resolvido";
+
 export function itemHasOmieSyncAlert(
   item: Pick<OrderItem, "omie_sync_flag">
 ): boolean {
-  return !!item.omie_sync_flag?.trim();
+  const flag = item.omie_sync_flag?.trim() ?? "";
+  return flag.length > 0 && flag !== OMIE_SYNC_RESOLVED_FLAG;
+}
+
+export function itemOmieAlertIsResolved(
+  item: Pick<OrderItem, "omie_sync_flag">
+): boolean {
+  return (item.omie_sync_flag?.trim() ?? "") === OMIE_SYNC_RESOLVED_FLAG;
 }
 
 export function orderOmieSyncAlertCount(order: OrderWithItems): number {

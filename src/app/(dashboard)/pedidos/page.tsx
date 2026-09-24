@@ -26,7 +26,7 @@ import {
   liveGetInit,
   usePollWhenVisible,
 } from "@/lib/hooks/use-poll-when-visible";
-import { listOmieSyncAlerts } from "@/lib/utils/omie-sync-alerts";
+import { listOmieSyncAlerts, OMIE_SYNC_RESOLVED_FLAG } from "@/lib/utils/omie-sync-alerts";
 import type { OmieImportReport } from "@/lib/omie/types";
 import { summarizeOmieImportReport } from "@/components/omie/import-report-summary";
 
@@ -110,6 +110,9 @@ export default function PedidosPage() {
   const [finishedCount, setFinishedCount] = useState(0);
   const [highlightOrderId, setHighlightOrderId] = useState<string | null>(null);
   const [highlightItemId, setHighlightItemId] = useState<string | null>(null);
+  const [resolvingOmieItemId, setResolvingOmieItemId] = useState<string | null>(
+    null
+  );
   const [loadingData, setLoadingData] = useState(false);
   const [importingOmie, setImportingOmie] = useState(false);
 
@@ -165,6 +168,7 @@ export default function PedidosPage() {
 
   const userRole: UserRole | null = profile ? profile.role : null;
   const canImport = !!profile && hasPermission(profile, "importOrders");
+  const canResolveOmieAlert = !!profile && hasPermission(profile, "editOrders");
 
   const omieSyncAlerts = useMemo(() => listOmieSyncAlerts(orders), [orders]);
 
@@ -172,6 +176,36 @@ export default function PedidosPage() {
     updater: (prev: OrderWithItems[]) => OrderWithItems[]
   ) {
     setOrders((prev) => updater(prev));
+  }
+
+  async function handleResolveOmieAlert(itemId: string) {
+    if (!canResolveOmieAlert) return;
+    setResolvingOmieItemId(itemId);
+    const r = await postOrderItemsUpdate({
+      action: "resolve_omie_alert",
+      itemId,
+    });
+    setResolvingOmieItemId(null);
+    if (!r.ok) {
+      toast.error(r.error);
+      return;
+    }
+    updateOrdersState((prev) =>
+      prev.map((order) => ({
+        ...order,
+        items: order.items.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                omie_sync_flag: OMIE_SYNC_RESOLVED_FLAG,
+                omie_sync_detail:
+                  "Alerta conferido e marcado como resolvido no PCP.",
+              }
+            : item
+        ),
+      }))
+    );
+    toast.success("Alerta Omie marcado como resolvido.");
   }
 
   async function handleImportOmie() {
@@ -895,10 +929,10 @@ export default function PedidosPage() {
                 .filter(Boolean)
                 .join(" · ");
               return (
-                <li key={alert.itemId}>
+                <li key={alert.itemId} className="flex gap-2 items-stretch">
                   <button
                     type="button"
-                    className="w-full rounded-md border border-red-200 bg-white px-3 py-2 text-left text-xs text-red-950 hover:border-red-400 hover:bg-red-50"
+                    className="min-w-0 flex-1 rounded-md border border-red-200 bg-white px-3 py-2 text-left text-xs text-red-950 hover:border-red-400 hover:bg-red-50"
                     onClick={() => {
                       setHighlightOrderId(alert.orderId);
                       setHighlightItemId(alert.itemId);
@@ -919,6 +953,18 @@ export default function PedidosPage() {
                       {alert.detail ? ` — ${alert.detail}` : ""}
                     </span>
                   </button>
+                  {canResolveOmieAlert ? (
+                    <button
+                      type="button"
+                      className="shrink-0 self-center rounded-md border border-emerald-500 bg-emerald-50 px-2.5 py-2 text-[11px] font-semibold text-emerald-900 hover:bg-emerald-100 disabled:opacity-50"
+                      disabled={resolvingOmieItemId === alert.itemId}
+                      onClick={() => void handleResolveOmieAlert(alert.itemId)}
+                    >
+                      {resolvingOmieItemId === alert.itemId
+                        ? "Salvando…"
+                        : "Resolvido"}
+                    </button>
+                  ) : null}
                 </li>
               );
             })}
@@ -1044,6 +1090,9 @@ export default function PedidosPage() {
           onReopenCompletedItem={handleReopenItem}
           highlightOrderId={highlightOrderId}
           highlightItemId={highlightItemId}
+          onResolveOmieAlert={
+            canResolveOmieAlert ? handleResolveOmieAlert : undefined
+          }
           onComercialObservationThreadUpdated={(orderId, patch: OrderComercialThreadPatch) => {
             updateOrdersState((prev) =>
               prev.map((o) => (o.id === orderId ? { ...o, ...patch } : o))

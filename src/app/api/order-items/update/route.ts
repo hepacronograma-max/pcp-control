@@ -19,6 +19,7 @@ import {
   itemPcArrivalForProduction,
   orderItemLinkedPoMaterialArrivedAt,
 } from "@/lib/utils/pc-purchase-dates";
+import { OMIE_SYNC_RESOLVED_FLAG } from "@/lib/utils/omie-sync-alerts";
 
 async function assertCanEditOrders(): Promise<
   { ok: true } | { ok: false; response: NextResponse }
@@ -588,6 +589,34 @@ export async function POST(request: NextRequest) {
       const { error } = await supabase.from("order_items").update({ notes: notesVal }).eq("id", itemId);
       if (error) {
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "resolve_omie_alert" && itemId !== undefined) {
+      const gate = await assertCanEditOrders();
+      if (!gate.ok) return gate.response;
+      let { error } = await supabase
+        .from("order_items")
+        .update({
+          omie_sync_flag: OMIE_SYNC_RESOLVED_FLAG,
+          omie_sync_detail: "Alerta conferido e marcado como resolvido no PCP.",
+        })
+        .eq("id", itemId);
+      if (
+        error &&
+        /omie_sync_detail|schema cache|column|does not exist/i.test(error.message)
+      ) {
+        ({ error } = await supabase
+          .from("order_items")
+          .update({ omie_sync_flag: OMIE_SYNC_RESOLVED_FLAG })
+          .eq("id", itemId));
+      }
+      if (error) {
+        return NextResponse.json(
+          { success: false, error: error.message },
+          { status: 500 }
+        );
       }
       return NextResponse.json({ success: true });
     }

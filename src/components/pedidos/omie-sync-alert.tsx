@@ -8,11 +8,13 @@ import {
 type OmieSyncItemAlertProps = {
   item: Pick<OrderItem, "omie_sync_flag" | "omie_sync_detail">;
   compact?: boolean;
+  onResolve?: () => void;
 };
 
 export function OmieSyncItemAlert({
   item,
   compact = false,
+  onResolve,
 }: OmieSyncItemAlertProps) {
   if (!itemHasOmieSyncAlert(item)) return null;
 
@@ -21,16 +23,27 @@ export function OmieSyncItemAlert({
   const isRemoval = item.omie_sync_flag === "removido_no_omie";
 
   return (
-    <span
-      className={`inline-flex max-w-full items-start gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-semibold leading-tight ${
-        isRemoval
-          ? "border-red-300 bg-red-50 text-red-900"
-          : "border-amber-400 bg-amber-50 text-amber-950"
-      } ${compact ? "truncate" : "whitespace-normal break-words"}`}
-      title={detail}
-    >
-      <span className="shrink-0">Omie:</span>
-      <span className="min-w-0">{compact ? label : detail}</span>
+    <span className="inline-flex max-w-full flex-col items-end gap-0.5">
+      <span
+        className={`inline-flex max-w-full items-start gap-1 rounded-md border px-1.5 py-0.5 text-[9px] font-semibold leading-tight ${
+          isRemoval
+            ? "border-red-300 bg-red-50 text-red-900"
+            : "border-amber-400 bg-amber-50 text-amber-950"
+        } ${compact ? "truncate" : "whitespace-normal break-words"}`}
+        title={detail}
+      >
+        <span className="shrink-0">Omie:</span>
+        <span className="min-w-0">{compact ? label : detail}</span>
+      </span>
+      {onResolve && !compact ? (
+        <button
+          type="button"
+          className="rounded border border-emerald-500 bg-emerald-50 px-1 py-0.5 text-[9px] font-semibold text-emerald-900 hover:bg-emerald-100"
+          onClick={onResolve}
+        >
+          Resolvido
+        </button>
+      ) : null}
     </span>
   );
 }

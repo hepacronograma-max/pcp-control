@@ -60,6 +60,7 @@ export interface OrderRowProps {
   ) => void;
   forceExpanded?: boolean;
   highlightItemId?: string | null;
+  onResolveOmieAlert?: (itemId: string) => void;
 }
 
 /** Mesmas regras que PATCH `/api/comercial-orders` para `pcp_reply_comercial_observation`. */
@@ -97,6 +98,7 @@ export function OrderRow({
   cqCompanyId,
   forceExpanded = false,
   highlightItemId = null,
+  onResolveOmieAlert,
 }: OrderRowProps) {
   const [expanded, setExpanded] = useState(forceExpanded);
   useEffect(() => {
@@ -813,6 +815,7 @@ export function OrderRow({
           canReopenCompletedItem={canReopenCompletedItem}
           onReopenCompletedItem={onReopenCompletedItem}
           highlightItemId={highlightItemId}
+          onResolveOmieAlert={onResolveOmieAlert}
         />
       )}
     </div>

@@ -1,5 +1,6 @@
 import type { ItemStatus } from "@/lib/types/database";
 import type { PcpOrderImportDraft } from "./types";
+import { itemOmieAlertIsResolved } from "@/lib/utils/omie-sync-alerts";
 
 export type PcpItemRow = {
   id: string;
@@ -590,6 +591,11 @@ export function planItemSync(
       }
 
       if (divergentChanges.length > 0 || qtySync.qtyAlert) {
+        if (itemOmieAlertIsResolved(pair.pcp)) {
+          shadowLogs.push(
+            `[omie ${modo}] item ${key} divergente no Omie mas alerta ja resolvido no PCP — nao reabre`
+          );
+        } else {
         const motivo =
           divergentChanges.length > 0
             ? buildDivergenceMotivo(pair, divergentChanges, orderLabel)
@@ -609,6 +615,7 @@ export function planItemSync(
         shadowLogs.push(
           `[omie ${modo}] item ${key} em producao/concluido — divergencia Omie (NAO sobrescreve): ${motivo}`
         );
+        }
       }
 
       if (setOmieCodigoItem) {
@@ -692,6 +699,11 @@ export function planItemSync(
     const omieKey = pcpRow.omie_codigo_item;
 
     if (isItemTouchedByOperator(pcpRow)) {
+      if (itemOmieAlertIsResolved(pcpRow)) {
+        shadowLogs.push(
+          `[omie ${modo}] item ${omieKey ?? pcpRow.id} sumiu do Omie mas alerta ja resolvido no PCP — nao reabre`
+        );
+      } else {
       const motivo = `Item sumiu no Omie mas permanece no PCP (em produção) — mediar com vendas/produção`;
       actions.push({
         type: "mark_removed",
@@ -708,6 +720,7 @@ export function planItemSync(
       shadowLogs.push(
         `[omie ${modo}] item ${omieKey ?? pcpRow.id} sumiu do Omie mas esta em producao — marcaria removido_no_omie (NAO deleta)`
       );
+      }
     } else {
       actions.push({
         type: "delete",

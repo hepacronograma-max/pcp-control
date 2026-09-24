@@ -27,6 +27,7 @@ interface OrderItemsProps {
   canReopenCompletedItem?: boolean;
   onReopenCompletedItem?: (itemId: string) => void;
   highlightItemId?: string | null;
+  onResolveOmieAlert?: (itemId: string) => void;
 }
 
 export function OrderItems({
@@ -42,6 +43,7 @@ export function OrderItems({
   canReopenCompletedItem,
   onReopenCompletedItem,
   highlightItemId = null,
+  onResolveOmieAlert,
 }: OrderItemsProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [pcModalItemId, setPcModalItemId] = useState<string | null>(null);
@@ -313,7 +315,14 @@ export function OrderItems({
                     Reabrir item
                   </button>
                 )}
-              <OmieSyncItemAlert item={item} />
+              <OmieSyncItemAlert
+                item={item}
+                onResolve={
+                  onResolveOmieAlert
+                    ? () => onResolveOmieAlert(item.id)
+                    : undefined
+                }
+              />
             </div>
             </div>
           </div>
