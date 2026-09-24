@@ -8,6 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { useUser } from "@/lib/hooks/use-user";
+import {
+  LIVE_PAGE_POLL_MS,
+  liveGetInit,
+  usePollWhenVisible,
+} from "@/lib/hooks/use-poll-when-visible";
 import { formatBoxDimensions, isAvulsaBoxCode } from "@/lib/packaging/boxes";
 import { sequenceLabel } from "@/lib/packaging/allocation";
 import { packingListQrHref } from "@/lib/packaging/parse-expedicao-qr";
@@ -107,13 +112,14 @@ export default function FaturamentoPage() {
     }
   }, [loading, profile, router]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!companyId) return;
-    setFetching(true);
+    const silent = Boolean(opts?.silent);
+    if (!silent) setFetching(true);
     try {
       const res = await fetch(
         `/api/shipping-lists?companyId=${encodeURIComponent(companyId)}`,
-        { credentials: "include" }
+        liveGetInit
       );
       const json = (await res.json()) as {
         lists?: ListRow[];
@@ -127,15 +133,15 @@ export default function FaturamentoPage() {
           setRows([]);
           return;
         }
-        toast.error(msg);
+        if (!silent) toast.error(msg);
         return;
       }
       setTableMissing(Boolean(json.tableMissing));
       setRows(json.lists ?? []);
     } catch {
-      toast.error("Erro ao carregar listas de embarque");
+      if (!silent) toast.error("Erro ao carregar listas de embarque");
     } finally {
-      setFetching(false);
+      if (!silent) setFetching(false);
     }
   }, [companyId]);
 
@@ -206,6 +212,13 @@ export default function FaturamentoPage() {
   useEffect(() => {
     if (allowed && companyLoaded && companyId) void load();
   }, [allowed, companyLoaded, companyId, load]);
+
+  usePollWhenVisible(
+    () => void load({ silent: true }),
+    LIVE_PAGE_POLL_MS,
+    Boolean(allowed && companyLoaded && companyId),
+    { immediate: false }
+  );
 
   const openRow = useMemo(
     () => rows.find((r) => r.order.id === openId) ?? null,

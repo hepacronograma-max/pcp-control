@@ -6,6 +6,11 @@ import { useUser } from "@/lib/hooks/use-user";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 import {
+  LIVE_PAGE_POLL_MS,
+  liveGetInit,
+  usePollWhenVisible,
+} from "@/lib/hooks/use-poll-when-visible";
+import {
   defaultAppPathForRole,
   hasPermission,
 } from "@/lib/utils/permissions";
@@ -81,19 +86,20 @@ export default function ComprasPage() {
     }
   }, [userLoading, profile, router]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!profile || !hasPermission(profile, "viewCompras")) return;
+    const silent = Boolean(opts?.silent);
     const useApi = shouldUseLocalServiceApi(profile);
     if (useApi && profile.company_id === "local-company" && !effectiveLoaded) {
       return;
     }
     const companyId = effectiveCompanyId;
     if (!companyId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const res = await fetch(
         `/api/purchase-orders?companyId=${encodeURIComponent(companyId)}`,
-        { credentials: "include" }
+        liveGetInit
       );
       const j = (await res.json()) as {
         purchaseOrders?: PurchaseOrderRow[];
@@ -111,7 +117,7 @@ export default function ComprasPage() {
       setSchemaMissing(false);
       setSchemaMsg(null);
       if (!res.ok) {
-        toast.error(j.error || "Erro ao carregar compras");
+        if (!silent) toast.error(j.error || "Erro ao carregar compras");
         return;
       }
       setPurchaseOrders(
@@ -123,9 +129,9 @@ export default function ComprasPage() {
       );
       setOrderItemsForLink(j.orderItemsForLink ?? []);
     } catch {
-      toast.error("Erro de rede ao carregar compras");
+      if (!silent) toast.error("Erro de rede ao carregar compras");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [profile, effectiveCompanyId, effectiveLoaded]);
 
@@ -133,10 +139,12 @@ export default function ComprasPage() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    const t = setInterval(() => void load(), 45000);
-    return () => clearInterval(t);
-  }, [load]);
+  usePollWhenVisible(
+    () => void load({ silent: true }),
+    LIVE_PAGE_POLL_MS,
+    Boolean(allowed && effectiveCompanyId),
+    { immediate: false }
+  );
 
   async function createPo() {
     if (!newNumber.trim()) {

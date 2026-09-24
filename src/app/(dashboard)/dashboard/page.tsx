@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { OperatorDashboard } from "@/components/dashboard/operator-dashboard";
 import { ComprasDashboard } from "@/components/dashboard/compras-dashboard";
 import { DashboardMainTabs } from "@/components/dashboard/dashboard-main-tabs";
+import { hasPermission } from "@/lib/utils/permissions";
 
 export default function DashboardPage() {
   const [role, setRole] = useState<string | null>(null);
@@ -92,8 +93,12 @@ export default function DashboardPage() {
     );
   }
 
-  /** Operador e Logística: KPIs só das linhas atribuídas (`operator_lines`). */
-  if (role === "operator" || role === "logistica") {
+  /** Operador/Logística: KPIs só das linhas atribuídas, salvo extra_roles com visão geral. */
+  const actor = { role: role ?? undefined, extra_roles: extraRoles };
+  if (
+    (role === "operator" || role === "logistica") &&
+    !hasPermission(actor, "viewAllLines")
+  ) {
     return <OperatorDashboard />;
   }
 

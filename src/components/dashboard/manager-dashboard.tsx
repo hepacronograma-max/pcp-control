@@ -1,8 +1,13 @@
 "use client";
 
 import { format } from "date-fns";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { DashboardData } from "@/lib/queries/dashboard";
+import {
+  LIVE_PAGE_POLL_MS,
+  liveGetInit,
+  usePollWhenVisible,
+} from "@/lib/hooks/use-poll-when-visible";
 import {
   Bar,
   BarChart,
@@ -67,22 +72,36 @@ export function ManagerDashboard({ companyId }: ManagerDashboardProps) {
   const [includeCompletedInStatusDonut, setIncludeCompletedInStatusDonut] =
     useState(false);
 
-  useEffect(() => {
-    fetch(
-      `/api/manager-dashboard?companyId=${encodeURIComponent(companyId)}`,
-      { credentials: "include" }
-    )
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.error) {
-          setDashboard(null);
-        } else {
-          setDashboard(data as ManagerDashboardData);
-        }
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const r = await fetch(
+        `/api/manager-dashboard?companyId=${encodeURIComponent(companyId)}`,
+        liveGetInit
+      );
+      const data = await r.json();
+      if (data?.error) {
+        if (!silent) setDashboard(null);
+      } else {
+        setDashboard(data as ManagerDashboardData);
+      }
+    } catch {
+      if (!silent) setDashboard(null);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, [companyId]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  usePollWhenVisible(
+    () => void load(true),
+    LIVE_PAGE_POLL_MS,
+    Boolean(companyId),
+    { immediate: false }
+  );
 
   if (loading) {
     return (

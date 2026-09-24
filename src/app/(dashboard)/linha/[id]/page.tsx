@@ -31,6 +31,10 @@ import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { fetchLineDataRequest } from "@/lib/api/fetch-line-data";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 import {
+  LIVE_PAGE_POLL_MS,
+  usePollWhenVisible,
+} from "@/lib/hooks/use-poll-when-visible";
+import {
   fetchAlmoxScheduledOrderItems,
   countAlmoxSupplyPending,
   fetchProductionLinesWithAlmoxFlag,
@@ -109,6 +113,7 @@ export default function LinePage() {
   }, [allLines]);
 
   const [refreshKey, setRefreshKey] = useState(0);
+  const silentRefreshRef = useRef(false);
   const [etiquetaItem, setEtiquetaItem] = useState<LineItemWithOrder | null>(
     null
   );
@@ -117,13 +122,15 @@ export default function LinePage() {
   const [embalagemItem, setEmbalagemItem] =
     useState<LineItemWithOrder | null>(null);
 
-  useEffect(() => {
-    function onFocus() {
+  usePollWhenVisible(
+    () => {
+      silentRefreshRef.current = true;
       setRefreshKey((k) => k + 1);
-    }
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
-  }, []);
+    },
+    LIVE_PAGE_POLL_MS,
+    Boolean(profile && lineId),
+    { immediate: false }
+  );
 
   useEffect(() => {
     setTab("in_progress");
@@ -158,6 +165,9 @@ export default function LinePage() {
     let cancelled = false;
 
     async function resolveOperatorAllowsLine(): Promise<boolean> {
+      if (hasPermission(currentProfile, "viewAllLines")) {
+        return true;
+      }
       if (
         currentProfile.role !== "operator" &&
         currentProfile.role !== "logistica"
@@ -200,8 +210,10 @@ export default function LinePage() {
     }
 
     async function checkAccessAndLoad() {
+      const silent = silentRefreshRef.current;
+      silentRefreshRef.current = false;
       try {
-        setLoadingData(true);
+        if (!silent) setLoadingData(true);
 
         const allowedOp = await resolveOperatorAllowsLine();
         if (cancelled) return;
@@ -237,7 +249,7 @@ export default function LinePage() {
                 : null
             );
           } catch (err) {
-            if (!cancelled) {
+            if (!cancelled && !silent) {
               const m =
                 err instanceof Error
                   ? err.message
@@ -354,7 +366,7 @@ export default function LinePage() {
           setItems(nextItems);
         }
       } catch (e) {
-        if (!cancelled) {
+        if (!cancelled && !silent) {
           const m =
             e instanceof Error
               ? e.message
@@ -364,7 +376,7 @@ export default function LinePage() {
           setItems([]);
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && !silent) {
           setLoadingData(false);
         }
       }

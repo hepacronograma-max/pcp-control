@@ -8,6 +8,11 @@ import { Input } from "@/components/ui/input";
 import { VolumeQrScanner } from "@/components/expedicao/volume-qr-scanner";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { useUser } from "@/lib/hooks/use-user";
+import {
+  LIVE_PAGE_POLL_MS,
+  liveGetInit,
+  usePollWhenVisible,
+} from "@/lib/hooks/use-poll-when-visible";
 import { formatBoxDimensions, isAvulsaBoxCode } from "@/lib/packaging/boxes";
 import { sequenceLabel } from "@/lib/packaging/allocation";
 import {
@@ -105,30 +110,38 @@ export default function ExpedicaoPage() {
     }
   }, [loading, profile, router]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!companyId) return;
-    setFetching(true);
+    const silent = Boolean(opts?.silent);
+    if (!silent) setFetching(true);
     try {
       const res = await fetch(
         `/api/shipping-lists?companyId=${encodeURIComponent(companyId)}`,
-        { credentials: "include" }
+        liveGetInit
       );
       const json = (await res.json()) as { lists?: ListRow[]; error?: string };
       if (!res.ok) {
-        toast.error(json.error || "Erro ao carregar expedição");
+        if (!silent) toast.error(json.error || "Erro ao carregar expedição");
         return;
       }
       setRows(json.lists ?? []);
     } catch {
-      toast.error("Erro ao carregar expedição");
+      if (!silent) toast.error("Erro ao carregar expedição");
     } finally {
-      setFetching(false);
+      if (!silent) setFetching(false);
     }
   }, [companyId]);
 
   useEffect(() => {
     if (allowed && companyLoaded && companyId) void load();
   }, [allowed, companyLoaded, companyId, load]);
+
+  usePollWhenVisible(
+    () => void load({ silent: true }),
+    LIVE_PAGE_POLL_MS,
+    Boolean(allowed && companyLoaded && companyId),
+    { immediate: false }
+  );
 
   const releasedRows = useMemo(
     () =>

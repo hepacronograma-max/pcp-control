@@ -28,6 +28,7 @@ type LiteCacheEntry = {
 };
 const LITE_CACHE_TTL_MS = 5_000;
 const liteCache = new Map<string, LiteCacheEntry>();
+const NO_STORE = { headers: { "Cache-Control": "no-store" } };
 
 /** Limpa a entrada do cache para um companyId — usado por endpoints que alteram dados. */
 export function invalidateCompanyLiteCache(companyId: string) {
@@ -237,7 +238,7 @@ export async function GET(request: NextRequest) {
       const cached = liteCache.get(companyId);
       const now = Date.now();
       if (cached && cached.expiresAt > now) {
-        return NextResponse.json(cached.payload);
+        return NextResponse.json(cached.payload, NO_STORE);
       }
 
       // Queries independentes em paralelo reduzem o tempo de resposta pela metade.
@@ -256,7 +257,7 @@ export async function GET(request: NextRequest) {
         expiresAt: now + LITE_CACHE_TTL_MS,
         payload,
       });
-      return NextResponse.json(payload);
+      return NextResponse.json(payload, NO_STORE);
     }
 
     // Modo completo: roda em paralelo a query de pedidos (com itens) e a de linhas.
@@ -357,7 +358,7 @@ export async function GET(request: NextRequest) {
       orders,
       lines,
       unprogrammedByLine,
-    });
+    }, NO_STORE);
   } catch {
     return NextResponse.json(
       { companyId: null, company: null, orders: [], lines: [], unprogrammedByLine: {} },

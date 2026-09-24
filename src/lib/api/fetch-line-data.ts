@@ -35,6 +35,7 @@ export async function fetchLineDataRequest(
   try {
     const res = await fetch(url, {
       credentials: "include",
+      cache: "no-store",
       signal: controller.signal,
     });
     clearTimeout(t);

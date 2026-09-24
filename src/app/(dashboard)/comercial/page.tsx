@@ -5,11 +5,16 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/hooks/use-user";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import {
+  LIVE_PAGE_POLL_MS,
+  liveGetInit,
+  usePollWhenVisible,
+} from "@/lib/hooks/use-poll-when-visible";
 import type { OrderComercialThreadPatch } from "@/lib/types/database";
 import {
+  collectActorRoles,
   defaultAppPathForRole,
   hasPermission,
-  normalizeUserRole,
 } from "@/lib/utils/permissions";
 import { ComercialOrdersView, type ComercialOrderApi } from "@/components/comercial/comercial-orders-view";
 import { toast } from "sonner";
@@ -33,19 +38,20 @@ export default function ComercialPage() {
     }
   }, [userLoading, profile, router]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!profile || !hasPermission(profile, "viewComercial")) return;
+    const silent = Boolean(opts?.silent);
     const useApi = shouldUseLocalServiceApi(profile);
     if (useApi && profile.company_id === "local-company" && !effectiveLoaded) {
       return;
     }
     const companyId = effectiveCompanyId;
     if (!companyId) return;
-    setFetching(true);
+    if (!silent) setFetching(true);
     try {
       const res = await fetch(
         `/api/comercial-orders?companyId=${encodeURIComponent(companyId)}`,
-        { credentials: "include" }
+        liveGetInit
       );
       const j = (await res.json()) as {
         orders?: ComercialOrderApi[];
@@ -57,12 +63,14 @@ export default function ComercialPage() {
           (res.status === 401
             ? "Sessão expirada. Entre de novo."
             : "Não foi possível carregar os pedidos.");
-        setLoadError(msg);
-        toast.error(msg);
+        if (!silent) {
+          setLoadError(msg);
+          toast.error(msg);
+        }
         return;
       }
       if (j.error) {
-        setLoadError(j.error);
+        if (!silent) setLoadError(j.error);
         return;
       }
       setLoadError(null);
@@ -75,9 +83,9 @@ export default function ComercialPage() {
       );
       setLastAt(new Date());
     } catch {
-      setLoadError("Erro de rede.");
+      if (!silent) setLoadError("Erro de rede.");
     } finally {
-      setFetching(false);
+      if (!silent) setFetching(false);
     }
   }, [profile, effectiveCompanyId, effectiveLoaded]);
 
@@ -85,12 +93,12 @@ export default function ComercialPage() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    const t = setInterval(() => {
-      void load();
-    }, 20000);
-    return () => clearInterval(t);
-  }, [load]);
+  usePollWhenVisible(
+    () => void load({ silent: true }),
+    LIVE_PAGE_POLL_MS,
+    Boolean(allowed && effectiveCompanyId),
+    { immediate: false }
+  );
 
   if (userLoading) {
     return (
@@ -103,13 +111,11 @@ export default function ComercialPage() {
     return null;
   }
 
-  const roleNorm = normalizeUserRole(profile!.role);
-  const canEditObservation =
-    roleNorm === "comercial" ||
-    roleNorm === "manager" ||
-    roleNorm === "super_admin";
+  const canEditObservation = collectActorRoles(profile).some(
+    (r) => r === "comercial" || r === "manager" || r === "super_admin"
+  );
   const canEditDeliveryDeadline = hasPermission(
-    profile!.role,
+    profile,
     "editComercialDeliveryDeadline"
   );
 

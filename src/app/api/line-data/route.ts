@@ -18,6 +18,7 @@ import {
 /** Throttle em memória por processo Node: evita reconcile completo a cada pedido à linha Almox. */
 const ALMOX_RECONCILE_THROTTLE_MS = 5 * 60 * 1000;
 const almoxReconcileLastSuccessAt = new Map<string, number>();
+const NO_STORE = { headers: { "Cache-Control": "no-store" } };
 
 function parseAlmoxPeriod(v: string | null): AlmoxPeriod {
   if (v === "7" || v === "15" || v === "30") return v;
@@ -251,7 +252,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(jsonResponse);
+    return NextResponse.json(jsonResponse, NO_STORE);
   } catch (err) {
     console.error("[line-data]", err);
     return NextResponse.json(

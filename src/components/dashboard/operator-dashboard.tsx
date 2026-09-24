@@ -1,7 +1,12 @@
 "use client";
 
 import { format } from "date-fns";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import {
+  LIVE_PAGE_POLL_MS,
+  liveGetInit,
+  usePollWhenVisible,
+} from "@/lib/hooks/use-poll-when-visible";
 import {
   Bar,
   BarChart,
@@ -48,39 +53,41 @@ export function OperatorDashboard() {
   const [kpis, setKpis] = useState<OperatorKpis | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetch("/api/operator-dashboard", { credentials: "include" })
-      .then(async (r) => {
-        const data = (await r.json()) as OperatorKpis & { error?: string };
-        if (!r.ok || data.error) {
-          setKpis(null);
-          setLoading(false);
-          return;
-        }
-        if (data.total === undefined) {
-          setKpis(null);
-          setLoading(false);
-          return;
-        }
-        setKpis({
-          total: data.total,
-          waiting: data.waiting,
-          scheduled: data.scheduled,
-          completed: data.completed,
-          delayed: data.delayed ?? 0,
-          totalOrders: data.totalOrders ?? 0,
-          delayedOrders: data.delayedOrders ?? 0,
-          chartByLine: data.chartByLine ?? [],
-          chartByStatus: data.chartByStatus ?? [],
-          delayedOrdersList: data.delayedOrdersList ?? [],
-        });
-        setLoading(false);
-      })
-      .catch(() => {
-        setKpis(null);
-        setLoading(false);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const r = await fetch("/api/operator-dashboard", liveGetInit);
+      const data = (await r.json()) as OperatorKpis & { error?: string };
+      if (!r.ok || data.error || data.total === undefined) {
+        if (!silent) setKpis(null);
+        return;
+      }
+      setKpis({
+        total: data.total,
+        waiting: data.waiting,
+        scheduled: data.scheduled,
+        completed: data.completed,
+        delayed: data.delayed ?? 0,
+        totalOrders: data.totalOrders ?? 0,
+        delayedOrders: data.delayedOrders ?? 0,
+        chartByLine: data.chartByLine ?? [],
+        chartByStatus: data.chartByStatus ?? [],
+        delayedOrdersList: data.delayedOrdersList ?? [],
       });
+    } catch {
+      if (!silent) setKpis(null);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  usePollWhenVisible(() => void load(true), LIVE_PAGE_POLL_MS, true, {
+    immediate: false,
+  });
 
   if (loading) {
     return (

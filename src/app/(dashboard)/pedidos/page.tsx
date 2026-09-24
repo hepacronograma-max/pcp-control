@@ -20,6 +20,11 @@ import { Button } from "@/components/ui/button";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
+import {
+  LIVE_PAGE_POLL_MS,
+  liveGetInit,
+  usePollWhenVisible,
+} from "@/lib/hooks/use-poll-when-visible";
 import { totalOmieSyncAlertCount } from "@/lib/utils/omie-sync-alerts";
 import type { OmieImportReport } from "@/lib/omie/types";
 import { summarizeOmieImportReport } from "@/components/omie/import-report-summary";
@@ -73,7 +78,10 @@ export default function PedidosPage() {
   const isLocal = !supabase;
 
   useEffect(() => {
-    if (!loading && profile && (profile.role === "operator" || profile.role === "logistica")) {
+    if (loading || !profile) return;
+    /** extra_roles (ex.: PCP) mantém a lista de pedidos — mesmo recorte para todos. */
+    if (hasPermission(profile, "viewOrders")) return;
+    if (profile.role === "operator" || profile.role === "logistica") {
       const lineIds = getOperatorLineIdsForLocalUser(profile.id);
       if (lineIds.length > 0) {
         router.replace(`/linha/${lineIds[0]}`);
@@ -102,17 +110,20 @@ export default function PedidosPage() {
 
   const useApi = shouldUseLocalServiceApi(profile);
 
-  const reloadOrders = useCallback(async () => {
+  const reloadOrders = useCallback(async (opts?: { silent?: boolean }) => {
     if (!profile || !effectiveCompanyId) return;
-    setLoadingData(true);
+    const silent = Boolean(opts?.silent);
+    if (!silent) setLoadingData(true);
     try {
       const res = await fetch(
         `/api/company-data?companyId=${encodeURIComponent(effectiveCompanyId)}`,
-        { credentials: "include" }
+        liveGetInit
       );
       if (!res.ok) {
-        setOrders([]);
-        setLines([]);
+        if (!silent) {
+          setOrders([]);
+          setLines([]);
+        }
         return;
       }
       const json = await res.json();
@@ -120,10 +131,12 @@ export default function PedidosPage() {
       const raw = (json.lines ?? []) as ProductionLine[];
       setLines(raw.filter((l) => l.is_active !== false));
     } catch {
-      setOrders([]);
-      setLines([]);
+      if (!silent) {
+        setOrders([]);
+        setLines([]);
+      }
     } finally {
-      setLoadingData(false);
+      if (!silent) setLoadingData(false);
     }
   }, [profile, effectiveCompanyId]);
 
@@ -136,18 +149,12 @@ export default function PedidosPage() {
     void reloadOrders();
   }, [profile, effectiveCompanyId, effectiveLoaded, useApi, reloadOrders]);
 
-  useEffect(() => {
-    function refreshIfVisible() {
-      if (document.visibilityState === "hidden") return;
-      void reloadOrders();
-    }
-    window.addEventListener("focus", refreshIfVisible);
-    document.addEventListener("visibilitychange", refreshIfVisible);
-    return () => {
-      window.removeEventListener("focus", refreshIfVisible);
-      document.removeEventListener("visibilitychange", refreshIfVisible);
-    };
-  }, [reloadOrders]);
+  usePollWhenVisible(
+    () => void reloadOrders({ silent: true }),
+    LIVE_PAGE_POLL_MS,
+    Boolean(profile && effectiveCompanyId),
+    { immediate: false }
+  );
 
   const userRole: UserRole | null = profile ? profile.role : null;
   const canImport = !!profile && hasPermission(profile, "importOrders");
@@ -978,7 +985,7 @@ export default function PedidosPage() {
         </div>
       </div>
 
-      {loadingData ? (
+      {loadingData && orders.length === 0 ? (
         <div className="text-sm text-slate-500">Carregando dados...</div>
       ) : (
         <OrdersTable

@@ -87,7 +87,10 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       async function loadCompanyData() {
         try {
           const dataUrl = `/api/company-data?companyId=${encodeURIComponent(apiCompanyId)}&lite=1`;
-          let res = await fetch(dataUrl, { credentials: "include" });
+          let res = await fetch(dataUrl, {
+            credentials: "include",
+            cache: "no-store",
+          });
           let json = await res.json();
           if (cancelled) return;
 
