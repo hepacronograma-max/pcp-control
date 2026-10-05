@@ -110,6 +110,12 @@ export interface OrderItem {
   almox_supplied_by?: string | null;
   /** true quando almox_supplied_* foi gravado pela finalização da produção (`production_end`). */
   almox_supplied_auto?: boolean | null;
+  /** Data em que a logística pretende abastecer o item na linha. */
+  supply_planned_date?: string | null;
+  /** partial = faltando peça; full = abastecido. */
+  supply_status?: "partial" | "full" | null;
+  supply_status_at?: string | null;
+  supply_status_by?: string | null;
   /** Número do pedido de compras (matéria-prima) */
   pc_number: string | null;
   /** Data prevista de entrega do PC (matéria-prima) — início/fim de produção não podem ser antes */

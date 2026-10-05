@@ -92,6 +92,23 @@ export const PERMISSIONS = {
     "operator",
   ] as UserRole[],
 
+  /** Aba Abastecimento: itens das linhas de produção */
+  viewAbastecimento: [
+    "super_admin",
+    "manager",
+    "pcp",
+    "logistica",
+    "operator",
+  ] as UserRole[],
+
+  /** Data e botões Abastecido / Abastecido parcialmente */
+  editAbastecimento: [
+    "super_admin",
+    "manager",
+    "pcp",
+    "logistica",
+  ] as UserRole[],
+
   /** CQ: categorias em Configurações */
   manageCQCategorias: ["super_admin", "manager"] as UserRole[],
 

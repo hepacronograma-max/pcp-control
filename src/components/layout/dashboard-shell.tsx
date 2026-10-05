@@ -275,6 +275,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     if (pathname?.startsWith("/importar")) return "Importar PDFs";
     if (pathname?.startsWith("/comercial")) return "Comercial";
     if (pathname?.startsWith("/compras")) return "Compras";
+    if (pathname?.startsWith("/abastecimento")) return "Abastecimento";
+    if (pathname?.startsWith("/expedicao")) return "Expedição";
     return "Dashboard";
   }, [pathname]);
 
@@ -321,6 +323,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     navBuckets.producao.some((l) => l.id === lineIdFromPath);
   const logisticaNavActive =
     pathname?.startsWith("/expedicao") ||
+    pathname?.startsWith("/abastecimento") ||
     (!!lineIdFromPath &&
       navBuckets.logistica.some((l) => l.id === lineIdFromPath));
 
@@ -364,6 +367,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     !profile || hasPermission(profile, "viewFaturamento");
   const canViewExpedicao =
     !profile || hasPermission(profile, "viewExpedicao");
+  const canViewAbastecimento =
+    !profile || hasPermission(profile, "viewAbastecimento");
   /** Sem Supabase, ou perfil com id não‑UUID → contagem só em localStorage. */
   const tasksPendingUsesLocalOnly = useMemo(() => {
     if (!supabase) return true;
@@ -374,7 +379,8 @@ export function DashboardShell({ children }: { children: ReactNode }) {
     profile && canViewProductionLineMenu(profile);
   const showLogisticaGroup =
     Boolean(showProductionLines && navBuckets.logistica.length > 0) ||
-    Boolean(canViewExpedicao);
+    Boolean(canViewExpedicao) ||
+    Boolean(canViewAbastecimento);
 
   /** Badge do menu «Atividades»: tarefas com status ≠ done. */
   useEffect(() => {
@@ -591,6 +597,13 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   : undefined
               }
             >
+              {canViewAbastecimento ? (
+                <SidebarItem
+                  label="Abastecimento"
+                  href="/abastecimento"
+                  active={pathname?.startsWith("/abastecimento")}
+                />
+              ) : null}
               {canViewExpedicao ? (
                 <SidebarItem
                   label="Expedição"
@@ -798,6 +811,14 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                       : undefined
                   }
                 >
+                  {canViewAbastecimento ? (
+                    <SidebarItem
+                      label="Abastecimento"
+                      href="/abastecimento"
+                      active={pathname?.startsWith("/abastecimento")}
+                      onClick={() => setSidebarOpen(false)}
+                    />
+                  ) : null}
                   {canViewExpedicao ? (
                     <SidebarItem
                       label="Expedição"
