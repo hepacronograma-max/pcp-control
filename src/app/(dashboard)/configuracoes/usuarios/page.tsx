@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
 import { toast } from "sonner";
+import { PASSWORD_RULE_TEXT, validatePassword } from "@/lib/auth/password-policy";
 import {
   STAFF_POSITIONS,
   actorUsesOperatorLines,
@@ -86,6 +87,7 @@ export default function UsersSettingsPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deleteByEmail, setDeleteByEmail] = useState("");
   const [deletingByEmail, setDeletingByEmail] = useState(false);
+  const [sendingResetId, setSendingResetId] = useState<string | null>(null);
 
   /**
    * "Local" só quando não há Supabase ou é demo sem cookie de API.
@@ -285,6 +287,13 @@ export default function UsersSettingsPage() {
       toast.error("Preencha a senha");
       return;
     }
+    if (!isLocal && formPassword) {
+      const pwdError = validatePassword(formPassword);
+      if (pwdError) {
+        toast.error(pwdError);
+        return;
+      }
+    }
     if (
       !isLocal &&
       modalMode === "create" &&
@@ -428,6 +437,36 @@ export default function UsersSettingsPage() {
       toast.error(msg);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleSendReset(user: UserWithLines) {
+    if (isLocal) {
+      toast.error("Disponível apenas com o banco Supabase.");
+      return;
+    }
+    setSendingResetId(user.id);
+    try {
+      const res = await fetch("/api/users/send-reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ userId: user.id }),
+      });
+      let data: { success?: boolean; error?: string } = {};
+      try {
+        data = await res.json();
+      } catch {
+        data = { error: `Erro ${res.status}` };
+      }
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Erro ao enviar o link");
+      }
+      toast.success(`Link de redefinição enviado para ${user.email}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao enviar o link");
+    } finally {
+      setSendingResetId(null);
     }
   }
 
@@ -612,7 +651,7 @@ export default function UsersSettingsPage() {
               <th className="px-2 py-2 text-left">Email</th>
               <th className="px-2 py-2 text-left w-24">Perfil</th>
               <th className="px-2 py-2 text-left w-16">Status</th>
-              <th className="px-2 py-2 text-left w-40">Ações</th>
+              <th className="px-2 py-2 text-left w-56">Ações</th>
             </tr>
           </thead>
           <tbody>
@@ -636,6 +675,16 @@ export default function UsersSettingsPage() {
                   >
                     Editar
                   </button>
+                  {!isLocal && (
+                    <button
+                      className="text-xs text-[#1B4F72] hover:underline disabled:opacity-50"
+                      disabled={sendingResetId === u.id}
+                      onClick={() => void handleSendReset(u)}
+                      title="Envia ao usuário um e-mail para ele criar uma nova senha"
+                    >
+                      {sendingResetId === u.id ? "Enviando…" : "Enviar link de senha"}
+                    </button>
+                  )}
                   <button
                     className="text-xs"
                     onClick={() => handleToggleActive(u.id, !u.is_active)}
@@ -687,15 +736,16 @@ export default function UsersSettingsPage() {
               <div className="space-y-1">
                 <Label>Senha</Label>
                 <Input
-                  type={modalMode === "edit" ? "text" : "password"}
+                  type="password"
+                  autoComplete="new-password"
                   value={formPassword}
                   onChange={(e) => setFormPassword(e.target.value)}
                 />
-                {modalMode === "edit" && (
-                  <p className="text-[10px] text-slate-500">
-                    Deixe em branco para não alterar.
-                  </p>
-                )}
+                <p className="text-[10px] text-slate-500">
+                  {modalMode === "edit"
+                    ? "Deixe em branco para não alterar. Prefira o botão «Enviar link de senha»."
+                    : PASSWORD_RULE_TEXT}
+                </p>
               </div>
             </div>
 
