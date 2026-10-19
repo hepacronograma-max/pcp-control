@@ -4,7 +4,7 @@
 
 - **Pedidos:** Verificação antes de criar (company_id + order_number). Se já existe, exibe alerta.
 - **Feriados:** Ao carregar feriados nacionais, ignora datas já cadastradas no ano.
-- **Constraints SQL:** Execute `supabase-constraints.sql` no SQL Editor do Supabase para unique em (company_id, order_number) e (company_id, date).
+- **Constraints SQL:** Execute `supabase/legacy/supabase-constraints.sql` no SQL Editor do Supabase para unique em (company_id, order_number) e (company_id, date).
 
 ## 2. Tipos corretos
 

@@ -32,11 +32,11 @@ Execute no **SQL Editor** do **mesmo** projeto que a produção usa. Todos abaix
 
 Execute **nesta ordem** e **pule** o que o painel disser que já existe (ou confirme com “Success” / sem erro de duplicar):
 
-1. `supabase-add-columns.sql` — colunas em `orders`, `order_items`, `profiles`, etc. (se a base já veio antiga, pode já estar aplicado).
-2. `supabase-purchase-orders.sql` — tabelas de pedidos de compra e links.
-3. `supabase-purchase-order-lines.sql` — linhas do PC e FK nos links.
-4. `supabase-purchase-orders-compras-fields.sql` — `follow_up_date`, `compras_observation` em `purchase_orders`.
-5. Outros, **só se o projeto ainda não tiver** e a doc interna pedir: `supabase-user-preferences.sql`, `supabase-storage-company-logos.sql`, `supabase-rls-policies.sql`, `supabase-constraints.sql` (índices únicos, etc.).
+1. `supabase/legacy/supabase-add-columns.sql` — colunas em `orders`, `order_items`, `profiles`, etc. (se a base já veio antiga, pode já estar aplicado).
+2. `supabase/legacy/supabase-purchase-orders.sql` — tabelas de pedidos de compra e links.
+3. `supabase/legacy/supabase-purchase-order-lines.sql` — linhas do PC e FK nos links.
+4. `supabase/legacy/supabase-purchase-orders-compras-fields.sql` — `follow_up_date`, `compras_observation` em `purchase_orders`.
+5. Outros, **só se o projeto ainda não tiver** e a doc interna pedir: `supabase/legacy/supabase-user-preferences.sql`, `supabase/legacy/supabase-storage-company-logos.sql`, `supabase/legacy/supabase-rls-policies.sql`, `supabase/legacy/supabase-constraints.sql` (índices únicos, etc.).
 
 **Não execute** em produção scripts de teste com `TRUNCATE`, `DELETE` em massa ou `DROP` sem ter certeza.
 
