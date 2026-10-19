@@ -3,6 +3,7 @@ import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { resolvePrimaryCompanyId } from "@/lib/supabase/resolve-primary-company";
+import { validatePassword } from "@/lib/auth/password-policy";
 import type { Profile } from "@/lib/types/database";
 import {
   actorUsesOperatorLines,
@@ -495,6 +496,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const pwdPolicyError = validatePassword(password);
+    if (pwdPolicyError) {
+      return NextResponse.json(
+        { success: false, error: pwdPolicyError },
+        { status: 400 }
+      );
+    }
+
     const { data: authData, error: authError } =
       await supabaseAdmin.auth.admin.createUser({
         email: emailTrim,
@@ -822,6 +831,16 @@ export async function PATCH(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    if (password != null && String(password).length > 0) {
+      const pwdPolicyError = validatePassword(String(password));
+      if (pwdPolicyError) {
+        return NextResponse.json(
+          { success: false, error: pwdPolicyError },
+          { status: 400 }
+        );
+      }
     }
 
     const authUpdates: { email?: string; password?: string } = {};

@@ -2,6 +2,17 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { allowLocalAuth } from "@/lib/allow-local-auth";
 
+/** Páginas abertas sem login (login e recuperação de senha). */
+function isPublicAuthPath(pathname: string): boolean {
+  return (
+    pathname.startsWith("/login") ||
+    pathname === "/login.html" ||
+    pathname === "/entrar" ||
+    pathname === "/esqueci-senha" ||
+    pathname === "/redefinir-senha"
+  );
+}
+
 export async function middleware(request: NextRequest) {
   if (
     request.nextUrl.pathname.startsWith("/api/cron/") ||
@@ -46,11 +57,7 @@ export async function middleware(request: NextRequest) {
     url.startsWith("http://") || url.startsWith("https://");
 
   if (!urlPareceValida || !anonKey) {
-    const isLoginPage =
-      request.nextUrl.pathname.startsWith("/login") ||
-      request.nextUrl.pathname === "/login.html" ||
-      request.nextUrl.pathname === "/entrar";
-    if (isLoginPage) {
+    if (isPublicAuthPath(request.nextUrl.pathname)) {
       return NextResponse.next({ request });
     }
     return NextResponse.redirect(`${origin}/login`);
@@ -79,12 +86,7 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    request.nextUrl.pathname !== "/login.html" &&
-    request.nextUrl.pathname !== "/entrar"
-  ) {
+  if (!user && !isPublicAuthPath(request.nextUrl.pathname)) {
     return NextResponse.redirect(`${origin}/login`);
   }
 

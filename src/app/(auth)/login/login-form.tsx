@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { allowLocalAuthClient } from "@/lib/allow-local-auth";
@@ -170,19 +171,27 @@ export function LoginForm() {
         <input
           id="email"
           name="email"
-          type="text"
+          type="email"
           autoComplete="email"
           required
           className="flex h-9 w-full rounded-md border border-slate-300 bg-white px-3 py-1 text-sm"
         />
       </div>
       <div>
-        <label
-          htmlFor="password"
-          className="block text-sm font-medium text-slate-700 mb-1"
-        >
-          Senha
-        </label>
+        <div className="flex items-center justify-between mb-1">
+          <label
+            htmlFor="password"
+            className="block text-sm font-medium text-slate-700"
+          >
+            Senha
+          </label>
+          <Link
+            href="/esqueci-senha"
+            className="text-xs text-[#1B4F72] hover:underline"
+          >
+            Esqueci minha senha
+          </Link>
+        </div>
         <input
           id="password"
           name="password"
