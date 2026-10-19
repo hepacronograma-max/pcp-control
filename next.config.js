@@ -1,13 +1,7 @@
-const withPWA = require('next-pwa')({
-  dest: 'public',
-  register: true,
-  skipWaiting: true,
-  disable: true,
-});
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  poweredByHeader: false,
   turbopack: {},
   serverExternalPackages: ["@napi-rs/canvas"],
   webpack: (config, { isServer }) => {
@@ -21,5 +15,4 @@ const nextConfig = {
   },
 };
 
-module.exports = withPWA(nextConfig);
-
+module.exports = nextConfig;

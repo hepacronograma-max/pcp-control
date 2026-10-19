@@ -1,6 +1,6 @@
 # Publicar o PCP Control na internet
 
-**Deploy único e seguro (backup, SQL, build, push):** use o guia [`DEPLOY-UNICO.md`](./DEPLOY-UNICO.md) antes de subir para produção.
+**Deploy único e seguro (backup, SQL, build, push):** use o guia [`DEPLOY.md`](../DEPLOY.md) antes de subir para produção.
 
 ---
 

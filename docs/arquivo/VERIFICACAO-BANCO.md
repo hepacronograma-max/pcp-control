@@ -39,5 +39,5 @@
 
 - [ ] Vercel tem as 3 variáveis (URL, ANON_KEY, SERVICE_ROLE_KEY)
 - [ ] URL na Vercel = URL no Supabase Dashboard
-- [ ] RLS aplicado no Supabase (execute `supabase-rls-policies.sql` se ainda não fez)
+- [ ] RLS aplicado no Supabase (execute `supabase/legacy/supabase-rls-policies.sql` se ainda não fez)
 - [ ] Backup importado (build ou "Restaurar do repositório" em Configurações)
