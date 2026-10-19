@@ -165,19 +165,21 @@ export function DashboardShell({ children }: { children: ReactNode }) {
 
     const client = supabase;
     async function loadData() {
-      const { data: companyData } = await client
-        .from("companies")
-        .select("id, name, logo_url")
-        .eq("id", companyId)
-        .single();
+      // Empresa e linhas em paralelo (antes eram 2 idas seguidas ao banco).
+      const [{ data: companyData }, { data: linesData }] = await Promise.all([
+        client
+          .from("companies")
+          .select("id, name, logo_url")
+          .eq("id", companyId)
+          .single(),
+        client
+          .from("production_lines")
+          .select("*")
+          .eq("company_id", companyId)
+          .or(PRODUCTION_LINES_ACTIVE_OR)
+          .order("sort_order", { ascending: true }),
+      ]);
       setCompany(companyData ?? null);
-
-      const { data: linesData } = await client
-        .from("production_lines")
-        .select("*")
-        .eq("company_id", companyId)
-        .or(PRODUCTION_LINES_ACTIVE_OR)
-        .order("sort_order", { ascending: true });
       setLines(assignableProductionLines((linesData ?? []) as ProductionLine[]));
 
       if (actorUsesOperatorLines(profile)) {
@@ -213,10 +215,15 @@ export function DashboardShell({ children }: { children: ReactNode }) {
       }
 
       try {
+        // Só itens em aberto da empresa (antes vinham TODOS os itens do banco).
         const { data: itemsData } = await client
           .from("order_items")
-          .select("line_id, status, production_start, production_end")
-          .not("line_id", "is", null);
+          .select(
+            "line_id, status, production_start, production_end, orders!inner(company_id)"
+          )
+          .eq("orders.company_id", companyId)
+          .not("line_id", "is", null)
+          .neq("status", "completed");
         const counts: Record<string, number> = {};
         for (const it of itemsData ?? []) {
           if (itemNeedsProductionProgram(it)) {
