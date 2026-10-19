@@ -14,16 +14,12 @@ function isPublicAuthPath(pathname: string): boolean {
 }
 
 export async function middleware(request: NextRequest) {
-  if (
-    request.nextUrl.pathname.startsWith("/api/cron/") ||
-    request.nextUrl.pathname === "/api/auth/local-login" ||
-    request.nextUrl.pathname === "/api/cleanup" ||
-    request.nextUrl.pathname === "/api/debug-operator" ||
-    request.nextUrl.pathname === "/api/operator-dashboard" ||
-    request.nextUrl.pathname === "/api/me" ||
-    request.nextUrl.pathname === "/api/manager-dashboard" ||
-    request.nextUrl.pathname === "/api/user-preferences"
-  ) {
+  /**
+   * Rotas /api/* validam sessão e permissão dentro de cada rota
+   * (getUser / requirePermission / assert*Access / segredo do cron).
+   * Validar de novo aqui custava uma ida extra ao Supabase Auth em toda chamada.
+   */
+  if (request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.next({ request });
   }
 
@@ -99,6 +95,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icons|manifest.json|sw.js|api/auth/local-login|api/cleanup).*)",
+    "/((?!api/|_next/static|_next/image|favicon.ico|icon.png|icons|manifest.json|sw.js).*)",
   ],
 };

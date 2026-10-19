@@ -34,12 +34,82 @@ async function syncLocalProfileCompanyId(
   }
 }
 
+/**
+ * Cache do perfil em memória (vale para todas as telas da mesma aba).
+ * Antes cada tela fazia 2 idas ao Supabase (auth + profiles) ao abrir.
+ * As permissões continuam sendo validadas no servidor em cada rota.
+ */
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+let profileCache: { userId: string; profile: Profile | null; at: number } | null = null;
+let profileInflight: Promise<Profile | null> | null = null;
+let authListenerAttached = false;
+
+function clearProfileCache() {
+  profileCache = null;
+  profileInflight = null;
+}
+
+function attachAuthListener(supabase: NonNullable<ReturnType<typeof createClient>>) {
+  if (authListenerAttached) return;
+  authListenerAttached = true;
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_OUT" || event === "USER_UPDATED") {
+      clearProfileCache();
+    } else if (
+      event === "SIGNED_IN" &&
+      profileCache &&
+      session?.user?.id !== profileCache.userId
+    ) {
+      clearProfileCache();
+    }
+  });
+}
+
+async function loadSupabaseProfile(
+  supabase: NonNullable<ReturnType<typeof createClient>>
+): Promise<Profile | null> {
+  // getSession lê o cookie local (sem ida à rede); o servidor revalida o token.
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const userId = session?.user?.id;
+  if (!userId) {
+    clearProfileCache();
+    return null;
+  }
+  if (
+    profileCache &&
+    profileCache.userId === userId &&
+    Date.now() - profileCache.at < PROFILE_CACHE_TTL_MS
+  ) {
+    return profileCache.profile;
+  }
+  if (!profileInflight) {
+    profileInflight = (async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single();
+      const p = (data as Profile | null) ?? null;
+      profileCache = { userId, profile: p, at: Date.now() };
+      return p;
+    })().finally(() => {
+      profileInflight = null;
+    });
+  }
+  return profileInflight;
+}
+
 export function useUser() {
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<Profile | null>(
+    () => profileCache?.profile ?? null
+  );
+  const [loading, setLoading] = useState(() => !profileCache);
   const supabase = createClient();
 
   useEffect(() => {
+    let cancelled = false;
     async function getProfile() {
       // Dev localhost: perfil em localStorage (cookie httpOnly só no servidor)
       if (typeof window !== "undefined" && allowLocalAuthClient()) {
@@ -71,22 +141,19 @@ export function useUser() {
         return;
       }
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", user.id)
-          .single();
-        setProfile(data);
+      attachAuthListener(supabase);
+      try {
+        const p = await loadSupabaseProfile(supabase);
+        if (!cancelled) setProfile(p);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     }
-    getProfile();
+    void getProfile();
+    return () => {
+      cancelled = true;
+    };
   }, [supabase]);
 
   return { profile, loading };
 }
-
