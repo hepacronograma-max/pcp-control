@@ -1,3 +1,4 @@
+import { hasPermission } from "@/lib/utils/permissions";
 /**
  * API de importação de PDFs de pedidos (manual: PCP HEPA, TOTVS ou Omie PDF).
  * A sincronização pela API do Omie não passa por aqui.
@@ -583,9 +584,16 @@ export async function POST(request: NextRequest) {
 
         const { data: profile } = await supabase
           .from("profiles")
-          .select("company_id")
+          .select("*")
           .eq("id", user.id)
           .single();
+
+        if (profile && !hasPermission(profile, "importOrders")) {
+          return NextResponse.json(
+            { success: false, error: "Sem permissão para importar pedidos." },
+            { status: 403 }
+          );
+        }
 
         if (!profile?.company_id) {
           return NextResponse.json(

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { requirePermission } from "@/lib/auth/require-permission";
 import { toSortOrder } from "@/lib/utils/supabase-data";
 import { foldStandaloneLogisticaIntoAlmox } from "@/lib/supabase/fold-logistica-into-almox";
 import { productionLineNameIsStandaloneLogistica } from "@/lib/utils/nav-line-groups";
@@ -12,15 +11,9 @@ import { productionLineNameIsStandaloneLogistica } from "@/lib/utils/nav-line-gr
  */
 export async function POST(request: NextRequest) {
   try {
-    if (!(await hasServerLocalAuthCookie())) {
-      const authClient = await createServerSupabaseClient();
-      const {
-        data: { user },
-      } = await authClient.auth.getUser();
-      if (!user) {
-        return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
-      }
-    }
+    // Criar / renomear / excluir / reordenar linhas: só gestão (Configurações → Linhas).
+    const gate = await requirePermission("manageLines");
+    if (!gate.ok) return gate.response;
 
     const body = await request.json();
     const { action, companyId, lineId, name, isActive, direction } = body as {
