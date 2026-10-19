@@ -193,14 +193,21 @@ export default function LinePage() {
       try {
         if (!silent) setLoadingData(true);
 
-        const allowedOp = await resolveOperatorAllowsLine();
-        if (cancelled) return;
-        if (!allowedOp) {
-          router.push("/");
-          return;
+        // Com Supabase, a tela carrega tudo por /api/line-data (servidor ao lado do banco):
+        // 1 ida do navegador em vez de 5 a 7 consultas seguidas até Oregon.
+        // O próprio servidor confere se o usuário pode ver a linha (403 = sem acesso).
+        const loadViaServer = useApi || Boolean(supabase);
+
+        if (!loadViaServer) {
+          const allowedOp = await resolveOperatorAllowsLine();
+          if (cancelled) return;
+          if (!allowedOp) {
+            router.push("/");
+            return;
+          }
         }
 
-        if (useApi) {
+        if (loadViaServer) {
           try {
             const jsonUnknown = await fetchLineDataRequest(
               {
@@ -216,6 +223,14 @@ export default function LinePage() {
             setItems((json.items as LineItemWithOrder[]) ?? []);
             setAllLines((json.allLines as ProductionLine[]) ?? []);
           } catch (err) {
+            if (
+              !cancelled &&
+              err instanceof Error &&
+              /\(403\b/.test(err.message)
+            ) {
+              router.push("/");
+              return;
+            }
             if (!cancelled && !silent) {
               const m =
                 err instanceof Error

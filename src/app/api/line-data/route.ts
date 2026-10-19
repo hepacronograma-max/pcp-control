@@ -4,6 +4,8 @@ import { hasServerLocalAuthCookie } from "@/lib/server-local-auth";
 import { PRODUCTION_LINES_ACTIVE_OR } from "@/lib/supabase/production-line-filters";
 import { attachPoDatesToLineItems } from "@/lib/utils/pc-purchase-dates";
 import type { ProductionLine } from "@/lib/types/database";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { hasPermission } from "@/lib/utils/permissions";
 
 const NO_STORE = { headers: { "Cache-Control": "no-store" } };
 
@@ -14,8 +16,29 @@ const NO_STORE = { headers: { "Cache-Control": "no-store" } };
 export async function GET(request: NextRequest) {
   try {
     const hasLocalAuth = await hasServerLocalAuthCookie();
+
+    // Sessão Supabase: quem pode ver a linha é validado aqui no servidor
+    // (antes a tela fazia /api/me + operator_lines + 4 consultas direto do navegador).
+    let actor: { id: string; company_id: string | null; role: string | null } | null =
+      null;
     if (!hasLocalAuth) {
-      return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+      const authClient = await createServerSupabaseClient();
+      const {
+        data: { user },
+      } = await authClient.auth.getUser();
+      if (!user) {
+        return NextResponse.json({ success: false, error: "Não autenticado" }, { status: 401 });
+      }
+      const admin = createSupabaseAdminClient();
+      const { data: prof } = await admin
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (!prof) {
+        return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
+      }
+      actor = prof as { id: string; company_id: string | null; role: string | null };
     }
 
     const { searchParams } = new URL(request.url);
@@ -39,6 +62,25 @@ export async function GET(request: NextRequest) {
     }
 
     const companyId = lineData.company_id;
+
+    if (actor) {
+      if (actor.role !== "super_admin" && actor.company_id !== companyId) {
+        return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
+      }
+      const seesAll = hasPermission(actor, "viewAllLines");
+      const isLineOperator = actor.role === "operator" || actor.role === "logistica";
+      if (!seesAll && isLineOperator) {
+        const { data: access } = await supabase
+          .from("operator_lines")
+          .select("line_id")
+          .eq("user_id", actor.id)
+          .eq("line_id", lineId)
+          .maybeSingle();
+        if (!access) {
+          return NextResponse.json({ success: false, error: "Sem permissão" }, { status: 403 });
+        }
+      }
+    }
 
     const holidaysPromise = supabase
       .from("holidays")
