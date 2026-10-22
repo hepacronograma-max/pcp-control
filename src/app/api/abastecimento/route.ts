@@ -97,12 +97,34 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const { data, error } = await gate.admin
-    .from("order_items")
-    .select(
-      `${ITEM_COLUMNS}, orders!inner(id, order_number, client_name, status, company_id)`
-    )
-    .eq("orders.company_id", companyId);
+  /**
+   * O Supabase devolve no máximo 1000 linhas por consulta. Antes a tela
+   * buscava todos os itens da empresa (inclusive concluídos) de uma vez e
+   * perdia tudo depois do 1000º — por isso faltavam itens no abastecimento.
+   * Agora: só itens com linha e não concluídos, lidos em páginas até o fim.
+   */
+  const PAGE_SIZE = 1000;
+  const allRows: ItemRow[] = [];
+  let error: { message: string } | null = null;
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const page = await gate.admin
+      .from("order_items")
+      .select(
+        `${ITEM_COLUMNS}, orders!inner(id, order_number, client_name, status, company_id)`
+      )
+      .eq("orders.company_id", companyId)
+      .not("line_id", "is", null)
+      .or("status.is.null,status.neq.completed")
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (page.error) {
+      error = page.error;
+      break;
+    }
+    const chunk = (page.data ?? []) as ItemRow[];
+    allRows.push(...chunk);
+    if (chunk.length < PAGE_SIZE) break;
+  }
 
   if (error) {
     if (schemaMissing(error.message)) {
@@ -120,7 +142,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const rows = (data ?? []) as ItemRow[];
+  const rows = allRows;
   const linesById = await loadLines(
     gate.admin,
     rows.map((row) => row.line_id)

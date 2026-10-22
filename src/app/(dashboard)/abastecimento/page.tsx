@@ -56,6 +56,8 @@ export default function AbastecimentoPage() {
   const [schemaMissing, setSchemaMissing] = useState(false);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<AbastecimentoFilter>("todos");
+  /** "" = todas as linhas. */
+  const [lineTab, setLineTab] = useState<string>("");
   const [sortKeys, setSortKeys] = useState<AbastecimentoSortKey[]>(
     ABASTECIMENTO_DEFAULT_SORT
   );
@@ -117,24 +119,48 @@ export default function AbastecimentoPage() {
     { immediate: false }
   );
 
+  /** Abas por linha de produção, com quantidade de itens em cada. */
+  const lineTabs = useMemo(() => {
+    const byName = new Map<string, number>();
+    for (const item of items) {
+      const name = item.line_name || "Sem linha";
+      byName.set(name, (byName.get(name) ?? 0) + 1);
+    }
+    return [...byName.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "pt", { sensitivity: "base" }))
+      .map(([name, count]) => ({ name, count }));
+  }, [items]);
+
+  useEffect(() => {
+    if (lineTab && !lineTabs.some((t) => t.name === lineTab)) setLineTab("");
+  }, [lineTab, lineTabs]);
+
+  const lineItems = useMemo(
+    () =>
+      lineTab
+        ? items.filter((item) => (item.line_name || "Sem linha") === lineTab)
+        : items,
+    [items, lineTab]
+  );
+
   const counts = useMemo(() => {
     const c: Record<AbastecimentoFilter, number> = {
-      todos: items.length,
+      todos: lineItems.length,
       pendentes: 0,
       parcial: 0,
       abastecido: 0,
     };
-    for (const item of items) {
+    for (const item of lineItems) {
       if (item.supply_status == null) c.pendentes += 1;
       else if (item.supply_status === "partial") c.parcial += 1;
       else c.abastecido += 1;
     }
     return c;
-  }, [items]);
+  }, [lineItems]);
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const filtered = items.filter((item) => {
+    const filtered = lineItems.filter((item) => {
       if (!matchesAbastecimentoFilter(item.supply_status, filter)) return false;
       if (!q) return true;
       return [
@@ -149,7 +175,7 @@ export default function AbastecimentoPage() {
         .includes(q);
     });
     return filtered.sort((a, b) => compareAbastecimentoItems(a, b, sortKeys));
-  }, [items, filter, query, sortKeys]);
+  }, [lineItems, filter, query, sortKeys]);
 
   async function patchItem(
     item: BoardItem,
@@ -224,6 +250,28 @@ export default function AbastecimentoPage() {
           Editor do Supabase.
         </div>
       ) : null}
+
+      <div className="flex flex-wrap gap-1 border-b border-slate-200">
+        {[{ name: "", label: "Todas as linhas", count: items.length }, ...lineTabs.map((t) => ({ ...t, label: t.name }))].map(
+          (tab) => (
+            <button
+              key={tab.name || "__all"}
+              type="button"
+              onClick={() => setLineTab(tab.name)}
+              className={`-mb-px rounded-t-md border px-3 py-1.5 text-xs font-medium ${
+                lineTab === tab.name
+                  ? "border-slate-300 border-b-white bg-white text-slate-900"
+                  : "border-transparent text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              {tab.label}{" "}
+              <span className="ml-0.5 rounded-full bg-slate-100 px-1.5 text-[10px] text-slate-600">
+                {tab.count}
+              </span>
+            </button>
+          )
+        )}
+      </div>
 
       <div className="flex flex-wrap gap-2">
         {FILTERS.map((tab) => (
