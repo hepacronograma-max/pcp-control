@@ -1,7 +1,4 @@
-import {
-  parseAlmoxSourceItemId,
-  productionLineIsAlmoxarifado,
-} from "@/lib/supabase/sync-almoxarifado-on-program";
+import { parseAlmoxSourceItemId } from "@/lib/supabase/sync-almoxarifado-on-program";
 import { productionLineNameIsStandaloneLogistica } from "@/lib/utils/nav-line-groups";
 
 /** full = abastecido; partial = produção pode começar faltando peça. */
@@ -21,7 +18,11 @@ export function itemBelongsOnAbastecimentoBoard(input: {
   notes?: string | null;
 }): boolean {
   if (!input.line) return false;
-  if (productionLineIsAlmoxarifado(input.line)) return false;
+  /**
+   * Itens alocados na linha Almoxarifado = filtros que saem do estoque.
+   * Também passam pela logística, numa aba própria ("Estoque").
+   * Espelhos antigos (notes "almox-src:") continuam fora para não duplicar.
+   */
   if (productionLineNameIsStandaloneLogistica(input.line.name)) return false;
   if (parseAlmoxSourceItemId(input.notes)) return false;
   if (input.orderStatus === "finished") return false;

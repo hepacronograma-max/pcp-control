@@ -31,6 +31,8 @@ type BoardItem = {
   description: string;
   quantity: number;
   line_name: string;
+  /** Item alocado na linha Almoxarifado: sai do estoque, não da produção. */
+  is_estoque?: boolean;
   pcp_deadline: string | null;
   production_start: string | null;
   production_end: string | null;
@@ -39,6 +41,13 @@ type BoardItem = {
   order_number: string;
   client_name: string;
 };
+
+const ESTOQUE_TAB = "__estoque";
+
+function tabKeyFor(item: BoardItem): string {
+  if (item.is_estoque) return ESTOQUE_TAB;
+  return item.line_name || "Sem linha";
+}
 
 const FILTERS: { id: AbastecimentoFilter; label: string }[] = [
   { id: "todos", label: "Todos" },
@@ -119,16 +128,25 @@ export default function AbastecimentoPage() {
     { immediate: false }
   );
 
-  /** Abas por linha de produção, com quantidade de itens em cada. */
+  /**
+   * Abas: "Estoque (Almoxarifado)" sempre primeiro (itens que saem do
+   * estoque), depois uma aba por linha de produção, com contagem.
+   */
   const lineTabs = useMemo(() => {
-    const byName = new Map<string, number>();
+    const byKey = new Map<string, number>();
     for (const item of items) {
-      const name = item.line_name || "Sem linha";
-      byName.set(name, (byName.get(name) ?? 0) + 1);
+      const key = tabKeyFor(item);
+      byKey.set(key, (byKey.get(key) ?? 0) + 1);
     }
-    return [...byName.entries()]
+    const estoqueCount = byKey.get(ESTOQUE_TAB) ?? 0;
+    byKey.delete(ESTOQUE_TAB);
+    const linhas = [...byKey.entries()]
       .sort((a, b) => a[0].localeCompare(b[0], "pt", { sensitivity: "base" }))
-      .map(([name, count]) => ({ name, count }));
+      .map(([name, count]) => ({ name, label: name, count }));
+    return [
+      { name: ESTOQUE_TAB, label: "Estoque (Almoxarifado)", count: estoqueCount },
+      ...linhas,
+    ];
   }, [items]);
 
   useEffect(() => {
@@ -138,7 +156,7 @@ export default function AbastecimentoPage() {
   const lineItems = useMemo(
     () =>
       lineTab
-        ? items.filter((item) => (item.line_name || "Sem linha") === lineTab)
+        ? items.filter((item) => tabKeyFor(item) === lineTab)
         : items,
     [items, lineTab]
   );
@@ -252,7 +270,7 @@ export default function AbastecimentoPage() {
       ) : null}
 
       <div className="flex flex-wrap gap-1 border-b border-slate-200">
-        {[{ name: "", label: "Todas as linhas", count: items.length }, ...lineTabs.map((t) => ({ ...t, label: t.name }))].map(
+        {[{ name: "", label: "Todas as linhas", count: items.length }, ...lineTabs].map(
           (tab) => (
             <button
               key={tab.name || "__all"}

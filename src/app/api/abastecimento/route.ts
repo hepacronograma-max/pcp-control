@@ -14,6 +14,7 @@ import {
 import { hasPermission } from "@/lib/utils/permissions";
 import { isUuid } from "@/lib/utils/is-uuid";
 import { toDateOnly } from "@/lib/utils/supabase-data";
+import { productionLineIsAlmoxarifado } from "@/lib/supabase/sync-almoxarifado-on-program";
 
 const ITEM_COLUMNS =
   "id, product_code, description, quantity, line_id, pcp_deadline, production_start, production_end, status, notes, supply_planned_date, supply_status, order_id";
@@ -169,6 +170,8 @@ export async function GET(request: NextRequest) {
       quantity: row.quantity,
       line_id: row.line_id,
       line_name: line?.name ?? "",
+      /** Item da linha Almoxarifado = sai do estoque (aba "Estoque"). */
+      is_estoque: line ? productionLineIsAlmoxarifado(line) : false,
       pcp_deadline: toDateOnly(row.pcp_deadline),
       production_start: toDateOnly(row.production_start),
       production_end: toDateOnly(row.production_end),
