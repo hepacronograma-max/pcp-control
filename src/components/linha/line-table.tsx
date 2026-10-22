@@ -10,6 +10,7 @@ import { hasPermission } from "@/lib/utils/permissions";
 import { toDateOnly } from "@/lib/utils/supabase-data";
 import { CQField } from "@/components/cq/CQField";
 import { CQList } from "@/components/cq/CQList";
+import { SupplyBadge } from "@/components/shared/supply-badge";
 
 function migrateLineTableWidths(
   prop: number[],
@@ -860,8 +861,13 @@ export function LineTable({
                   {(item.product_code ?? "").trim() || "—"}
                 </span>
               </Cell>
-              <Cell title={item.description} className="flex items-center min-w-0">
-                <span className="truncate block">{item.description}</span>
+              <Cell title={item.description} className="flex items-center gap-1 min-w-0">
+                <span className="truncate block min-w-0">{item.description}</span>
+                <SupplyBadge
+                  plannedDate={item.supply_planned_date}
+                  status={item.supply_status}
+                  className="ml-auto"
+                />
               </Cell>
               <Cell className="text-center flex justify-center items-center">
                 {item.quantity}

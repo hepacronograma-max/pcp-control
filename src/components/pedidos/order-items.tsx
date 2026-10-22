@@ -6,6 +6,7 @@ import type {
 import { formatShortDate, isPastDeadline, pastDeadlineTextClass } from "@/lib/utils/date";
 import { ItemStatusBadge } from "./order-status-badge";
 import { OmieSyncItemAlert } from "./omie-sync-alert";
+import { SupplyBadge } from "@/components/shared/supply-badge";
 
 type ItemTextDraft = { product_code: string; description: string };
 
@@ -302,6 +303,10 @@ export function OrderItems({
                 productionStart={item.production_start}
                 productionEnd={item.production_end}
                 pcpDeadline={effectivePcp}
+              />
+              <SupplyBadge
+                plannedDate={item.supply_planned_date}
+                status={item.supply_status}
               />
               {item.status === "completed" &&
                 canReopenCompletedItem &&

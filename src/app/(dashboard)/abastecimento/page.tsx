@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useEffectiveCompanyId } from "@/lib/hooks/use-effective-company";
 import { useUser } from "@/lib/hooks/use-user";
@@ -56,7 +57,18 @@ const FILTERS: { id: AbastecimentoFilter; label: string }[] = [
   { id: "abastecido", label: "Abastecido" },
 ];
 
+/** useSearchParams exige Suspense no build do Next. */
 export default function AbastecimentoPage() {
+  return (
+    <Suspense
+      fallback={<div className="p-6 text-sm text-slate-500">Carregando abastecimento…</div>}
+    >
+      <AbastecimentoBoard />
+    </Suspense>
+  );
+}
+
+function AbastecimentoBoard() {
   const { profile, loading } = useUser();
   const router = useRouter();
   const { companyId, loaded: companyLoaded } = useEffectiveCompanyId(profile);
@@ -80,6 +92,13 @@ export default function AbastecimentoPage() {
       router.replace(defaultAppPathForRole(profile.role));
     }
   }, [loading, profile, router]);
+
+  /** Menu Logística → Almoxarifado abre aqui com ?aba=estoque. */
+  const searchParams = useSearchParams();
+  const abaParam = searchParams.get("aba");
+  useEffect(() => {
+    setLineTab(abaParam === "estoque" ? ESTOQUE_TAB : "");
+  }, [abaParam]);
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -334,7 +353,9 @@ export default function AbastecimentoPage() {
               <SortHeader label="Prazo PCP" sortKey="pcp_deadline" sortKeys={sortKeys} onSort={setSortKeys} />
               <SortHeader label="Início" sortKey="production_start" sortKeys={sortKeys} onSort={setSortKeys} />
               <SortHeader label="Fim" sortKey="production_end" sortKeys={sortKeys} onSort={setSortKeys} />
-              <th className="px-1 py-1 text-left font-medium">Abastecer em</th>
+              <th className="px-1 py-1 text-left font-medium">
+                {lineTab === ESTOQUE_TAB ? "Separar em" : "Abastecer em"}
+              </th>
               <th className="px-1 py-1 text-left font-medium">Situação</th>
             </tr>
           </thead>

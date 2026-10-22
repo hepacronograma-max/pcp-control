@@ -26,6 +26,18 @@ import {
   rollupSidebarGroupAttention,
 } from "@/lib/utils/nav-line-groups";
 import { ChevronDown } from "lucide-react";
+import { productionLineIsAlmoxarifado } from "@/lib/supabase/sync-almoxarifado-on-program";
+
+/**
+ * Almoxarifado no menu Logística abre a tela de Abastecimento na aba
+ * Estoque (mesmo formato, data de separação) para quem tem acesso a ela.
+ */
+function logisticaLineHref(line: ProductionLine, canViewAbastecimento: boolean): string {
+  if (canViewAbastecimento && productionLineIsAlmoxarifado(line)) {
+    return "/abastecimento?aba=estoque";
+  }
+  return `/linha/${line.id}`;
+}
 
 interface CompanyInfo {
   id: string;
@@ -625,7 +637,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                   <SidebarItem
                     key={line.id}
                     label={line.name}
-                    href={`/linha/${line.id}`}
+                    href={logisticaLineHref(line, Boolean(canViewAbastecimento))}
                     active={pathname?.startsWith(`/linha/${line.id}`)}
                     hasUnprogrammed={unp}
                     pulseAttention={sig > 0 || unp}
@@ -841,7 +853,7 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                       <SidebarItem
                         key={line.id}
                         label={line.name}
-                        href={`/linha/${line.id}`}
+                        href={logisticaLineHref(line, Boolean(canViewAbastecimento))}
                         active={pathname?.startsWith(`/linha/${line.id}`)}
                         hasUnprogrammed={unp}
                         pulseAttention={sig > 0 || unp}
