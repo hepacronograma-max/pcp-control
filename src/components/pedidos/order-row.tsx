@@ -26,6 +26,11 @@ import {
 import { CQField } from "@/components/cq/CQField";
 import { CQList } from "@/components/cq/CQList";
 import { orderOmieSyncAlertCount } from "@/lib/utils/omie-sync-alerts";
+import {
+  completedItemsToken,
+  readItemsReadySeen,
+  writeItemsReadySeen,
+} from "@/lib/utils/item-ready-seen";
 
 export interface OrderRowProps {
   order: OrderWithItems;
@@ -181,6 +186,57 @@ export function OrderRow({
     obsText.length,
     needsComercialObsReply,
   ]);
+
+  /**
+   * Aviso de itens prontos (fábrica/almoxarifado) para o PCP.
+   * - Pedido todo pronto: pisca até o PCP finalizar.
+   * - Item(ns) novo(s) pronto(s): pisca até o PCP abrir o pedido.
+   */
+  const isOrderOpen = order.status !== "finished";
+  const readyToken = completedItemsToken(order);
+  const [seenReadyIds, setSeenReadyIds] = useState<string[]>(() =>
+    typeof window !== "undefined" ? readItemsReadySeen(order.id) : []
+  );
+  useEffect(() => {
+    setSeenReadyIds(readItemsReadySeen(order.id));
+  }, [order.id]);
+  useEffect(() => {
+    if (!expanded || !isOrderOpen) return;
+    writeItemsReadySeen(order.id, readyToken);
+    setSeenReadyIds(readyToken ? readyToken.split(",") : []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, order.id, readyToken, isOrderOpen]);
+  const almoxLineIds = useMemo(
+    () =>
+      new Set(
+        lines
+          .filter((l) => l.is_almoxarifado || /almox/i.test(l.name ?? ""))
+          .map((l) => l.id)
+      ),
+    [lines]
+  );
+  const newReadyItems = isOrderOpen
+    ? order.items.filter(
+        (it) => it.status === "completed" && !seenReadyIds.includes(it.id)
+      )
+    : [];
+  const newReadyAlmox = newReadyItems.filter(
+    (it) => it.line_id && almoxLineIds.has(it.line_id)
+  ).length;
+  const newReadyFabrica = newReadyItems.length - newReadyAlmox;
+  const completedCount = order.items.filter((it) => it.status === "completed").length;
+  const showAllReadyPulse = isOrderOpen && allItemsCompleted;
+  const showItemReadyPulse = !showAllReadyPulse && newReadyItems.length > 0;
+  const itemReadyLabel = [
+    newReadyFabrica > 0
+      ? `${newReadyFabrica} filtro${newReadyFabrica > 1 ? "s" : ""} pronto${newReadyFabrica > 1 ? "s" : ""}`
+      : null,
+    newReadyAlmox > 0
+      ? `${newReadyAlmox} separado${newReadyAlmox > 1 ? "s" : ""} (almox.)`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   /** Pendência real no pedido; o piscar só enquanto o recado atual não foi “visto”. */
   const showComercialObsPulse =
@@ -413,6 +469,30 @@ export function OrderRow({
           </div>
         )}
         <div className="flex flex-nowrap items-center justify-end gap-1 overflow-x-auto min-w-0">
+          {showAllReadyPulse && (
+            <span
+              className="inline-flex shrink-0 items-center rounded-full bg-emerald-600 text-white px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ring-2 ring-emerald-300 motion-safe:animate-pulse"
+              title="Fábrica e almoxarifado finalizaram todos os itens. O PCP precisa finalizar o pedido."
+            >
+              ✔ Tudo pronto — finalizar
+            </span>
+          )}
+          {showItemReadyPulse && (
+            <span
+              className="inline-flex shrink-0 items-center rounded-full bg-amber-400 text-amber-950 px-2 py-0.5 text-[10px] font-bold whitespace-nowrap ring-2 ring-amber-200 motion-safe:animate-pulse"
+              title={`${completedCount} de ${order.items.length} itens prontos. Abra o pedido para ver.`}
+            >
+              🔔 {itemReadyLabel}
+            </span>
+          )}
+          {isOrderOpen && !allItemsCompleted && completedCount > 0 && (
+            <span
+              className="inline-flex shrink-0 items-center rounded-full bg-slate-100 text-slate-700 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap tabular-nums"
+              title="Itens finalizados pela fábrica/almoxarifado"
+            >
+              {completedCount}/{order.items.length} prontos
+            </span>
+          )}
           {omieAlertCount > 0 && (
             <span
               className="inline-flex shrink-0 max-w-[12rem] truncate rounded-full bg-red-100 text-red-900 px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap border border-red-300"
@@ -455,9 +535,22 @@ export function OrderRow({
               Produzindo
             </span>
           )}
-          {principalStatus === "finalizado" && (
+          {principalStatus === "pronto" && !showAllReadyPulse && (
             <span className="inline-flex items-center shrink-0 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap">
+              Pronto p/ finalizar
+            </span>
+          )}
+          {principalStatus === "finalizado" && (
+            <span
+              className="inline-flex items-center shrink-0 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap"
+              title={
+                order.finished_at
+                  ? `Finalizado pelo PCP em ${formatBrazilianDateTime(order.finished_at)}`
+                  : undefined
+              }
+            >
               Finalizado
+              {order.finished_at ? ` ${formatShortDate(new Date(order.finished_at))}` : ""}
             </span>
           )}
           {!principalStatus && (

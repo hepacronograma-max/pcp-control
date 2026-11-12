@@ -12,8 +12,11 @@ import { OrderStatusBadge } from "@/components/pedidos/order-status-badge";
 import {
   areAllOrderDeadlinesSameDay,
   getOrderDeadlineTrafficLight,
+  getOrderComercialPhase,
   getOrderPrincipalStatus,
+  minItemProductionStart,
   orderPcpRecadoNeedsComercialAttention,
+  type OrderComercialPhase,
   type OrderPrincipalStatus,
 } from "@/lib/utils/order-aggregates";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
@@ -28,6 +31,8 @@ export type ComercialItemLite = {
   production_start: string | null;
   production_end: string | null;
   description?: string | null;
+  /** Data em que a fábrica/almoxarifado finalizou o item */
+  completed_at?: string | null;
 };
 
 export type ComercialOrderApi = {
@@ -47,6 +52,12 @@ export type ComercialOrderApi = {
   pcp_reply_comercial_observation?: string | null;
   pcp_reply_comercial_observation_by?: string | null;
   pcp_reply_comercial_observation_at?: string | null;
+  /** Data em que o PCP finalizou o pedido */
+  finished_at?: string | null;
+  /** Data de faturamento (lista de embarque) */
+  invoiced_at?: string | null;
+  invoiced?: boolean;
+  nfe_number?: string | null;
   items: ComercialItemLite[];
 };
 
@@ -57,7 +68,38 @@ type SortKey =
   | "delivery_deadline"
   | "pcp_deadline";
 
-type TabKey = "open" | "finished";
+type TabKey = OrderComercialPhase;
+
+const PHASE_TABS: { key: TabKey; label: string; dateLabel: string }[] = [
+  { key: "aberto", label: "Em aberto", dateLabel: "Entrada" },
+  { key: "producao", label: "Em produção", dateLabel: "Início produção" },
+  { key: "finalizado", label: "Finalizados", dateLabel: "Finalizado em" },
+  { key: "faturado", label: "Faturados", dateLabel: "Faturado em" },
+];
+
+function phaseOf(row: ComercialOrderApi): OrderComercialPhase {
+  return getOrderComercialPhase({
+    status: row.status,
+    invoiced: row.invoiced,
+    invoiced_at: row.invoiced_at,
+    items: row.items ?? [],
+  });
+}
+
+/** Data mostrada na coluna “Data” conforme a fase do pedido. */
+function phaseDate(row: ComercialOrderApi, phase: OrderComercialPhase): string | null {
+  if (phase === "aberto") return row.created_at ?? null;
+  if (phase === "producao") return minItemProductionStart(row.items ?? []);
+  if (phase === "finalizado") return row.finished_at ?? null;
+  return row.invoiced_at ?? null;
+}
+
+function formatPhaseDate(value: string | null): string {
+  if (!value) return "—";
+  /** Timestamps (com hora) em data local; datas puras como estão. */
+  if (value.length > 10) return formatShortDate(new Date(value));
+  return formatShortDate(value);
+}
 
 function toOrderWithItems(row: ComercialOrderApi): OrderWithItems {
   const t = row.created_at;
@@ -72,7 +114,7 @@ function toOrderWithItems(row: ComercialOrderApi): OrderWithItems {
     production_start: it.production_start,
     production_end: it.production_end,
     status: it.status as ItemStatus,
-    completed_at: null,
+    completed_at: it.completed_at ?? null,
     completed_by: null,
     notes: null,
     supplied_at: null,
@@ -101,7 +143,7 @@ function toOrderWithItems(row: ComercialOrderApi): OrderWithItems {
     pcp_reply_comercial_observation_at: row.pcp_reply_comercial_observation_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at ?? row.created_at,
-    finished_at: null,
+    finished_at: row.finished_at ?? null,
     created_by: null,
     items,
   };
@@ -141,6 +183,11 @@ function StatusBadges({ principal, orderStatus }: { principal: OrderPrincipalSta
             Produzindo
           </span>
         )}
+        {principal === "pronto" && (
+          <span className="inline-flex shrink-0 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap">
+            Pronto (aguarda PCP)
+          </span>
+        )}
         {principal === "finalizado" && (
           <span className="inline-flex shrink-0 rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-medium whitespace-nowrap">
             Finalizado
@@ -154,7 +201,7 @@ function StatusBadges({ principal, orderStatus }: { principal: OrderPrincipalSta
 
 /** Larguras estáveis + coluna ícone observação → PCP */
 const COMERCIAL_TABLE_GRID =
-  "grid w-full min-w-[48rem] sm:min-w-[56rem] grid-cols-[5.5rem_minmax(0,1.1fr)_5.5rem_5.5rem_5.5rem_minmax(9.5rem,1fr)_2.75rem] items-center gap-x-2 sm:gap-x-2.5 gap-y-0";
+  "grid w-full min-w-[48rem] sm:min-w-[56rem] grid-cols-[5.5rem_minmax(0,1.1fr)_5.5rem_5.5rem_5.5rem_6.5rem_minmax(9.5rem,1fr)_2.75rem] items-center gap-x-2 sm:gap-x-2.5 gap-y-0";
 
 function HeaderCell({
   children,
@@ -219,7 +266,7 @@ export function ComercialOrdersView({
 }: ComercialOrdersViewProps) {
   const [savingDeliveryId, setSavingDeliveryId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<TabKey>("open");
+  const [tab, setTab] = useState<TabKey>("aberto");
   const [sortKey, setSortKey] = useState<SortKey>("delivery_deadline");
   const [sortAsc, setSortAsc] = useState(true);
   const [obsExpandedId, setObsExpandedId] = useState<string | null>(null);
@@ -261,18 +308,19 @@ export function ComercialOrdersView({
     }
   }
 
-  const { openList, finishedList, openCount, finishedCount } = useMemo(() => {
-    const o = orders.filter((x) => x.status !== "finished");
-    const f = orders.filter((x) => x.status === "finished");
-    return {
-      openList: o,
-      finishedList: f,
-      openCount: o.length,
-      finishedCount: f.length,
+  const byPhase = useMemo(() => {
+    const groups: Record<TabKey, ComercialOrderApi[]> = {
+      aberto: [],
+      producao: [],
+      finalizado: [],
+      faturado: [],
     };
+    for (const row of orders) groups[phaseOf(row)].push(row);
+    return groups;
   }, [orders]);
 
-  const source = tab === "open" ? openList : finishedList;
+  const source = byPhase[tab];
+  const activeTab = PHASE_TABS.find((t) => t.key === tab) ?? PHASE_TABS[0];
 
   const filteredAndSorted = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -404,6 +452,9 @@ export function ComercialOrdersView({
                 "Prazo vendas",
                 "Prazo entrega",
                 "Status pedido",
+                "Situação",
+                "Data da situação",
+                "NF",
                 "Obs. Comercial",
                 "Registo Comercial",
                 "Resposta PCP",
@@ -416,6 +467,9 @@ export function ComercialOrdersView({
                 formatShortDate(o.delivery_deadline),
                 formatShortDate(o.pcp_deadline),
                 o.status,
+                PHASE_TABS.find((t) => t.key === phaseOf(o))?.label ?? "",
+                formatPhaseDate(phaseDate(o, phaseOf(o))),
+                o.nfe_number ?? "",
                 o.comercial_pcp_observation ?? "",
                 [
                   o.comercial_pcp_observation_by ?? "",
@@ -447,28 +501,20 @@ export function ComercialOrdersView({
       )}
 
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
-        <button
-          type="button"
-          onClick={() => setTab("open")}
-          className={`text-xs font-medium px-3 py-1.5 rounded-md ${
-            tab === "open"
-              ? "bg-[#1B4F72] text-white"
-              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-          }`}
-        >
-          Em aberto ({openCount})
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("finished")}
-          className={`text-xs font-medium px-3 py-1.5 rounded-md ${
-            tab === "finished"
-              ? "bg-[#1B4F72] text-white"
-              : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-          }`}
-        >
-          Finalizados ({finishedCount})
-        </button>
+        {PHASE_TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`text-xs font-medium px-3 py-1.5 rounded-md ${
+              tab === t.key
+                ? "bg-[#1B4F72] text-white"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            {t.label} ({byPhase[t.key].length})
+          </button>
+        ))}
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -513,6 +559,9 @@ export function ComercialOrdersView({
             >
               Prazo entrega
             </HeaderCell>
+            <div className="text-center text-[10px] sm:text-[11px] font-semibold text-slate-500">
+              {activeTab.dateLabel}
+            </div>
             <div className="text-right text-[10px] sm:text-[11px] font-semibold text-slate-500 pl-1">
               Status
             </div>
@@ -630,6 +679,24 @@ export function ComercialOrdersView({
                         }
                       >
                         {formatShortDate(row.pcp_deadline)}
+                      </div>
+                      <div
+                        className="text-center tabular-nums text-slate-700"
+                        title={(() => {
+                          const ph = phaseOf(row);
+                          if (ph === "faturado" && row.nfe_number)
+                            return `NF ${row.nfe_number}`;
+                          if (ph === "finalizado" && row.finished_at)
+                            return `Finalizado pelo PCP em ${formatBrazilianDateTime(row.finished_at)}`;
+                          return undefined;
+                        })()}
+                      >
+                        {formatPhaseDate(phaseDate(row, phaseOf(row)))}
+                        {phaseOf(row) === "faturado" && row.nfe_number ? (
+                          <span className="block text-[9px] text-slate-500">
+                            NF {row.nfe_number}
+                          </span>
+                        ) : null}
                       </div>
                       <div className="flex flex-wrap items-center justify-end gap-0.5 min-h-[24px] pl-0.5">
                         <StatusBadges principal={principal} orderStatus={o.status} />

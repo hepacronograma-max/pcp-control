@@ -28,6 +28,7 @@ import {
   type ShippingStation,
 } from "@/lib/packaging/shipping-stations";
 import { LOGO_HEPA_PATH } from "@/lib/certificado/roteador";
+import { formatBrazilianDateTime } from "@/lib/utils/date";
 import {
   openEtiquetaPrintWindow,
   POPUP_BLOCKED_ERROR,
@@ -560,6 +561,7 @@ export default function FaturamentoPage() {
               <tr>
                 <th className="px-3 py-2 text-left">Pedido</th>
                 <th className="px-3 py-2 text-left">Cliente</th>
+                <th className="px-3 py-2 text-left">Finalizado PCP</th>
                 <th className="px-3 py-2 text-left">NF</th>
                 <th className="px-3 py-2 text-right">Volumes</th>
                 <th className="px-3 py-2 text-left">Estação</th>
@@ -569,7 +571,7 @@ export default function FaturamentoPage() {
             <tbody>
               {visibleRows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
+                  <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
                     Nenhum pedido nesta estação.
                   </td>
                 </tr>
@@ -578,6 +580,20 @@ export default function FaturamentoPage() {
                 <tr key={row.order.id} className="border-t border-slate-100">
                   <td className="px-3 py-2 font-medium">{row.order.order_number}</td>
                   <td className="px-3 py-2">{row.order.client_name}</td>
+                  <td
+                    className="px-3 py-2 tabular-nums whitespace-nowrap"
+                    title={
+                      row.order.finished_at
+                        ? `Pedido finalizado pelo PCP em ${formatBrazilianDateTime(row.order.finished_at)}`
+                        : "Aguardando o PCP finalizar o pedido"
+                    }
+                  >
+                    {row.order.status === "finished" && row.order.finished_at ? (
+                      formatBrazilianDateTime(row.order.finished_at)
+                    ) : (
+                      <span className="text-amber-700">Aguardando PCP</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 tabular-nums">
                     {row.shippingList?.nfe_number?.trim() || "—"}
                   </td>

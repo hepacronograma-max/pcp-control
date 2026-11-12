@@ -7,7 +7,6 @@ import { syncAlmoxOnProductionEndChange } from "@/lib/supabase/sync-almox-on-pro
 import { itemStatusAfterReopenCompleted } from "@/lib/utils/order-aggregates";
 import { hasPermission } from "@/lib/utils/permissions";
 import { fetchActorProfile } from "@/lib/supabase/fetch-actor-profile";
-import { finishOrderIfAllItemsCompleted } from "@/lib/supabase/finish-order-if-all-items-completed";
 import {
   finalizeShippingListForOrder,
   reopenShippingListForOrder,
@@ -51,6 +50,37 @@ async function assertCanEditOrders(): Promise<
           error:
             "Sem permissão para editar itens. Prazo de vendas: altere em Comercial.",
         },
+        { status: 403 }
+      ),
+    };
+  }
+  return { ok: true };
+}
+
+/** Finalizar pedido: só PCP / gestão (`finishOrders`). */
+async function assertCanFinishOrders(): Promise<
+  { ok: true } | { ok: false; response: NextResponse }
+> {
+  if (await hasServerLocalAuthCookie()) return { ok: true };
+  const authClient = await createServerSupabaseClient();
+  const {
+    data: { user },
+  } = await authClient.auth.getUser();
+  if (!user) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { success: false, error: "Não autenticado" },
+        { status: 401 }
+      ),
+    };
+  }
+  const profile = await fetchActorProfile(createSupabaseAdminClient(), user.id);
+  if (!profile || !hasPermission(profile, "finishOrders")) {
+    return {
+      ok: false,
+      response: NextResponse.json(
+        { success: false, error: "Somente o PCP pode finalizar o pedido." },
         { status: 403 }
       ),
     };
@@ -205,6 +235,36 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === "finish" && orderId) {
+      const gateFinish = await assertCanFinishOrders();
+      if (!gateFinish.ok) return gateFinish.response;
+
+      /** Só finaliza quando a fábrica e o almoxarifado concluíram todos os itens. */
+      const { data: orderItemsRows, error: itemsReadErr } = await supabase
+        .from("order_items")
+        .select("id, status")
+        .eq("order_id", orderId);
+      if (itemsReadErr) {
+        return NextResponse.json(
+          { success: false, error: itemsReadErr.message },
+          { status: 500 }
+        );
+      }
+      const pendingItems = (orderItemsRows ?? []).filter(
+        (it) => it.status !== "completed"
+      ).length;
+      if (!orderItemsRows?.length || pendingItems > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              pendingItems > 0
+                ? `Ainda há ${pendingItems} item(ns) não finalizado(s) pela fábrica/almoxarifado.`
+                : "Pedido sem itens.",
+          },
+          { status: 400 }
+        );
+      }
+
       const nowIso = new Date().toISOString();
       let { error } = await supabase
         .from("orders")
@@ -227,18 +287,6 @@ export async function POST(request: NextRequest) {
           : "";
         return NextResponse.json(
           { success: false, error: msg + hint },
-          { status: 500 }
-        );
-      }
-
-      const { error: itemsErr } = await supabase
-        .from("order_items")
-        .update({ status: "completed", completed_at: nowIso })
-        .eq("order_id", orderId)
-        .neq("status", "completed");
-      if (itemsErr) {
-        return NextResponse.json(
-          { success: false, error: itemsErr.message },
           { status: 500 }
         );
       }
@@ -658,16 +706,10 @@ export async function POST(request: NextRequest) {
           typeof completedBy === "string" && completedBy.trim() ? completedBy.trim() : null,
       });
 
-      const { data: completedRow } = await supabase
-        .from("order_items")
-        .select("order_id")
-        .eq("id", itemId)
-        .maybeSingle();
-      await finishOrderIfAllItemsCompleted(
-        supabase,
-        completedRow?.order_id as string | undefined
-      );
-
+      /**
+       * Fábrica/Almoxarifado só finalizam o ITEM. O pedido continua aberto e aparece
+       * em Pedidos como "pronto" (piscando) até o PCP clicar em "Finalizar pedido".
+       */
       return NextResponse.json({ success: true });
     }
 

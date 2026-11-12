@@ -17,6 +17,8 @@ export type OrderPrincipalStatus =
   | "aguardando_programacao"
   | "programado"
   | "produzindo"
+  /** Todos os itens finalizados (fábrica/almox), aguardando o PCP finalizar o pedido. */
+  | "pronto"
   | "finalizado"
   | null;
 
@@ -68,7 +70,7 @@ export function getOrderPrincipalStatus(order: OrderWithItems): OrderPrincipalSt
   if (hasWithoutLine) return "falta_linha";
 
   const allCompleted = items.every((it) => it.status === "completed");
-  if (allCompleted) return "finalizado";
+  if (allCompleted) return order.status === "finished" ? "finalizado" : "pronto";
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -273,4 +275,49 @@ export function orderPcpRecadoNeedsComercialAttention(
   if (replyAt && obsAt) return replyAt > obsAt;
   if (replyAt && !obsAt) return true;
   return false;
+}
+
+/** Fase comercial do pedido (aba Comercial). */
+export type OrderComercialPhase = "aberto" | "producao" | "finalizado" | "faturado";
+
+/**
+ * - faturado: lista de embarque com NF/faturamento registrado
+ * - finalizado: PCP finalizou o pedido
+ * - producao: algum item já começou (concluído, ou início de produção já chegou)
+ * - aberto: nenhum item começou
+ */
+export function getOrderComercialPhase(order: {
+  status: string;
+  invoiced?: boolean | null;
+  invoiced_at?: string | null;
+  items: { status: string; production_start: string | null }[];
+}): OrderComercialPhase {
+  if (order.invoiced || order.invoiced_at) return "faturado";
+  if (order.status === "finished") return "finalizado";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const started = order.items.some((it) => {
+    if (it.status === "completed") return true;
+    if (!it.production_start) return false;
+    const start = it.production_start.includes("-")
+      ? parseLocalDate(it.production_start.slice(0, 10))
+      : new Date(it.production_start);
+    if (Number.isNaN(start.getTime())) return false;
+    start.setHours(0, 0, 0, 0);
+    return start <= today;
+  });
+  return started ? "producao" : "aberto";
+}
+
+/** Menor `production_start` entre os itens (YYYY-MM-DD). */
+export function minItemProductionStart(
+  items: { production_start: string | null }[]
+): string | null {
+  let best: string | null = null;
+  for (const it of items) {
+    const d = toDateOnly(it.production_start);
+    if (!d) continue;
+    if (!best || d < best) best = d;
+  }
+  return best;
 }

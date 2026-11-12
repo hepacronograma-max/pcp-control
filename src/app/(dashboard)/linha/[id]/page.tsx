@@ -35,7 +35,6 @@ import {
   usePollWhenVisible,
 } from "@/lib/hooks/use-poll-when-visible";
 import { fetchProductionLinesWithAlmoxFlag } from "@/lib/supabase/fetch-almox-scheduled-items";
-import { finishOrderIfAllItemsCompleted } from "@/lib/supabase/finish-order-if-all-items-completed";
 import { toast } from "sonner";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import {
@@ -519,7 +518,7 @@ export default function LinePage() {
           toast.error(error.message || "Erro ao finalizar.");
           return;
         }
-        await finishOrderIfAllItemsCompleted(supabase, targetItem.order?.id);
+        /** Pedido só é finalizado pelo PCP na tela Pedidos. */
       } else return;
     }
 
