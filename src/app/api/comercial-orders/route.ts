@@ -167,6 +167,7 @@ export async function GET(request: NextRequest) {
       production_start: string | null;
       production_end: string | null;
       description: string | null;
+      completed_at?: string | null;
     };
 
     type ComercialRow = {
@@ -185,6 +186,13 @@ export async function GET(request: NextRequest) {
       pcp_reply_comercial_observation: string | null;
       pcp_reply_comercial_observation_by: string | null;
       pcp_reply_comercial_observation_at: string | null;
+      /** Data em que o PCP finalizou o pedido */
+      finished_at: string | null;
+      /** Data de faturamento (lista de embarque) */
+      invoiced_at: string | null;
+      /** true quando a lista de embarque já foi faturada/coletada */
+      invoiced: boolean;
+      nfe_number: string | null;
       items: ItemLite[];
     };
 
@@ -302,9 +310,83 @@ export async function GET(request: NextRequest) {
         pcp_reply_comercial_observation_at: parseOptionalString(
           row.pcp_reply_comercial_observation_at
         ),
+        finished_at: null,
+        invoiced_at: null,
+        invoiced: false,
+        nfe_number: null,
         items: Array.isArray(o.items) ? o.items : [],
       };
     });
+
+    /**
+     * Datas das fases (Finalizado pelo PCP / Faturado). Consultas separadas para não
+     * quebrar a lista se alguma coluna ainda não existir no banco.
+     */
+    const orderIds = orders.map((o) => o.id);
+    if (orderIds.length > 0) {
+      const byId = new Map(orders.map((o) => [o.id, o]));
+      const CHUNK = 300;
+      for (let i = 0; i < orderIds.length; i += CHUNK) {
+        const ids = orderIds.slice(i, i + CHUNK);
+        const fin = await supabase
+          .from("orders")
+          .select("id, finished_at")
+          .in("id", ids);
+        if (!fin.error) {
+          for (const r of (fin.data ?? []) as { id: string; finished_at: string | null }[]) {
+            const row = byId.get(r.id);
+            if (row) row.finished_at = r.finished_at ?? null;
+          }
+        }
+        const comp = await supabase
+          .from("order_items")
+          .select("id, completed_at")
+          .in("order_id", ids);
+        if (!comp.error) {
+          const compById = new Map(
+            ((comp.data ?? []) as { id: string; completed_at: string | null }[]).map(
+              (c) => [c.id, c.completed_at ?? null]
+            )
+          );
+          for (const id of ids) {
+            const row = byId.get(id);
+            if (!row) continue;
+            row.items = row.items.map((it) => ({
+              ...it,
+              completed_at: compById.get(it.id) ?? null,
+            }));
+          }
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let ship: any = await supabase
+          .from("shipping_lists")
+          .select("order_id, status, invoiced_at, nfe_number")
+          .in("order_id", ids);
+        if (ship.error) {
+          ship = await supabase
+            .from("shipping_lists")
+            .select("order_id, status, invoiced_at")
+            .in("order_id", ids);
+        }
+        if (!ship.error) {
+          for (const r of (ship.data ?? []) as {
+            order_id: string;
+            status: string | null;
+            invoiced_at: string | null;
+            nfe_number?: string | null;
+          }[]) {
+            const row = byId.get(r.order_id);
+            if (!row) continue;
+            row.invoiced =
+              Boolean(r.invoiced_at) ||
+              r.status === "invoiced" ||
+              r.status === "collected";
+            row.invoiced_at = r.invoiced_at ?? null;
+            row.nfe_number = r.nfe_number ?? null;
+          }
+        }
+      }
+    }
 
     return NextResponse.json({ orders });
   } catch (e) {

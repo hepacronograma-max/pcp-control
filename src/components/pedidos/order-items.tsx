@@ -3,7 +3,12 @@ import type {
   OrderItemWithLine,
   ProductionLine,
 } from "@/lib/types/database";
-import { formatShortDate, isPastDeadline, pastDeadlineTextClass } from "@/lib/utils/date";
+import {
+  formatBrazilianDateTime,
+  formatShortDate,
+  isPastDeadline,
+  pastDeadlineTextClass,
+} from "@/lib/utils/date";
 import { ItemStatusBadge } from "./order-status-badge";
 import { OmieSyncItemAlert } from "./omie-sync-alert";
 
@@ -303,6 +308,14 @@ export function OrderItems({
                 productionEnd={item.production_end}
                 pcpDeadline={effectivePcp}
               />
+              {item.status === "completed" && item.completed_at && (
+                <span
+                  className="text-[9px] font-medium text-emerald-700 whitespace-nowrap tabular-nums"
+                  title={`Finalizado em ${formatBrazilianDateTime(item.completed_at)}`}
+                >
+                  em {formatBrazilianDateTime(item.completed_at)}
+                </span>
+              )}
               {item.status === "completed" &&
                 canReopenCompletedItem &&
                 onReopenCompletedItem && (
