@@ -403,13 +403,11 @@ export async function GET(request: NextRequest) {
   const meta = await loadItemMeta(gate.admin, itemIds);
   const volumes = decorateVolumes(ctx.volumes, ctx.lines, meta);
 
-  const { data: siblings } = ctx.item.line_id
-    ? await gate.admin
-        .from("order_items")
-        .select("id, order_id, line_id, quantity, description, product_code")
-        .eq("order_id", ctx.item.order_id)
-        .eq("line_id", ctx.item.line_id)
-    : { data: [] as OrderItemRow[] };
+  // Agrupamento: qualquer item do MESMO pedido (independe da linha de produção).
+  const { data: siblings } = await gate.admin
+    .from("order_items")
+    .select("id, order_id, line_id, quantity, description, product_code")
+    .eq("order_id", ctx.item.order_id);
 
   const groupableItems = (siblings ?? [])
     .filter((s) => s.id !== ctx.item.id)
@@ -513,12 +511,6 @@ export async function POST(request: NextRequest) {
         if (!row) return jsonError("Item agrupado não encontrado.", 400);
         if (row.order_id !== ctx.item.order_id) {
           return jsonError("Só é possível agrupar itens do mesmo pedido.", 400);
-        }
-        if (!ctx.item.line_id || row.line_id !== ctx.item.line_id) {
-          return jsonError(
-            "Só é possível agrupar itens da mesma linha de produção.",
-            400
-          );
         }
       }
 
@@ -742,6 +734,218 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, volume: updated });
     }
 
+    if (action === "edit") {
+      // Edição completa de um volume já gerado (inclusive impresso):
+      // caixa, peso e itens/peças dentro da caixa. Volume bipado não muda.
+      const id = typeof body.id === "string" ? body.id : "";
+      if (!isUuid(id)) return jsonError("id inválido", 400);
+
+      const { data: volRow, error } = await gate.admin
+        .from("packaging_volumes")
+        .select("*")
+        .eq("id", id)
+        .eq("company_id", companyId)
+        .maybeSingle();
+      if (error || !volRow) return jsonError("Volume não encontrado.", 404);
+      const volume = volRow as PackagingVolume;
+
+      const { data: ordRow } = await gate.admin
+        .from("orders")
+        .select("status")
+        .eq("id", volume.order_id)
+        .maybeSingle();
+      if (ordRow?.status === "finished") {
+        return jsonError(
+          "Pedido finalizado: a lista de embarque não aceita edição.",
+          400
+        );
+      }
+      if (volume.status === "scanned") {
+        return jsonError(
+          "Volume já bipado no carregamento não pode ser editado.",
+          400
+        );
+      }
+
+      const weight = parsePositiveWeightKg(body.weightKg ?? body.weight_kg);
+      if (!weight.ok) return jsonError(weight.error, 400);
+
+      // Itens do volume
+      const rawItems = Array.isArray(body.items) ? body.items : [];
+      const editLines: { orderItemId: string; pieceQuantity: number }[] = [];
+      const seen = new Set<string>();
+      for (const raw of rawItems) {
+        if (!raw || typeof raw !== "object") continue;
+        const rec = raw as Record<string, unknown>;
+        const itemId =
+          typeof rec.orderItemId === "string" ? rec.orderItemId : "";
+        if (!isUuid(itemId)) return jsonError("Item inválido.", 400);
+        if (seen.has(itemId)) {
+          return jsonError("O mesmo item não pode entrar duas vezes na caixa.", 400);
+        }
+        const qty = Math.floor(Number(rec.pieceQuantity));
+        if (!Number.isInteger(qty) || qty < 1) {
+          return jsonError("Peças de cada item: inteiro ≥ 1.", 400);
+        }
+        seen.add(itemId);
+        editLines.push({ orderItemId: itemId, pieceQuantity: qty });
+      }
+      if (editLines.length === 0) {
+        return jsonError(
+          "O volume precisa ter pelo menos um item. Para esvaziar, exclua o volume.",
+          400
+        );
+      }
+
+      // Caixa (opcional: se não vier, mantém a atual)
+      let boxIdFinal = volume.box_id;
+      if (typeof body.boxId === "string" && body.boxId) {
+        const resolved = await resolveBoxForAllocate(
+          gate.admin,
+          companyId!,
+          body.boxId,
+          body.customSize ?? body.custom_size
+        );
+        if (!resolved.ok) return jsonError(resolved.error, 400);
+        boxIdFinal = resolved.box.id;
+      }
+
+      // Estado atual do pedido inteiro, para validar saldo
+      const { data: orderVolumesRaw, error: ovErr } = await gate.admin
+        .from("packaging_volumes")
+        .select("*")
+        .eq("order_id", volume.order_id)
+        .eq("company_id", companyId);
+      if (ovErr) {
+        return jsonError(mapVolumeError(ovErr.message) ?? ovErr.message, 500);
+      }
+      const orderVolumes = (orderVolumesRaw ?? []) as PackagingVolume[];
+      let fetched = await loadVolumeItemLines(
+        gate.admin,
+        orderVolumes.map((v) => v.id)
+      );
+      if (fetched.missing && editLines.length > 1) {
+        await ensurePackagingVolumeItemsTable();
+        fetched = await loadVolumeItemLines(
+          gate.admin,
+          orderVolumes.map((v) => v.id)
+        );
+        if (fetched.missing) {
+          return jsonError(
+            "Tabela packaging_volume_items ausente. Execute supabase-packaging-volume-items.sql no SQL Editor.",
+            400
+          );
+        }
+      }
+      const lines = fetched.missing ? null : fetched.lines;
+      const oldLines = linesForVolume(volume.id, lines, volume);
+
+      const { data: itemRows, error: itemErr } = await gate.admin
+        .from("order_items")
+        .select("id, order_id, quantity, description")
+        .in(
+          "id",
+          editLines.map((l) => l.orderItemId)
+        );
+      if (itemErr) return jsonError(itemErr.message, 500);
+      const itemById = new Map((itemRows ?? []).map((r) => [r.id, r]));
+      for (const line of editLines) {
+        const row = itemById.get(line.orderItemId);
+        if (!row) return jsonError("Item não encontrado.", 400);
+        if (row.order_id !== volume.order_id) {
+          return jsonError("Só é possível colocar itens do mesmo pedido.", 400);
+        }
+        const total = Math.max(1, Math.floor(Number(row.quantity) || 1));
+        const allocated = allocatedQtyForItem(
+          line.orderItemId,
+          orderVolumes,
+          lines
+        );
+        const current = qtyOfItemInVolume(
+          volume.id,
+          line.orderItemId,
+          volume,
+          lines
+        );
+        const available = Math.max(0, total - allocated + current);
+        if (line.pieceQuantity > available) {
+          return jsonError(
+            `Saldo insuficiente em "${row.description}": máximo ${available} peça(s) neste volume.`,
+            400
+          );
+        }
+      }
+
+      const hostId = editLines.some(
+        (l) => l.orderItemId === volume.order_item_id
+      )
+        ? volume.order_item_id
+        : editLines[0].orderItemId;
+      const wasPrinted = volume.status === "printed";
+      const { data: updated, error: updErr } = await gate.admin
+        .from("packaging_volumes")
+        .update({
+          order_item_id: hostId,
+          piece_quantity: mixPieceTotal(editLines),
+          weight_kg: weight.kg,
+          box_id: boxIdFinal,
+          status: wasPrinted ? "generated" : volume.status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", id)
+        .eq("company_id", companyId)
+        .select("*")
+        .maybeSingle();
+      if (updErr) {
+        return jsonError(mapVolumeError(updErr.message) ?? updErr.message, 500);
+      }
+
+      if (!fetched.missing) {
+        await gate.admin
+          .from("packaging_volume_items")
+          .delete()
+          .eq("volume_id", volume.id);
+        const { error: insErr } = await gate.admin
+          .from("packaging_volume_items")
+          .insert(
+            editLines.map((l) => ({
+              company_id: companyId,
+              volume_id: volume.id,
+              order_item_id: l.orderItemId,
+              piece_quantity: l.pieceQuantity,
+            }))
+          );
+        if (insErr) {
+          // tenta restaurar como estava
+          await gate.admin.from("packaging_volume_items").insert(
+            oldLines.map((l) => ({
+              company_id: companyId,
+              volume_id: volume.id,
+              order_item_id: l.order_item_id,
+              piece_quantity: l.piece_quantity,
+            }))
+          );
+          await gate.admin
+            .from("packaging_volumes")
+            .update({
+              order_item_id: volume.order_item_id,
+              piece_quantity: volume.piece_quantity,
+              weight_kg: volume.weight_kg,
+              box_id: volume.box_id,
+              status: volume.status,
+            })
+            .eq("id", id);
+          return jsonError(mapVolumeError(insErr.message) ?? insErr.message, 500);
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        volume: updated,
+        needsReprint: wasPrinted,
+      });
+    }
+
     if (action === "delete") {
       const id = typeof body.id === "string" ? body.id : "";
       if (!isUuid(id)) return jsonError("id inválido", 400);
@@ -797,8 +1001,13 @@ export async function POST(request: NextRequest) {
       );
       if (!ready.ok) return jsonError(ready.reason, 400);
       const now = new Date().toISOString();
+      // volumeIds opcional: reimpressão só dos volumes escolhidos
+      const only = Array.isArray(body.volumeIds)
+        ? new Set(body.volumeIds.filter((x): x is string => typeof x === "string"))
+        : null;
       const ids = ctx.volumes
         .filter((v) => v.status === "generated" || v.status === "pending")
+        .filter((v) => !only || only.has(v.id))
         .map((v) => v.id);
       if (ids.length > 0) {
         const { error: printErr } = await gate.admin

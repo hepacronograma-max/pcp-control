@@ -35,6 +35,7 @@ ALTER TABLE public.packaging_volume_items ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all packaging_volume_items" ON public.packaging_volume_items;
 CREATE POLICY "Allow all packaging_volume_items"
   ON public.packaging_volume_items FOR ALL
+  TO authenticated
   USING (true)
   WITH CHECK (true);
 `;
