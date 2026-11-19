@@ -56,7 +56,17 @@ export async function POST() {
         { status: 400 }
       );
     }
-    await ensurePackagingVolumeItemsTable();
+    const itemsOk = await ensurePackagingVolumeItemsTable();
+    if (!itemsOk) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Não consegui criar packaging_volume_items automaticamente. Cole supabase/migrations/20260827_packaging_volume_items.sql no SQL Editor do Supabase.",
+        },
+        { status: 400 }
+      );
+    }
 
     return NextResponse.json({
       success: true,

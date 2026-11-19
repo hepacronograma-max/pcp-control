@@ -50,6 +50,25 @@ const CUSTOM_BOX_VALUE = "__custom__";
 
 type ExtraRow = { key: string; orderItemId: string; pieces: string };
 
+type EditRow = {
+  orderItemId: string;
+  label: string;
+  pieces: string;
+  /** peças deste item que já estão neste volume (antes da edição) */
+  current: number;
+};
+
+type EditState = {
+  volumeId: string;
+  sequence: number;
+  wasPrinted: boolean;
+  boxId: string;
+  customSize: string;
+  weight: string;
+  rows: EditRow[];
+  addId: string;
+};
+
 type LoadPayload = {
   volumes: PackagingVolume[];
   boxes: PackagingBox[];
@@ -96,6 +115,9 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
   const [groupableItems, setGroupableItems] = useState<GroupableItem[]>([]);
   const [extraRows, setExtraRows] = useState<ExtraRow[]>([]);
   const [volumeItemsMissing, setVolumeItemsMissing] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
+  const [editing, setEditing] = useState<EditState | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const itemId = item?.id ?? null;
   const clientOrderNumber = useClientOrderNumber(item?.order.id, open);
@@ -205,6 +227,8 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
     setExtraRows([]);
     setGroupableItems([]);
     setVolumeItemsMissing(false);
+    setGroupOpen(false);
+    setEditing(null);
   }, [open, itemId, itemQty]);
 
   useEffect(() => {
@@ -265,9 +289,93 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
         `${r.volumes?.length ?? 0} volume(s) gerado(s). Saldo do item pendente: ${r.leftover ?? remaining} peça(s).`
       );
       setExtraRows([]);
+      setGroupOpen(false);
       await load();
     } finally {
       setSaving(false);
+    }
+  }
+
+  function itemLabel(code: string | null | undefined, description: string) {
+    const d = description.length > 60 ? `${description.slice(0, 60)}…` : description;
+    return code ? `${code} · ${d}` : d;
+  }
+
+  /** saldo livre do item (fora deste volume) */
+  function freeOf(orderItemId: string): number {
+    if (orderItemId === itemId) return remaining;
+    return groupableItems.find((g) => g.id === orderItemId)?.remaining ?? 0;
+  }
+
+  function startEdit(v: PackagingVolume) {
+    const own =
+      v.items && v.items.length > 0
+        ? v.items
+        : [
+            {
+              order_item_id: v.order_item_id,
+              piece_quantity: v.piece_quantity,
+              product_code: item?.product_code ?? null,
+              description: item?.description ?? "",
+            },
+          ];
+    const box = boxById.get(v.box_id);
+    const avulsa = !box || isAvulsaBoxCode(box.code);
+    setEditing({
+      volumeId: v.id,
+      sequence: v.sequence,
+      wasPrinted: v.status === "printed",
+      boxId: avulsa ? CUSTOM_BOX_VALUE : box?.id ?? CUSTOM_BOX_VALUE,
+      customSize: avulsa && box ? formatBoxDimensions(box).replace(/\s*cm$/i, "").replace(/\s*×\s*/g, "x") : "",
+      weight: v.weight_kg != null ? String(v.weight_kg) : "",
+      rows: own.map((it) => ({
+        orderItemId: it.order_item_id,
+        label: itemLabel(
+          it.product_code ?? (it.order_item_id === itemId ? item?.product_code : null),
+          it.description || (it.order_item_id === itemId ? item?.description ?? "" : "")
+        ),
+        pieces: String(it.piece_quantity),
+        current: it.piece_quantity,
+      })),
+      addId: "",
+    });
+  }
+
+  async function handleSaveEdit() {
+    if (!editing || !companyId) return;
+    const rows = editing.rows.filter((r) => Math.floor(Number(r.pieces)) >= 1);
+    if (rows.length === 0) {
+      toast.error("Deixe pelo menos um item com peças. Para esvaziar, exclua o volume.");
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const r = await postVolume({
+        action: "edit",
+        companyId,
+        id: editing.volumeId,
+        boxId: editing.boxId || CUSTOM_BOX_VALUE,
+        customSize:
+          editing.boxId === CUSTOM_BOX_VALUE ? editing.customSize : undefined,
+        weightKg: editing.weight,
+        items: rows.map((row) => ({
+          orderItemId: row.orderItemId,
+          pieceQuantity: Math.floor(Number(row.pieces)),
+        })),
+      });
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      toast.success(
+        editing.wasPrinted
+          ? `${sequenceLabel(editing.sequence)} alterado. Reimprima a etiqueta desse volume.`
+          : `${sequenceLabel(editing.sequence)} alterado.`
+      );
+      setEditing(null);
+      await load();
+    } finally {
+      setSavingEdit(false);
     }
   }
 
@@ -322,12 +430,13 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
     return m;
   }, [boxes]);
 
-  function handlePrintClick() {
+  function handlePrintClick(only?: PackagingVolume[]) {
     if (!item || !companyId || printing) return;
     if (!print.ok) {
       toast.error(print.reason);
       return;
     }
+    const toPrint = only && only.length > 0 ? only : volumes;
     const printWin = openEtiquetaPrintWindow("embalagem-print-hepa");
     if (!printWin) {
       toast.error(POPUP_BLOCKED_ERROR);
@@ -339,7 +448,7 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
         const origin = window.location.origin;
         const [logoDataUrl, ...qrs] = await Promise.all([
           getHepaLogoDataUrl(),
-          ...volumes.map((v) =>
+          ...toPrint.map((v) =>
             QRCode.toDataURL(`${origin}/embarque/bipar/${v.qr_token}`, {
               width: 160,
               margin: 0,
@@ -348,7 +457,7 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
             })
           ),
         ]);
-        const labels = volumes.map((v, i) => {
+        const labels = toPrint.map((v, i) => {
           const lines =
             v.items && v.items.length > 0
               ? v.items.map((it) => ({
@@ -392,6 +501,7 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
           action: "print",
           companyId,
           orderItemId: item.id,
+          volumeIds: only && only.length > 0 ? only.map((v) => v.id) : undefined,
         });
         if (!marked.ok) {
           toast.error(marked.error);
@@ -593,87 +703,72 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
                     />
                   </div>
                 </div>
-                {extraRows.length > 0 ? (
+                {groupOpen ? (
                   <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-2">
                     <p className="text-[11px] font-semibold text-slate-700">
-                      Itens na mesma caixa (mesmo pedido e mesma linha)
+                      Itens do pedido {item.order.order_number} para colocar na
+                      mesma caixa (peças de cada item por volume)
                     </p>
-                    {extraRows.map((row) => {
-                      const taken = new Set(
-                        extraRows
-                          .filter((r) => r.key !== row.key)
-                          .map((r) => r.orderItemId)
-                          .filter(Boolean)
-                      );
-                      const options = groupableItems.filter(
-                        (g) => g.id === row.orderItemId || !taken.has(g.id)
-                      );
-                      return (
-                        <div key={row.key} className="grid gap-2 sm:grid-cols-[1fr_7rem_auto]">
-                          <select
-                            className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs bg-white"
-                            value={row.orderItemId}
-                            onChange={(e) => {
-                              const id = e.target.value;
-                              const g = groupableItems.find((x) => x.id === id);
-                              setExtraRows((prev) =>
-                                prev.map((r) =>
-                                  r.key === row.key
-                                    ? {
-                                        ...r,
-                                        orderItemId: id,
-                                        pieces: g ? String(g.remaining) : "",
-                                      }
-                                    : r
-                                )
-                              );
-                            }}
+                    {groupableItems.length === 0 ? (
+                      <p className="text-[11px] text-slate-500">
+                        Não há outro item deste pedido com saldo para agrupar.
+                      </p>
+                    ) : (
+                      groupableItems.map((g) => {
+                        const row = extraRows.find((r) => r.orderItemId === g.id);
+                        return (
+                          <div
+                            key={g.id}
+                            className="grid items-center gap-2 sm:grid-cols-[1.25rem_1fr_6rem]"
                           >
-                            <option value="">Selecione um item deste pedido</option>
-                            {options.map((g) => (
-                              <option key={g.id} value={g.id}>
-                                {g.product_code ? `${g.product_code} · ` : ""}
-                                {g.description.length > 48
-                                  ? `${g.description.slice(0, 48)}…`
-                                  : g.description}{" "}
-                                (saldo {g.remaining})
-                              </option>
-                            ))}
-                          </select>
-                          <Input
-                            type="number"
-                            min={1}
-                            max={
-                              groupableItems.find((x) => x.id === row.orderItemId)
-                                ?.remaining
-                            }
-                            step={1}
-                            value={row.pieces}
-                            onChange={(e) =>
-                              setExtraRows((prev) =>
-                                prev.map((r) =>
-                                  r.key === row.key
-                                    ? { ...r, pieces: e.target.value }
-                                    : r
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4"
+                              checked={Boolean(row)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setExtraRows((prev) => [
+                                    ...prev,
+                                    {
+                                      key: g.id,
+                                      orderItemId: g.id,
+                                      pieces: "1",
+                                    },
+                                  ]);
+                                } else {
+                                  setExtraRows((prev) =>
+                                    prev.filter((r) => r.orderItemId !== g.id)
+                                  );
+                                }
+                              }}
+                            />
+                            <span className="text-xs text-slate-700">
+                              {itemLabel(g.product_code, g.description)}{" "}
+                              <span className="text-slate-500">(saldo {g.remaining})</span>
+                            </span>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={g.remaining}
+                              step={1}
+                              disabled={!row}
+                              className="h-8 text-right"
+                              value={row?.pieces ?? ""}
+                              onChange={(e) =>
+                                setExtraRows((prev) =>
+                                  prev.map((r) =>
+                                    r.orderItemId === g.id
+                                      ? { ...r, pieces: e.target.value }
+                                      : r
+                                  )
                                 )
-                              )
-                            }
-                            placeholder="Peças"
-                          />
-                          <button
-                            type="button"
-                            className="text-xs text-red-600 hover:underline px-1"
-                            onClick={() =>
-                              setExtraRows((prev) =>
-                                prev.filter((r) => r.key !== row.key)
-                              )
-                            }
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      );
-                    })}
+                              }
+                              placeholder="Peças"
+                            />
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
                 ) : null}
                 <p className="text-[11px] text-slate-500">
@@ -681,8 +776,7 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
                   sem passar do saldo do item. Ex.: 50 peças, 10 por caixa, 5
                   volumes → Volume 1 a 5. O restante fica no saldo. Customizada:
                   escreva C×L×A (ex. 123x20x63). Peso é de cada volume (não o
-                  total da geração). Agrupar itens: só do mesmo pedido e desta
-                  linha de produção.
+                  total da geração). Agrupar itens: só itens do mesmo pedido.
                   {maxRepeat > 0
                     ? ` Máximo agora: ${maxRepeat} volume(s).`
                     : ""}
@@ -708,38 +802,24 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
                   </Button>
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant={groupOpen ? "default" : "outline"}
                     type="button"
                     onClick={() => {
                       if (volumeItemsMissing) {
                         toast.error(
-                          "Para agrupar, rode supabase-packaging-volume-items.sql no SQL Editor (ou Criar tabela agora)."
+                          "Para agrupar, rode supabase-packaging-volume-items.sql no SQL Editor do Supabase."
                         );
                         return;
                       }
-                      const taken = new Set(
-                        extraRows.map((r) => r.orderItemId).filter(Boolean)
-                      );
-                      const available = groupableItems.filter((g) => !taken.has(g.id));
-                      if (available.length === 0) {
-                        toast.message(
-                          extraRows.length > 0
-                            ? "Todos os itens disponíveis desta linha já estão na caixa."
-                            : "Não há outro item deste pedido nesta linha para agrupar."
-                        );
-                        return;
+                      if (groupOpen) {
+                        setGroupOpen(false);
+                        setExtraRows([]);
+                      } else {
+                        setGroupOpen(true);
                       }
-                      setExtraRows((prev) => [
-                        ...prev,
-                        {
-                          key: `${Date.now()}-${prev.length}`,
-                          orderItemId: "",
-                          pieces: "",
-                        },
-                      ]);
                     }}
                   >
-                    {extraRows.length > 0 ? "Adicionar item" : "Agrupar itens"}
+                    {groupOpen ? "Cancelar agrupamento" : "Agrupar itens"}
                   </Button>
                 </div>
               </div>
@@ -828,16 +908,37 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
                             />
                           </td>
                           <td className="px-2 py-1.5">
-                            {locked ? (
-                              <span className="text-slate-400">travado</span>
+                            {v.status === "scanned" ? (
+                              <span className="text-slate-400">bipado</span>
                             ) : (
-                              <button
-                                type="button"
-                                className="text-red-600 hover:underline"
-                                onClick={() => void handleDelete(v)}
-                              >
-                                Excluir
-                              </button>
+                              <div className="flex flex-col items-start gap-0.5">
+                                <button
+                                  type="button"
+                                  className="text-blue-700 hover:underline"
+                                  onClick={() => startEdit(v)}
+                                >
+                                  Editar
+                                </button>
+                                {print.ok ? (
+                                  <button
+                                    type="button"
+                                    className="text-slate-700 hover:underline"
+                                    disabled={printing}
+                                    onClick={() => handlePrintClick([v])}
+                                  >
+                                    Imprimir
+                                  </button>
+                                ) : null}
+                                {!locked ? (
+                                  <button
+                                    type="button"
+                                    className="text-red-600 hover:underline"
+                                    onClick={() => void handleDelete(v)}
+                                  >
+                                    Excluir
+                                  </button>
+                                ) : null}
+                              </div>
                             )}
                           </td>
                         </tr>
@@ -845,6 +946,207 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
                     })}
                   </tbody>
                 </table>
+              </div>
+            ) : null}
+
+            {editing ? (
+              <div className="rounded-md border border-blue-200 bg-blue-50/50 p-3 space-y-2">
+                <p className="text-xs font-semibold text-slate-800">
+                  Editando {sequenceLabel(editing.sequence)}
+                  {editing.wasPrinted
+                    ? " — já impresso: depois de salvar, reimprima a etiqueta dele"
+                    : ""}
+                </p>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="sm:col-span-2">
+                    <Label className="text-xs">Caixa</Label>
+                    <select
+                      className="mt-1 w-full rounded-md border border-slate-300 px-2 py-1.5 text-xs bg-white"
+                      value={editing.boxId}
+                      onChange={(e) =>
+                        setEditing({ ...editing, boxId: e.target.value })
+                      }
+                    >
+                      {catalogBoxes.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.code} — {b.name} ({formatBoxDimensions(b)})
+                        </option>
+                      ))}
+                      <option value={CUSTOM_BOX_VALUE}>
+                        Customizada — escrever o tamanho
+                      </option>
+                    </select>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Peso do volume (kg)</Label>
+                    <Input
+                      type="number"
+                      min={0.001}
+                      step={0.001}
+                      value={editing.weight}
+                      onChange={(e) =>
+                        setEditing({ ...editing, weight: e.target.value })
+                      }
+                    />
+                  </div>
+                  {editing.boxId === CUSTOM_BOX_VALUE ? (
+                    <div className="sm:col-span-2">
+                      <Label className="text-xs">Tamanho da caixa (cm)</Label>
+                      <Input
+                        value={editing.customSize}
+                        onChange={(e) =>
+                          setEditing({ ...editing, customSize: e.target.value })
+                        }
+                        placeholder="Ex.: 123x20x63"
+                      />
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold text-slate-700">
+                    Itens dentro desta caixa
+                  </p>
+                  {editing.rows.map((row) => {
+                    const max = row.current + freeOf(row.orderItemId);
+                    return (
+                      <div
+                        key={row.orderItemId}
+                        className="grid items-center gap-2 sm:grid-cols-[1fr_6rem_auto]"
+                      >
+                        <span className="text-xs text-slate-700">
+                          {row.label}{" "}
+                          <span className="text-slate-500">(máx {max})</span>
+                        </span>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={max}
+                          step={1}
+                          className="h-8 text-right"
+                          value={row.pieces}
+                          onChange={(e) =>
+                            setEditing({
+                              ...editing,
+                              rows: editing.rows.map((r) =>
+                                r.orderItemId === row.orderItemId
+                                  ? { ...r, pieces: e.target.value }
+                                  : r
+                              ),
+                            })
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="text-xs text-red-600 hover:underline px-1"
+                          title="Tirar este item da caixa"
+                          onClick={() =>
+                            setEditing({
+                              ...editing,
+                              rows: editing.rows.filter(
+                                (r) => r.orderItemId !== row.orderItemId
+                              ),
+                            })
+                          }
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {(() => {
+                    const inBox = new Set(editing.rows.map((r) => r.orderItemId));
+                    const candidates = [
+                      ...(itemId && remaining > 0 && !inBox.has(itemId)
+                        ? [
+                            {
+                              id: itemId,
+                              label: itemLabel(item.product_code, item.description),
+                              free: remaining,
+                            },
+                          ]
+                        : []),
+                      ...groupableItems
+                        .filter((g) => !inBox.has(g.id))
+                        .map((g) => ({
+                          id: g.id,
+                          label: itemLabel(g.product_code, g.description),
+                          free: g.remaining,
+                        })),
+                    ];
+                    if (candidates.length === 0) return null;
+                    return (
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <select
+                          className="flex-1 min-w-[12rem] rounded-md border border-slate-300 px-2 py-1.5 text-xs bg-white"
+                          value={editing.addId}
+                          onChange={(e) =>
+                            setEditing({ ...editing, addId: e.target.value })
+                          }
+                        >
+                          <option value="">
+                            + Incluir outro item deste pedido…
+                          </option>
+                          {candidates.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.label} (saldo {c.free})
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          type="button"
+                          disabled={!editing.addId}
+                          onClick={() => {
+                            const c = candidates.find((x) => x.id === editing.addId);
+                            if (!c) return;
+                            setEditing({
+                              ...editing,
+                              addId: "",
+                              rows: [
+                                ...editing.rows,
+                                {
+                                  orderItemId: c.id,
+                                  label: c.label,
+                                  pieces: "1",
+                                  current: 0,
+                                },
+                              ],
+                            });
+                          }}
+                        >
+                          Incluir
+                        </Button>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    type="button"
+                    onClick={() => setEditing(null)}
+                    disabled={savingEdit}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    type="button"
+                    onClick={() => void handleSaveEdit()}
+                    disabled={
+                      savingEdit ||
+                      !editing.weight ||
+                      (editing.boxId === CUSTOM_BOX_VALUE &&
+                        !editing.customSize.trim())
+                    }
+                  >
+                    {savingEdit ? "Salvando…" : "Salvar volume"}
+                  </Button>
+                </div>
               </div>
             ) : null}
 
@@ -863,7 +1165,7 @@ export function GerarEmbalagemModal({ item, companyId, open, onClose }: Props) {
                 <Button
                   size="sm"
                   disabled={!print.ok || printing}
-                  onClick={handlePrintClick}
+                  onClick={() => handlePrintClick()}
                   title={print.ok ? "Imprimir 100×150 mm" : print.reason}
                 >
                   {printing ? "Imprimindo…" : "Imprimir etiquetas"}
