@@ -28,6 +28,10 @@ import { GerarEtiquetaModal } from "@/components/linha/gerar-etiqueta-modal";
 import { GerarCertificadoModal } from "@/components/linha/gerar-certificado-modal";
 import { GerarEmbalagemModal } from "@/components/linha/gerar-embalagem-modal";
 import { PageExportMenu } from "@/components/ui/page-export-menu";
+import {
+  exportOrdemProducaoPdf,
+  exportOrdemProducaoXlsx,
+} from "@/lib/export/ordem-producao";
 import { fetchLineDataRequest } from "@/lib/api/fetch-line-data";
 import { shouldUseLocalServiceApi } from "@/lib/local-service-api";
 import {
@@ -553,6 +557,31 @@ export default function LinePage() {
     await runCompleteItems([itemId]);
   }
 
+  async function handleGerarOp(format: "pdf" | "xlsx") {
+    const chosen = sortedItems.filter((it) => selectedIds.has(it.id));
+    if (chosen.length === 0) {
+      toast.message("Selecione ao menos um item.");
+      return;
+    }
+    const input = {
+      lineName: line?.name ?? "Linha",
+      rows: chosen.map((it) => ({
+        orderNumber: it.order.order_number ?? "",
+        clientName: it.order.client_name ?? "",
+        description: it.description ?? "",
+        quantity: it.quantity,
+        productionEnd: it.production_end,
+      })),
+    };
+    try {
+      if (format === "pdf") await exportOrdemProducaoPdf(input);
+      else await exportOrdemProducaoXlsx(input);
+      toast.success(`OP gerada com ${chosen.length} item(ns).`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao gerar a OP");
+    }
+  }
+
   async function handleBulkComplete() {
     const ids = [...selectedIds];
     if (ids.length === 0) return;
@@ -833,6 +862,20 @@ export default function LinePage() {
             onClick={handleBulkComplete}
           >
             Finalizar selecionados
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-[#1B4F72] bg-white px-2 py-1 text-[#1B4F72] hover:bg-slate-50"
+            onClick={() => void handleGerarOp("pdf")}
+          >
+            Gerar OP (PDF)
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-[#1B4F72] bg-white px-2 py-1 text-[#1B4F72] hover:bg-slate-50"
+            onClick={() => void handleGerarOp("xlsx")}
+          >
+            Gerar OP (Excel)
           </button>
           <button
             type="button"
