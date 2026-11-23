@@ -55,6 +55,42 @@ type ListRow = {
   clientOrderNumber?: string | null;
 };
 
+type OmieSyncDetail = {
+  orderNumber: string;
+  result: "moved" | "pending" | "no_link" | "error" | "not_checked";
+  etapa?: string | null;
+  message?: string;
+};
+
+const OMIE_RESULT_LABEL: Record<OmieSyncDetail["result"], string> = {
+  moved: "Foi para Faturado",
+  pending: "Ainda não faturado no Omie",
+  no_link: "Sem vínculo Omie",
+  error: "Erro",
+  not_checked: "Não consultado (clique de novo)",
+};
+
+const OMIE_RESULT_CLASS: Record<OmieSyncDetail["result"], string> = {
+  moved: "text-emerald-700",
+  pending: "text-slate-600",
+  no_link: "text-amber-700",
+  error: "text-red-700",
+  not_checked: "text-slate-500",
+};
+
+function rowSearchText(row: ListRow): string {
+  return [
+    row.order.order_number,
+    row.order.client_name,
+    row.shippingList?.nfe_number,
+    row.clientOrderNumber,
+    ...row.items.map((it) => `${it.product_code ?? ""} ${it.description ?? ""}`),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
 function boxLabel(box: PackagingBox | undefined): string {
   if (!box) return "—";
   const kind = isAvulsaBoxCode(box.code) ? "Avulsa" : box.code;
@@ -104,6 +140,8 @@ export default function FaturamentoPage() {
   const [tableMissing, setTableMissing] = useState(false);
   const [syncingOmie, setSyncingOmie] = useState(false);
   const [omieConfigured, setOmieConfigured] = useState(true);
+  const [search, setSearch] = useState("");
+  const [omieDetails, setOmieDetails] = useState<OmieSyncDetail[] | null>(null);
 
   const allowed = profile && hasPermission(profile, "viewFaturamento");
 
@@ -156,7 +194,7 @@ export default function FaturamentoPage() {
           headers: { "Content-Type": "application/json" },
           credentials: "include",
           body: JSON.stringify({ action: "sync-omie", companyId }),
-          signal: AbortSignal.timeout(20_000),
+          signal: AbortSignal.timeout(58_000),
         });
         const json = (await res.json()) as {
           error?: string;
@@ -164,12 +202,20 @@ export default function FaturamentoPage() {
           marked?: number;
           nfeFilled?: number;
           checked?: number;
+          remaining?: number;
+          details?: OmieSyncDetail[];
         };
         if (!res.ok) {
           if (!opts?.silent) toast.error(json.error || "Não foi possível consultar o Omie.");
           return 0;
         }
         setOmieConfigured(json.configured !== false);
+        if (!opts?.silent) setOmieDetails(json.details ?? []);
+        if (!opts?.silent && (json.remaining ?? 0) > 0) {
+          toast.message(
+            `${json.remaining} pedido(s) ficaram para a próxima consulta. Clique em Atualizar do Omie de novo.`
+          );
+        }
         const marked = json.marked ?? 0;
         const nfeFilled = json.nfeFilled ?? 0;
         if (marked > 0 || nfeFilled > 0) {
@@ -240,10 +286,25 @@ export default function FaturamentoPage() {
     return c;
   }, [rows, stationOf]);
 
-  const visibleRows = useMemo(
-    () => rows.filter((row) => stationOf(row) === stationTab),
-    [rows, stationOf, stationTab]
-  );
+  const searchQuery = search.trim().toLowerCase();
+
+  const visibleRows = useMemo(() => {
+    const inStation = rows.filter((row) => stationOf(row) === stationTab);
+    if (!searchQuery) return inStation;
+    return inStation.filter((row) => {
+      return rowSearchText(row).includes(searchQuery);
+    });
+  }, [rows, stationOf, stationTab, searchQuery]);
+
+  /** Com busca ativa: quantos resultados existem em cada estação (para achar o pedido em outra aba). */
+  const searchCounts = useMemo(() => {
+    if (!searchQuery) return null;
+    const c = { ready_to_invoice: 0, invoiced: 0, collected: 0, packing: 0 };
+    for (const row of rows) {
+      if (rowSearchText(row).includes(searchQuery)) c[stationOf(row)] += 1;
+    }
+    return c;
+  }, [rows, stationOf, searchQuery]);
 
   useEffect(() => {
     setReceivedName(openRow?.shippingList?.received_by_name ?? "");
@@ -549,11 +610,54 @@ export default function FaturamentoPage() {
                 {syncingOmie ? "Consultando Omie…" : "Atualizar do Omie"}
               </Button>
             ) : null}
+            <input
+              type="text"
+              className="ml-auto w-64 max-w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs"
+              placeholder="Buscar pedido, cliente, NF ou item..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
+          {searchCounts ? (
+            <p className="text-[11px] text-slate-500">
+              Busca: {searchCounts.ready_to_invoice} em Liberado para faturar ·{" "}
+              {searchCounts.invoiced} em Faturado · {searchCounts.collected} em Coletado
+              {searchCounts.packing > 0
+                ? ` · ${searchCounts.packing} ainda em embalagem`
+                : ""}
+            </p>
+          ) : null}
           {counts.packing > 0 ? (
             <p className="text-[11px] text-slate-500">
               {counts.packing} lista(s) ainda em embalagem (PCP não finalizou o pedido).
             </p>
+          ) : null}
+          {omieDetails && omieDetails.length > 0 ? (
+            <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs space-y-1">
+              <div className="flex items-center justify-between">
+                <p className="font-semibold text-slate-800">
+                  Resultado da consulta ao Omie
+                </p>
+                <button
+                  type="button"
+                  className="text-slate-500 hover:underline"
+                  onClick={() => setOmieDetails(null)}
+                >
+                  Fechar
+                </button>
+              </div>
+              <ul className="space-y-0.5">
+                {omieDetails.map((d, i) => (
+                  <li key={`${d.orderNumber}-${i}`} className="flex gap-2">
+                    <span className="w-16 font-medium tabular-nums">{d.orderNumber}</span>
+                    <span className={OMIE_RESULT_CLASS[d.result]}>
+                      {OMIE_RESULT_LABEL[d.result]}
+                      {d.message ? ` — ${d.message}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
         <div className="rounded-lg border border-slate-200 bg-white overflow-x-auto">
           <table className="min-w-full text-xs">
@@ -572,7 +676,9 @@ export default function FaturamentoPage() {
               {visibleRows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
-                    Nenhum pedido nesta estação.
+                    {searchQuery
+                      ? "Nenhum pedido desta estação corresponde à busca."
+                      : "Nenhum pedido nesta estação."}
                   </td>
                 </tr>
               ) : (
